@@ -3,15 +3,15 @@ chrome.tabs.onCreated.addListener(updateBadge);
 chrome.tabs.onRemoved.addListener(updateBadge);
 chrome.tabs.onUpdated.addListener(updateBadge);
 
-chrome.commands.onCommand.addListener((command) => {
-  switch (command) {
-    case "merge-windows":
-      collapseDuplicateDomains();
-      break;
-    case "collapse-tabs-by-window":
-      break;
-  }
-});
+// chrome.commands.onCommand.addListener((command) => {
+  // switch (command) {
+    // case "merge-windows":
+      // collapseDuplicateDomains();
+      // break;
+    // case "collapse-tabs-by-window":
+      // break;
+  // }
+// });
 
 function getDomain(url) {
   try {
