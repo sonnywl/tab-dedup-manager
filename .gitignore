@@ -25,3 +25,6 @@ build
 *.sw?
 *.zip
 package-lock.json
+
+# Build
+*.sh
