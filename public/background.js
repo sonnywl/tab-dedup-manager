@@ -19,11 +19,9 @@ function buildDomainMap(tabs) {
   tabs.forEach((tab) => {
     const domain = getDomain(tab.url);
     if (!domainMap[domain]) {
-      domainMap[domain] = { tabs: [], windowCounts: {} };
+      domainMap[domain] = { tabs: [] };
     }
     domainMap[domain].tabs.push(tab);
-    domainMap[domain].windowCounts[tab.windowId] =
-      (domainMap[domain].windowCounts[tab.windowId] || 0) + 1;
   });
   return domainMap;
 }
@@ -123,39 +121,54 @@ async function consolidateToWindow(tabs, targetWindow) {
 }
 
 async function groupDomainTabs(domainMap) {
-  const domainGroups = {};
-
+  const domainToGroupId = {};
+  const discoveredGroupId = new Set();
   for (const [domain, data] of Object.entries(domainMap)) {
-    if (data.tabs.length < 2) continue;
-
-    const tabIds = data.tabs.map(t => t.id);
-    const existingGroupId = domainGroups[domain] ?? data.tabs.find(t => t.groupId !== -1)?.groupId;
-
-    if (existingGroupId) {
-      const ungrouped = tabIds.filter(id => {
-        const tab = data.tabs.find(t => t.id === id);
-        return tab.groupId !== existingGroupId;
-      });
-      if (ungrouped.length > 0) {
-        await chrome.tabs.group({ groupId: existingGroupId, tabIds: ungrouped });
+    for (const tab of data.tabs) {
+      const isNewGroup =
+        discoveredGroupId.has(tab.groupId) && tab.groupId !== -1;
+      isNewGroup && discoveredGroupId.add(tab.groupId);
+      if (domainToGroupId[domain] == null) {
+        domainToGroupId[domain] = {
+          tabs: [],
+          groupID: isNewGroup ? null : tab.groupId,
+        };
       }
-      domainGroups[domain] = existingGroupId;
-    } else {
-      const groupId = await chrome.tabs.group({ tabIds });
-      await chrome.tabGroups.update(groupId, {
-        collapsed: false,
-        title: domain,
-      });
-      domainGroups[domain] = groupId;
+      domainToGroupId[domain].tabs.push(tab);
+
+      if (domainToGroupId[domain].groupID === -1 && tab.groupId !== -1) {
+        domainToGroupId[domain].groupID = tab.groupId;
+      }
     }
+  }
+
+  for (const [domain, data] of Object.entries(domainToGroupId)) {
+    const { groupID, tabs } = data;
+    if (tabs.length < 2) {
+      continue;
+    }
+
+    const tabIDs = tabs.map((t) => t.id);
+    if (groupID == null) {
+      domainToGroupId[domain].groupID = await chrome.tabs.group({
+        tabIds: tabIDs,
+      });
+    } else {
+      await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
+    }
+
+    await chrome.tabGroups.update(domainToGroupId[domain].groupID, {
+      collapsed: false,
+      title: domain,
+    });
   }
 }
 
 async function sortTabsByGroupStatus() {
   const tabs = await chrome.tabs.query({ currentWindow: true });
-  const grouped = tabs.filter(t => t.groupId !== -1);
-  const ungrouped = tabs.filter(t => t.groupId === -1);
-  
+  const grouped = tabs.filter((t) => t.groupId !== -1);
+  const ungrouped = tabs.filter((t) => t.groupId === -1);
+
   const sortedTabs = [...grouped, ...ungrouped];
   for (let i = 0; i < sortedTabs.length; i++) {
     await chrome.tabs.move(sortedTabs[i].id, { index: i });
@@ -167,7 +180,7 @@ async function collapseDuplicateDomains() {
     const allTabs = await chrome.tabs.query({});
     const store = await startSyncStore({ rules: [] });
     const { rules } = await store.getState();
-    
+
     const rulesByDomain = rules.reduce((acc, curr) => {
       if (curr.domain.length === 0) return acc;
       acc[curr.domain] = curr;
@@ -178,11 +191,11 @@ async function collapseDuplicateDomains() {
     if (windows.length > 1) {
       const activeWindow = await chrome.windows.getCurrent();
       const targetWindow = activeWindow.id;
-      const tabsToMove = allTabs.filter(t => t.windowId !== targetWindow);
+      const tabsToMove = allTabs.filter((t) => t.windowId !== targetWindow);
       if (tabsToMove.length > 0) {
         await chrome.tabs.move(
-          tabsToMove.map(t => t.id),
-          { windowId: targetWindow, index: -1 }
+          tabsToMove.map((t) => t.id),
+          { windowId: targetWindow, index: -1 },
         );
       }
     }
@@ -191,10 +204,9 @@ async function collapseDuplicateDomains() {
     const uniqueTabs = await deduplicateAllTabs(tabs);
     const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
     const domainMap = buildDomainMap(remainingTabs);
-    
+
     await groupDomainTabs(domainMap);
     await sortTabsByGroupStatus();
-    
   } catch (e) {
     console.warn(e);
   }
