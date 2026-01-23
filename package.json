@@ -15,6 +15,7 @@
     "@babel/preset-env": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
     "@tailwindcss/vite": "^4.1.18",
+    "@types/chrome": "^0.1.36",
     "@vitejs/plugin-react": "^5.1.2",
     "eslint": "^9.39.2",
     "eslint-plugin-react": "^7.37.5",

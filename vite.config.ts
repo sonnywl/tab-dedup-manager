@@ -16,10 +16,14 @@ export default defineConfig((configEnv) => ({
     }, {}),
   },
   build: {
-    sourcemap: 'inline',
+    sourcemap: "inline",
     outDir: "./build",
     emptyOutDir: true,
     rollupOptions: {
+      input: {
+        background: "src/background.ts",
+        main: "index.html",
+      },
       output: {
         sourcemapBaseUrl: "http://localhost",
         entryFileNames: `assets/[name].js`,

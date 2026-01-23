@@ -1,5 +1,4 @@
-import deepEquals from "./utils/deepEquals.js";
-import { startSyncStore } from "./utils/startSyncStore.js";
+import startSyncStore from "./utils/startSyncStore.js";
 
 chrome.action.onClicked.addListener(collapseDuplicateDomains);
 chrome.tabs.onCreated.addListener(updateBadge);
@@ -59,13 +58,7 @@ async function updateBadge() {
   }
 }
 
-function getWindowWithMostTabs(windowCounts) {
-  return Object.entries(windowCounts).reduce(
-    (max, [wId, count]) =>
-      count > max.count ? { windowId: parseInt(wId), count } : max,
-    { windowId: null, count: 0 },
-  ).windowId;
-}
+
 
 async function deduplicateAllTabs(tabs) {
   const seen = new Set();
@@ -111,15 +104,7 @@ async function applyAutoDeleteRules(tabs, rulesByDomain) {
   return remaining;
 }
 
-async function consolidateToWindow(tabs, targetWindow) {
-  const tabsToMove = tabs.filter((t) => t.windowId !== targetWindow);
-  if (tabsToMove.length > 0) {
-    await chrome.tabs.move(
-      tabsToMove.map((t) => t.id),
-      { windowId: targetWindow, index: -1 },
-    );
-  }
-}
+
 
 function buildDomainToGroupMap(domainMap) {
   const domainToGroupId = {};
@@ -128,7 +113,9 @@ function buildDomainToGroupMap(domainMap) {
   for (const [domain, data] of Object.entries(domainMap)) {
     for (const tab of data.tabs) {
       const isDiscovered = discoveredGroupId.has(tab.groupId);
-      !isDiscovered && discoveredGroupId.add(tab.groupId);
+      if (!isDiscovered) {
+        discoveredGroupId.add(tab.groupId);
+      }
       if (domainToGroupId[domain] == null) {
         domainToGroupId[domain] = {
           tabs: [],
