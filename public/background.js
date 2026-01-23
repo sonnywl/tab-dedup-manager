@@ -1,3 +1,4 @@
+import deepEquals from "./utils/deepEquals.js";
 import { startSyncStore } from "./utils/startSyncStore.js";
 
 chrome.action.onClicked.addListener(collapseDuplicateDomains);
@@ -120,9 +121,10 @@ async function consolidateToWindow(tabs, targetWindow) {
   }
 }
 
-async function groupDomainTabs(domainMap) {
+function buildDomainToGroupMap(domainMap) {
   const domainToGroupId = {};
   const discoveredGroupId = new Set();
+
   for (const [domain, data] of Object.entries(domainMap)) {
     for (const tab of data.tabs) {
       const isDiscovered = discoveredGroupId.has(tab.groupId);
@@ -136,6 +138,12 @@ async function groupDomainTabs(domainMap) {
       domainToGroupId[domain].tabs.push(tab);
     }
   }
+
+  return domainToGroupId;
+}
+
+async function groupDomainTabs(domainMap) {
+  const domainToGroupId = buildDomainToGroupMap(domainMap);
 
   for (const [domain, data] of Object.entries(domainToGroupId)) {
     const { groupID, tabs } = data;
@@ -177,17 +185,6 @@ async function groupDomainTabs(domainMap) {
   }
 }
 
-async function sortTabsByGroupStatus() {
-  const tabs = await chrome.tabs.query({ currentWindow: true });
-  const grouped = tabs.filter((t) => t.groupId !== -1);
-  const ungrouped = tabs.filter((t) => t.groupId === -1);
-
-  const sortedTabs = [...grouped, ...ungrouped];
-  for (let i = 0; i < sortedTabs.length; i++) {
-    await chrome.tabs.move(sortedTabs[i].id, { index: i });
-  }
-}
-
 async function getRelevantTabs(rulesByDomain) {
   const allTabs = await chrome.tabs.query({});
   return allTabs.filter((tab) => {
@@ -195,6 +192,37 @@ async function getRelevantTabs(rulesByDomain) {
     const rule = rulesByDomain[domain];
     return rule?.skipProcess == null || rule?.skipProcess === false;
   });
+}
+
+function determineDomainMapIsSortable(domainMap) {
+  for (const [domain, data] of Object.entries(domainMap)) {
+    const { tabs } = data;
+    if (tabs.length < 2) continue;
+
+    // Check 1: Duplicate URLs
+    const urls = new Set();
+    for (const tab of tabs) {
+      if (urls.has(tab.url)) return true;
+      urls.add(tab.url);
+    }
+
+    // Check 3: Ungrouped tabs (when multiple tabs exist)
+    const hasUngrouped = tabs.some((t) => t.groupId === -1);
+    if (hasUngrouped) return true;
+
+    // Check 4: Unsorted tabs within groups
+    const grouped = tabs.filter((t) => t.groupId !== -1);
+    if (grouped.length > 1) {
+      const sortedUrls = [...grouped].sort((a, b) =>
+        a.url.localeCompare(b.url),
+      );
+      for (let i = 0; i < grouped.length - 1; i++) {
+        if (grouped[i].url !== sortedUrls[i].url) return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function collapseDuplicateDomains() {
@@ -225,10 +253,17 @@ async function collapseDuplicateDomains() {
     }
 
     tabs = await getRelevantTabs(rulesByDomain);
-    const uniqueTabs = await deduplicateAllTabs(tabs);
-    const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
-    const domainMap = buildDomainMap(remainingTabs);
-    await groupDomainTabs(domainMap);
+    const isDomainMapSortable = determineDomainMapIsSortable(
+      buildDomainMap(tabs),
+    );
+    if (isDomainMapSortable) {
+      const uniqueTabs = await deduplicateAllTabs(tabs);
+      const remainingTabs = await applyAutoDeleteRules(
+        uniqueTabs,
+        rulesByDomain,
+      );
+      await groupDomainTabs(buildDomainMap(remainingTabs));
+    }
   } catch (e) {
     console.warn(e);
   }
