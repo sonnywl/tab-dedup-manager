@@ -1,10 +1,10 @@
 {
   "name": "tab_grouper",
   "version": "1.0.0",
+  "type": "module",
   "description": "Sorts and reduces tabs in active browser session",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "watch": "npm-watch"
   },
   "author": "",
@@ -13,17 +13,19 @@
     "@babel/cli": "^7.28.3",
     "@babel/preset-env": "^7.28.5",
     "@babel/preset-react": "^7.28.5",
-    "@vitejs/plugin-react": "^5.1.0",
-    "eslint": "^8.57.1",
-    "eslint-config-react-app": "^7.0.1",
+    "@tailwindcss/vite": "^4.1.17",
+    "@vitejs/plugin-react": "^5.1.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react": "^7.37.5",
+    "npm-watch": "^0.13.0",
     "prettier": "^3.6.2",
     "prettier-plugin-tailwindcss": "^0.7.1",
     "tailwindcss": "^4.1.17",
-    "vite": "^7.2.2",
-    "web-ext": "^9.1.0"
+    "vite": "^7.2.2"
   },
   "dependencies": {
-    "npm-watch": "^0.13.0",
+    "@heroicons/react": "^2.2.0",
+    "@tanstack/react-table": "^8.21.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

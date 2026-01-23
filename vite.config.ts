@@ -2,17 +2,20 @@ import { URL, fileURLToPath } from "url";
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 
 const aliases = [{ find: "utils", url: "./src/utils" }];
 
 // https://vitejs.dev/config/
 export default defineConfig((configEnv) => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  publicDir: "./public",
+  envDir: "./",
   resolve: {
-    alias: aliases.map((a) => ({
-      find: a.find,
-      replacement: fileURLToPath(new URL(a.url, import.meta.url)),
-    })),
+    alias: aliases.reduce((acc, curr) => {
+      acc[curr.find] = fileURLToPath(new URL(curr.url, import.meta.url));
+      return acc;
+    }, {}),
   },
   build: {
     sourcemap: configEnv.mode === "development",

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tab Dedup Manager",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Customizable multi suggestion search tab viewer",
   "icons": {
     "192": "logo192.png",
@@ -17,17 +17,10 @@
     "default_icon": { "192": "logo192.png" },
     "default_title": "ProjectL"
   },
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' object-src"
-  },
   "background": {
-    "scripts": [
-      "./back/dexie.min.mjs",
-      "./back/IndexDBWrapper.js",
-      "./back/background.js"
-    ],
+    "scripts": ["./background.js"],
     "type": "module"
   },
   "incognito": "spanning",
-  "permissions": ["tabs", "history", "storage"]
+  "permissions": ["tabs", "tabGroups", "storage"]
 }

@@ -1,19 +1,29 @@
 {
-    "manifest_version": 3,
-    "name": "Tab Dedup Manager",
-    "version": "0.0.2",
-    "description": "Tab Group Manager",
-    "options_page": "index.html",
-    "action": {
-        "default_icon": { "192": "logo192.png" },
-        "default_title": "View all available tests"
-    },
-    "background": {
-        "scripts": [
-            "./background.js"
-        ],
-        "type": "module"
-    },
-    "incognito": "spanning",
-    "permissions": ["tabs", "tabGroups", "storage"]
+  "manifest_version": 3,
+  "name": "Tab Dedup Manager",
+  "version": "0.0.3",
+  "description": "Customizable multi suggestion search tab viewer",
+  "icons": {
+    "192": "logo192.png",
+    "512": "logo512.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tab_dedup_manager@time_current.com",
+      "update_url": "https://sea-lion-app-i977g.ondigitalocean.app/updates.json"
+    }
+  },
+  "action": {
+    "default_icon": { "192": "logo192.png" },
+    "default_title": "ProjectL"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' object-src"
+  },
+  "background": {
+    "scripts": ["./back/background.js"],
+    "type": "module"
+  },
+  "incognito": "spanning",
+  "permissions": ["commands", "tabs", "tabGroups", "storage"]
 }
