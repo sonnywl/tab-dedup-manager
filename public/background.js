@@ -153,13 +153,27 @@ async function groupDomainTabs(domainMap) {
       if (incorrectTabGroup.length > 0) {
         await chrome.tabs.ungroup(incorrectTabGroup.map((tab) => tab.id));
       }
-      await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
+      try {
+        await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
+      } catch {
+        domainToGroupId[domain].groupID = await chrome.tabs.group({
+          tabIds: tabIDs,
+        });
+      }
     }
 
     await chrome.tabGroups.update(domainToGroupId[domain].groupID, {
       collapsed: false,
       title: domain,
     });
+    const groupedTabs = await chrome.tabs.query({
+      groupId: domainToGroupId[domain].groupID,
+    });
+    groupedTabs.sort((a, b) => a.url.localeCompare(b.url));
+    const firstIndex = Math.min(...groupedTabs.map((t) => t.index));
+    for (let i = 0; i < groupedTabs.length; i++) {
+      await chrome.tabs.move(groupedTabs[i].id, { index: firstIndex + i });
+    }
   }
 }
 
@@ -214,9 +228,7 @@ async function collapseDuplicateDomains() {
     const uniqueTabs = await deduplicateAllTabs(tabs);
     const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
     const domainMap = buildDomainMap(remainingTabs);
-
     await groupDomainTabs(domainMap);
-    await sortTabsByGroupStatus();
   } catch (e) {
     console.warn(e);
   }
