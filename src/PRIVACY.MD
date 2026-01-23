@@ -39,7 +39,7 @@ These third parties are only given access to information necessary to perform th
 
 ## Data Security
 
-We take reasonable and commercially acceptable measures to protect the information we collect. However, no method of transmission over the internet or electronic storage is completely secure, and we cannot guarantee absolute security.
+This service does not store any data to sell to data providers. All data are stored on the user's platform of choice.
 
 ---
 
