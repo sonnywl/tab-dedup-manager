@@ -1,4 +1,3 @@
-```markdown
 # Privacy Policy
 
 **Tab Dedup Manager** (“we”, “our”, or “the Service”) values your privacy and is committed to protecting it. This Privacy Policy explains how information is collected, used, and protected when you use the Service.
@@ -21,9 +20,9 @@ If personal information is voluntarily provided (for example, through a support 
 
 To improve reliability, stability, and performance, the Service may collect **limited, non-personal, and aggregated information**, including:
 
-- Application errors or crash reports  
-- Basic usage metrics  
-- Performance and stability data  
+- Application errors or crash reports
+- Basic usage metrics
+- Performance and stability data
 
 This information does **not** identify individual users and is used solely to maintain and improve the Service.
 
@@ -78,4 +77,3 @@ We may update this Privacy Policy from time to time. Any changes will be posted 
 ## Contact Us
 
 If you have any questions, concerns, or suggestions about this Privacy Policy, please contact us via **GitHub**.
-```
