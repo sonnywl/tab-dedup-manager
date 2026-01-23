@@ -5,16 +5,6 @@ chrome.tabs.onCreated.addListener(updateBadge);
 chrome.tabs.onRemoved.addListener(updateBadge);
 chrome.tabs.onUpdated.addListener(updateBadge);
 
-// chrome.commands.onCommand.addListener((command) => {
-// switch (command) {
-// case "merge-windows":
-// collapseDuplicateDomains();
-// break;
-// case "collapse-tabs-by-window":
-// break;
-// }
-// });
-
 function getDomain(url) {
   try {
     const urlObj = new URL(url);
@@ -29,7 +19,7 @@ function buildDomainMap(tabs) {
   tabs.forEach((tab) => {
     const domain = getDomain(tab.url);
     if (!domainMap[domain]) {
-      domainMap[domain] = { tabs: [], windowCounts: {}, seen: new Set() };
+      domainMap[domain] = { tabs: [], windowCounts: {} };
     }
     domainMap[domain].tabs.push(tab);
     domainMap[domain].windowCounts[tab.windowId] =
@@ -78,7 +68,8 @@ function getWindowWithMostTabs(windowCounts) {
   ).windowId;
 }
 
-function deduplicateTabs(tabs, seen) {
+async function deduplicateAllTabs(tabs) {
+  const seen = new Set();
   const uniqueTabs = [];
   const duplicateIds = [];
 
@@ -91,23 +82,34 @@ function deduplicateTabs(tabs, seen) {
     }
   });
 
-  return { uniqueTabs, duplicateIds };
-}
-
-function findHostTabAndGroup(tabs, targetWindow) {
-  let hostTab = null;
-  let existingGroupId = null;
-
-  for (const tab of tabs) {
-    if (tab.windowId === targetWindow) {
-      if (!hostTab) hostTab = tab;
-      if (tab.groupId !== -1 && !existingGroupId) {
-        existingGroupId = tab.groupId;
-      }
-    }
+  if (duplicateIds.length > 0) {
+    await chrome.tabs.remove(duplicateIds);
   }
 
-  return { hostTab: hostTab || tabs[0], existingGroupId };
+  return uniqueTabs;
+}
+
+async function applyAutoDeleteRules(tabs, rulesByDomain) {
+  const toDelete = [];
+  const remaining = [];
+
+  tabs.forEach((tab) => {
+    const domain = getDomain(tab.url);
+    const ruleKey = Object.keys(rulesByDomain).find((d) => d.includes(domain));
+    const rule = ruleKey ? rulesByDomain[ruleKey] : null;
+
+    if (rule?.autoDelete) {
+      toDelete.push(tab.id);
+    } else {
+      remaining.push(tab);
+    }
+  });
+
+  if (toDelete.length > 0) {
+    await chrome.tabs.remove(toDelete);
+  }
+
+  return remaining;
 }
 
 async function consolidateToWindow(tabs, targetWindow) {
@@ -120,71 +122,72 @@ async function consolidateToWindow(tabs, targetWindow) {
   }
 }
 
-async function groupOrMergeTabs(tabIds, existingGroupId) {
-  if (existingGroupId) {
-    const ungrouped = tabIds.filter((id, i) => {
-      return !tabIds.slice(0, i).includes(id);
-    });
-    if (ungrouped.length > 0) {
-      await chrome.tabs.group({ groupId: existingGroupId, tabIds: ungrouped });
+async function groupDomainTabs(domainMap) {
+  const domainGroups = {};
+
+  for (const [domain, data] of Object.entries(domainMap)) {
+    if (data.tabs.length < 2) continue;
+
+    const targetWindow = getWindowWithMostTabs(data.windowCounts);
+    await consolidateToWindow(data.tabs, targetWindow);
+
+    const tabIds = data.tabs.map(t => t.id);
+    const existingGroupId = domainGroups[domain] || data.tabs.find(t => t.groupId !== -1)?.groupId || null;
+
+    if (existingGroupId) {
+      const ungrouped = tabIds.filter(id => {
+        const tab = data.tabs.find(t => t.id === id);
+        return tab.groupId !== existingGroupId;
+      });
+      if (ungrouped.length > 0) {
+        await chrome.tabs.group({ groupId: existingGroupId, tabIds: ungrouped });
+      }
+      domainGroups[domain] = existingGroupId;
+    } else {
+      const groupId = await chrome.tabs.group({ tabIds });
+      await chrome.tabGroups.update(groupId, {
+        collapsed: false,
+        title: domain,
+      });
+      domainGroups[domain] = groupId;
     }
-    return existingGroupId;
   }
-  return await chrome.tabs.group({ tabIds });
+}
+
+async function sortTabsByGroupStatus(windowIds) {
+  for (const windowId of windowIds) {
+    const tabs = await chrome.tabs.query({ windowId });
+    const grouped = tabs.filter(t => t.groupId !== -1);
+    const ungrouped = tabs.filter(t => t.groupId === -1);
+    
+    const sortedTabs = [...grouped, ...ungrouped];
+    for (let i = 0; i < sortedTabs.length; i++) {
+      await chrome.tabs.move(sortedTabs[i].id, { index: i });
+    }
+  }
 }
 
 async function collapseDuplicateDomains() {
-  const tabs = await chrome.tabs.query({});
-  const store = await startSyncStore({ rules: [] });
-  const { rules } = await store.getState();
-  const rulesByDomain = rules.reduce((acc, curr) => {
-    if (curr.domain.length === 0) {
-      return acc;
-    }
-    acc[curr.domain] = curr;
-    return acc;
-  }, {});
-  const domainMap = buildDomainMap(tabs);
-  const sortedDomains = Object.keys(domainMap).sort(
-    (a, b) => b.length - a.length,
-  );
   try {
-    for (const domain of sortedDomains) {
-      const data = domainMap[domain];
-      const ruleKey = Object.keys(rulesByDomain).find((d) =>
-        d.includes(domain),
-      );
-      const rule = ruleKey ? rulesByDomain[ruleKey] : null;
+    const tabs = await chrome.tabs.query({});
+    const store = await startSyncStore({ rules: [] });
+    const { rules } = await store.getState();
+    
+    const rulesByDomain = rules.reduce((acc, curr) => {
+      if (curr.domain.length === 0) return acc;
+      acc[curr.domain] = curr;
+      return acc;
+    }, {});
 
-      if (rule?.autoDelete) {
-        await chrome.tabs.remove(data.tabs.map((t) => t.id));
-        continue;
-      }
-
-      if (data.tabs.length > 1) {
-        const targetWindow = getWindowWithMostTabs(data.windowCounts);
-        const { uniqueTabs, duplicateIds } = deduplicateTabs(
-          data.tabs,
-          data.seen,
-        );
-        const { existingGroupId } = findHostTabAndGroup(
-          uniqueTabs,
-          targetWindow,
-        );
-        if (duplicateIds.length > 0) {
-          await chrome.tabs.remove(duplicateIds);
-        }
-        await consolidateToWindow(uniqueTabs, targetWindow);
-        const uniqueTabIds = uniqueTabs.map((t) => t.id);
-        if (uniqueTabIds.length > 1) {
-          const groupId = await groupOrMergeTabs(uniqueTabIds, existingGroupId);
-          await chrome.tabGroups.update(groupId, {
-            collapsed: true,
-            title: domain,
-          });
-        }
-      }
-    }
+    const uniqueTabs = await deduplicateAllTabs(tabs);
+    const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
+    const domainMap = buildDomainMap(remainingTabs);
+    
+    await groupDomainTabs(domainMap);
+    
+    const windowIds = new Set(remainingTabs.map(t => t.windowId));
+    await sortTabsByGroupStatus(windowIds);
+    
   } catch (e) {
     console.warn(e);
   }

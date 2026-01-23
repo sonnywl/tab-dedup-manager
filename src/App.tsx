@@ -53,10 +53,11 @@ export default function App() {
     if (!isValidDomain(inputValue)) {
       return;
     }
+    const url = new URL(inputValue);
 
     const newRule: DomainRule = {
       id: Date.now().toString(),
-      domain: inputValue,
+      domain: url.hostname,
       autoDelete: false,
       splitByPath: false,
     };
