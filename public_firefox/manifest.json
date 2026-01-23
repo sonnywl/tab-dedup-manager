@@ -22,7 +22,11 @@
     "default_title": "Tab Dedup Manager"
   },
   "background": {
-    "scripts": ["./background.js", "./utils/startSyncStore.js"],
+    "scripts": [
+      "./background.js",
+      "./utils/startSyncStore.js",
+      "./utils/deepEquals.js"
+    ],
     "type": "module"
   },
   "incognito": "spanning",
