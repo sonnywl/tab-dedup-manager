@@ -9,8 +9,6 @@ const aliases = [{ find: "utils", url: "./src/utils" }];
 // https://vitejs.dev/config/
 export default defineConfig((configEnv) => ({
   plugins: [react(), tailwindcss()],
-  publicDir: "./public",
-  envDir: "./",
   resolve: {
     alias: aliases.reduce((acc, curr) => {
       acc[curr.find] = fileURLToPath(new URL(curr.url, import.meta.url));
@@ -18,7 +16,7 @@ export default defineConfig((configEnv) => ({
     }, {}),
   },
   build: {
-    sourcemap: configEnv.mode === "development",
+    sourcemap: 'inline',
     outDir: "./build",
     emptyOutDir: true,
     rollupOptions: {
