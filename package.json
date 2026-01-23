@@ -29,7 +29,8 @@
     "@heroicons/react": "^2.2.0",
     "@tanstack/react-table": "^8.21.3",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
   },
   "watch": {
     "build": {
