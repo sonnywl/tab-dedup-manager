@@ -125,13 +125,12 @@ async function groupDomainTabs(domainMap) {
   const discoveredGroupId = new Set();
   for (const [domain, data] of Object.entries(domainMap)) {
     for (const tab of data.tabs) {
-      const isNewGroup =
-        discoveredGroupId.has(tab.groupId) && tab.groupId !== -1;
-      isNewGroup && discoveredGroupId.add(tab.groupId);
+      const isDiscovered = discoveredGroupId.has(tab.groupId);
+      !isDiscovered && discoveredGroupId.add(tab.groupId);
       if (domainToGroupId[domain] == null) {
         domainToGroupId[domain] = {
           tabs: [],
-          groupID: isNewGroup ? null : tab.groupId,
+          groupID: isDiscovered ? null : tab.groupId,
         };
       }
       domainToGroupId[domain].tabs.push(tab);
@@ -150,6 +149,10 @@ async function groupDomainTabs(domainMap) {
         tabIds: tabIDs,
       });
     } else {
+      const incorrectTabGroup = tabs.filter((t) => t.groupId !== -1);
+      if (incorrectTabGroup.length > 0) {
+        await chrome.tabs.ungroup(incorrectTabGroup.map((tab) => tab.id));
+      }
       await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
     }
 
