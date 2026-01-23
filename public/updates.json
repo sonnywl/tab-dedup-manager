@@ -1,0 +1,19 @@
+{
+  "addons": {
+    "webex_search_viewer@time_current.com": {
+      "updates": [
+        {
+          "version": "2.22.70",
+          "update_link": "https://sea-lion-app-i977g.ondigitalocean.app/web-ext-artifacts/fb64573b4a24464eb356-2.22.70.xpi"
+        }
+      ]
+    },
+    "tab_dedup_manager@time_current.com": {
+      "updates": [
+        {
+          "version": "0.0.1"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+    "manifest_version": 3,
+    "name": "Tab Dedup Manager",
+    "version": "0.0.1",
+    "description": "Tab Group Manager",
+    "options_page": "index.html",
+    "action": {
+        "default_icon": { "192": "logo192.png" },
+        "default_title": "View all available tests"
+    },
+    "background": {
+        "scripts": [
+            "./background.js"
+        ],
+        "type": "module"
+    },
+    "incognito": "spanning",
+    "permissions": ["tabs", "tabGroups", "storage"]
+}
