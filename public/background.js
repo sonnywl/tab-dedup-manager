@@ -135,11 +135,32 @@ async function groupOrMergeTabs(tabIds, existingGroupId) {
 
 async function collapseDuplicateDomains() {
   const tabs = await chrome.tabs.query({});
-  const domainMap = buildDomainMap(tabs);
   const store = await startSyncStore({ rules: [] });
-  console.log(await store.getState());
+  const { rules } = await store.getState();
+  const rulesByDomain = rules.reduce((acc, curr) => {
+    if (curr.domain.length === 0) {
+      return acc;
+    }
+    acc[curr.domain] = curr;
+    return acc;
+  }, {});
+  const domainMap = buildDomainMap(tabs);
+  const sortedDomains = Object.keys(domainMap).sort(
+    (a, b) => b.length - a.length,
+  );
   try {
-    for (const [domain, data] of Object.entries(domainMap)) {
+    for (const domain of sortedDomains) {
+      const data = domainMap[domain];
+      const ruleKey = Object.keys(rulesByDomain).find((d) =>
+        d.includes(domain),
+      );
+      const rule = ruleKey ? rulesByDomain[ruleKey] : null;
+
+      if (rule?.autoDelete) {
+        await chrome.tabs.remove(data.tabs.map((t) => t.id));
+        continue;
+      }
+
       if (data.tabs.length > 1) {
         const targetWindow = getWindowWithMostTabs(data.windowCounts);
         const { uniqueTabs, duplicateIds } = deduplicateTabs(

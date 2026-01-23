@@ -8,14 +8,21 @@
     "192": "logo192.png",
     "512": "logo512.png"
   },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tab_dedup_manager@time_current.com",
+      "update_url": "https://sea-lion-app-i977g.ondigitalocean.app/updates.json",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  },
   "action": {
-    "default_icon": {
-      "192": "logo192.png"
-    },
-    "default_title": "View all available tests"
+    "default_icon": { "192": "logo192.png" },
+    "default_title": "Tab Dedup Manager"
   },
   "background": {
-    "service_worker": "./background.js",
+    "scripts": ["./background.js", "./utils/startSyncStore"],
     "type": "module"
   },
   "incognito": "spanning",

@@ -27,7 +27,7 @@ async function get(key) {
   const state = (await (!key || !key.length))
     ? localStorage.get(null)
     : localStorage.get(key);
-  return state || {};
+  return state ?? {};
 }
 
 async function set(data) {
