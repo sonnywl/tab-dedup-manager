@@ -59,6 +59,7 @@ export default function App() {
       id: Date.now().toString(),
       domain: url.hostname,
       autoDelete: false,
+      skipProcess: false,
       splitByPath: false,
     };
 
@@ -113,6 +114,9 @@ export default function App() {
                   Domain
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Skip
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Auto Delete
                 </th>
                 {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -142,10 +146,20 @@ export default function App() {
                     <td className="px-6 py-4">
                       <input
                         type="checkbox"
+                        checked={rule.skipProcess}
+                        onChange={(e) => {
+                          updateRule(rule.id, "skipProcess", e.target.checked);
+                        }}
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
                         checked={rule.autoDelete}
-                        onChange={(e) =>
-                          updateRule(rule.id, "autoDelete", e.target.checked)
-                        }
+                        onChange={(e) => {
+                          updateRule(rule.id, "autoDelete", e.target.checked);
+                        }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                       />
                     </td>

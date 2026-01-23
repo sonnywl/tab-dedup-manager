@@ -135,10 +135,6 @@ async function groupDomainTabs(domainMap) {
         };
       }
       domainToGroupId[domain].tabs.push(tab);
-
-      if (domainToGroupId[domain].groupID === -1 && tab.groupId !== -1) {
-        domainToGroupId[domain].groupID = tab.groupId;
-      }
     }
   }
 
@@ -149,7 +145,7 @@ async function groupDomainTabs(domainMap) {
     }
 
     const tabIDs = tabs.map((t) => t.id);
-    if (groupID == null) {
+    if (groupID == null || groupID === -1) {
       domainToGroupId[domain].groupID = await chrome.tabs.group({
         tabIds: tabIDs,
       });
@@ -175,9 +171,17 @@ async function sortTabsByGroupStatus() {
   }
 }
 
+async function getRelevantTabs(rulesByDomain) {
+  const allTabs = await chrome.tabs.query({});
+  return allTabs.filter((tab) => {
+    const domain = getDomain(tab.url);
+    const rule = rulesByDomain[domain];
+    return rule?.skipProcess == null || rule?.skipProcess === false;
+  });
+}
+
 async function collapseDuplicateDomains() {
   try {
-    const allTabs = await chrome.tabs.query({});
     const store = await startSyncStore({ rules: [] });
     const { rules } = await store.getState();
 
@@ -187,11 +191,14 @@ async function collapseDuplicateDomains() {
       return acc;
     }, {});
 
+    let tabs = await getRelevantTabs(rulesByDomain);
+
     const windows = await chrome.windows.getAll();
     if (windows.length > 1) {
       const activeWindow = await chrome.windows.getCurrent();
       const targetWindow = activeWindow.id;
-      const tabsToMove = allTabs.filter((t) => t.windowId !== targetWindow);
+      const tabsToMove = tabs.filter((t) => t.windowId !== targetWindow);
+
       if (tabsToMove.length > 0) {
         await chrome.tabs.move(
           tabsToMove.map((t) => t.id),
@@ -200,7 +207,7 @@ async function collapseDuplicateDomains() {
       }
     }
 
-    const tabs = await chrome.tabs.query({});
+    tabs = await getRelevantTabs(rulesByDomain);
     const uniqueTabs = await deduplicateAllTabs(tabs);
     const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
     const domainMap = buildDomainMap(remainingTabs);
