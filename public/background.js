@@ -144,7 +144,6 @@ function buildDomainToGroupMap(domainMap) {
 
 async function groupDomainTabs(domainMap) {
   const domainToGroupId = buildDomainToGroupMap(domainMap);
-
   for (const [domain, data] of Object.entries(domainToGroupId)) {
     const { groupID, tabs } = data;
     if (tabs.length < 2) {
@@ -220,6 +219,18 @@ function determineDomainMapIsSortable(domainMap) {
         if (grouped[i].url !== sortedUrls[i].url) return true;
       }
     }
+  }
+
+  // Check 5: Mixed domains in same group (global check)
+  const allTabs = Object.values(domainMap).flatMap((d) => d.tabs);
+  const groupMap = {};
+  for (const tab of allTabs) {
+    if (tab.groupId === -1) continue;
+    if (!groupMap[tab.groupId]) groupMap[tab.groupId] = new Set();
+    groupMap[tab.groupId].add(getDomain(tab.url));
+  }
+  for (const domains of Object.values(groupMap)) {
+    if (domains.size > 1) return true;
   }
 
   return false;
