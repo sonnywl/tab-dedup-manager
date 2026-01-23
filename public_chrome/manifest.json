@@ -19,5 +19,5 @@
     "type": "module"
   },
   "incognito": "spanning",
-  "permissions": ["tabs", "tabGroups", "storage"]
+  "permissions": ["tabs", "tabGroups"]
 }
