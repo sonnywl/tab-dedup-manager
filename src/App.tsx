@@ -8,12 +8,8 @@ import {
 import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
 import reactLogo from "./assets/react.svg";
-import startSyncStore from "utils/startSyncStore";
+import startSyncStore from "./utils/startSyncStore";
 import viteLogo from "/vite.svg";
-
-const { setState: onSaveAppConfig, getState: getAppConfig } = startSyncStore({
-  rules: [],
-});
 
 function isValidDomain(url: string): boolean {
   const trimmed = url.trim();
@@ -29,19 +25,28 @@ export default function App() {
   const [input, setInput] = useState("");
 
   const setRulesWithLocal = useCallback(async (rules) => {
-    const appConfig = await getAppConfig();
+    const { setState, getState } = await startSyncStore({
+      rules: [],
+    });
+
+    const appConfig = await getState();
     console.log(appConfig, rules);
     setRules(rules);
-    onSaveAppConfig({ ...appConfig, rules });
+    await setState({ ...appConfig, rules });
   }, []);
 
   useEffect(() => {
     const retrieveData = async () => {
-      const config = await getAppConfig();
+      const { getState } = await startSyncStore({
+        rules: [],
+      });
+
+      const config = await getState();
+      console.log(config);
       setRules(config.rules);
     };
+    retrieveData();
   }, []);
-
   const addDomain = (e) => {
     e.preventDefault();
     const inputValue = input.trim();
