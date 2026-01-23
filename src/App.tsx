@@ -42,11 +42,11 @@ export default function App() {
       });
 
       const config = await getState();
-      console.log(config);
       setRules(config.rules);
     };
     retrieveData();
   }, []);
+
   const addDomain = (e) => {
     e.preventDefault();
     const inputValue = input.trim();
@@ -114,9 +114,9 @@ export default function App() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Auto Delete
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Split by Path
-                </th>
+                </th> */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Actions
                 </th>
@@ -148,7 +148,7 @@ export default function App() {
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                       />
                     </td>
-                    <td className="px-6 py-4">
+                    {/* <td className="px-6 py-4">
                       <input
                         type="checkbox"
                         checked={rule.splitByPath}
@@ -157,7 +157,7 @@ export default function App() {
                         }
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                       />
-                    </td>
+                    </td> */}
                     <td className="px-6 py-4">
                       <button
                         onClick={() => removeDomain(rule.id)}

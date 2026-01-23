@@ -167,7 +167,7 @@ async function collapseDuplicateDomains() {
           data.tabs,
           data.seen,
         );
-        const { hostTab, existingGroupId } = findHostTabAndGroup(
+        const { existingGroupId } = findHostTabAndGroup(
           uniqueTabs,
           targetWindow,
         );
@@ -180,7 +180,7 @@ async function collapseDuplicateDomains() {
           const groupId = await groupOrMergeTabs(uniqueTabIds, existingGroupId);
           await chrome.tabGroups.update(groupId, {
             collapsed: true,
-            title: hostTab.title || domain,
+            title: domain,
           });
         }
       }
