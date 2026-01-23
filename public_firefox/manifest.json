@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "Tab Dedup Manager",
   "version": "0.1.2",
-  "description": "Customizable multi suggestion search tab viewer",
+  "description": "Tab Group Manager",
+  "options_page": "index.html",
   "icons": {
     "192": "logo192.png",
     "512": "logo512.png"
@@ -21,9 +22,9 @@
     "default_title": "Tab Dedup Manager"
   },
   "background": {
-    "scripts": ["./background.js"],
+    "scripts": ["./background.js", "./utils/startSyncStore"],
     "type": "module"
   },
   "incognito": "spanning",
-  "permissions": ["tabs", "tabGroups"]
+  "permissions": ["storage", "tabs", "tabGroups"]
 }

@@ -1,16 +1,18 @@
+import { startSyncStore } from "./utils/startSyncStore.js";
+
 chrome.action.onClicked.addListener(collapseDuplicateDomains);
 chrome.tabs.onCreated.addListener(updateBadge);
 chrome.tabs.onRemoved.addListener(updateBadge);
 chrome.tabs.onUpdated.addListener(updateBadge);
 
 // chrome.commands.onCommand.addListener((command) => {
-  // switch (command) {
-    // case "merge-windows":
-      // collapseDuplicateDomains();
-      // break;
-    // case "collapse-tabs-by-window":
-      // break;
-  // }
+// switch (command) {
+// case "merge-windows":
+// collapseDuplicateDomains();
+// break;
+// case "collapse-tabs-by-window":
+// break;
+// }
 // });
 
 function getDomain(url) {
@@ -72,7 +74,7 @@ function getWindowWithMostTabs(windowCounts) {
   return Object.entries(windowCounts).reduce(
     (max, [wId, count]) =>
       count > max.count ? { windowId: parseInt(wId), count } : max,
-    { windowId: null, count: 0 }
+    { windowId: null, count: 0 },
   ).windowId;
 }
 
@@ -113,7 +115,7 @@ async function consolidateToWindow(tabs, targetWindow) {
   if (tabsToMove.length > 0) {
     await chrome.tabs.move(
       tabsToMove.map((t) => t.id),
-      { windowId: targetWindow, index: -1 }
+      { windowId: targetWindow, index: -1 },
     );
   }
 }
@@ -134,17 +136,19 @@ async function groupOrMergeTabs(tabIds, existingGroupId) {
 async function collapseDuplicateDomains() {
   const tabs = await chrome.tabs.query({});
   const domainMap = buildDomainMap(tabs);
+  const store = await startSyncStore({ rules: [] });
+  console.log(await store.getState());
   try {
     for (const [domain, data] of Object.entries(domainMap)) {
       if (data.tabs.length > 1) {
         const targetWindow = getWindowWithMostTabs(data.windowCounts);
         const { uniqueTabs, duplicateIds } = deduplicateTabs(
           data.tabs,
-          data.seen
+          data.seen,
         );
         const { hostTab, existingGroupId } = findHostTabAndGroup(
           uniqueTabs,
-          targetWindow
+          targetWindow,
         );
         if (duplicateIds.length > 0) {
           await chrome.tabs.remove(duplicateIds);

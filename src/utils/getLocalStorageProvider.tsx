@@ -1,9 +1,14 @@
+
+import startSyncStore from "./startSyncStore";
+
 export type LocalStorageProviderType<T> = {
   deleteKey: () => void;
   onSave: (save: T) => boolean;
   deserializedValue: T;
   getValue: () => T;
 };
+
+const startSyncStore = startSyncStore();
 
 export default function getLocalStorageProvider<T>(
   storageKey: string,

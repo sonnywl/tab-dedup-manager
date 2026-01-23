@@ -5,16 +5,15 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useState } from "react";
 
-import getLocalStorageProvider from "utils/getLocalStorageProvider";
 import reactLogo from "./assets/react.svg";
+import startSyncStore from "utils/startSyncStore";
 import viteLogo from "/vite.svg";
 
-const { onSave: onSaveAppConfig, deserializedValue: appConfig } =
-  getLocalStorageProvider("app_configs", {
-    rules: [],
-  });
+const { setState: onSaveAppConfig, getState: getAppConfig } = startSyncStore({
+  rules: [],
+});
 
 function isValidDomain(url: string): boolean {
   const trimmed = url.trim();
@@ -26,19 +25,29 @@ function isValidDomain(url: string): boolean {
 }
 
 export default function App() {
-  const [rules, setRules] = useState<DomainRule[]>(appConfig.rules);
+  const [rules, setRules] = useState<DomainRule[]>([]);
   const [input, setInput] = useState("");
 
-  const setRulesWithLocal = useCallback(
-    (rules) => {
-      setRules(rules);
-      onSaveRules({ ...appConfig, rules });
-    },
-    [appConfig]
-  );
-  const addDomain = () => {
+  const setRulesWithLocal = useCallback(async (rules) => {
+    const appConfig = await getAppConfig();
+    console.log(appConfig, rules);
+    setRules(rules);
+    onSaveAppConfig({ ...appConfig, rules });
+  }, []);
+
+  useEffect(() => {
+    const retrieveData = async () => {
+      const config = await getAppConfig();
+      setRules(config.rules);
+    };
+  }, []);
+
+  const addDomain = (e) => {
+    e.preventDefault();
     const inputValue = input.trim();
-    if (!isValidDomain(inputValue)) return;
+    if (!isValidDomain(inputValue)) {
+      return;
+    }
 
     const newRule: DomainRule = {
       id: Date.now().toString(),
@@ -57,7 +66,7 @@ export default function App() {
 
   const updateRule = (id: string, field: keyof DomainRule, value: any) => {
     setRulesWithLocal(
-      rules.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+      rules.map((r) => (r.id === id ? { ...r, [field]: value } : r)),
     );
   };
 
@@ -77,13 +86,12 @@ export default function App() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && addDomain()}
               placeholder="example.com"
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button
-              onClick={addDomain}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 pointer"
+              type="submit"
             >
               <PlusIcon className="w-4 h-4" />
               Add
@@ -159,7 +167,7 @@ export default function App() {
             </tbody>
           </table>
         </div>
-        <Info />
+        {/* <Info /> */}
       </div>
     </div>
   );
