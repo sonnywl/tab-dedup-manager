@@ -17,7 +17,6 @@ function getDomain(url: string | undefined): string {
   }
 }
 
-
 interface DomainMap {
   [domain: string]: { tabs: chrome.tabs.Tab[] };
 }
@@ -66,8 +65,6 @@ async function updateBadge(): Promise<void> {
   }
 }
 
-
-
 async function deduplicateAllTabs(
   tabs: chrome.tabs.Tab[],
 ): Promise<chrome.tabs.Tab[]> {
@@ -90,7 +87,6 @@ async function deduplicateAllTabs(
 
   return uniqueTabs;
 }
-
 
 interface Rule {
   domain: string;
@@ -127,9 +123,6 @@ async function applyAutoDeleteRules(
 
   return remaining;
 }
-
-
-
 
 interface DomainToGroupIdMap {
   [domain: string]: {
@@ -171,7 +164,9 @@ async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
       continue;
     }
 
-    const tabIDs = tabs.map((t) => t.id).filter((id) => id !== undefined) as number[];
+    const tabIDs = tabs
+      .map((t) => t.id)
+      .filter((id) => id !== undefined) as number[];
     if (groupID == null || groupID === -1) {
       domainToGroupId[domain].groupID = await chrome.tabs.group({
         tabIds: tabIDs,
@@ -179,7 +174,11 @@ async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
     } else {
       const incorrectTabGroup = tabs.filter((t) => t.groupId !== -1);
       if (incorrectTabGroup.length > 0) {
-        await chrome.tabs.ungroup(incorrectTabGroup.map((tab) => tab.id).filter((id) => id !== undefined) as number[]);
+        await chrome.tabs.ungroup(
+          incorrectTabGroup
+            .map((tab) => tab.id)
+            .filter((id) => id !== undefined) as number[],
+        );
       }
       try {
         await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
@@ -198,10 +197,14 @@ async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
       const groupedTabs = await chrome.tabs.query({
         groupId: domainToGroupId[domain].groupID as number,
       });
-      groupedTabs.sort((a, b) => (a.url && b.url ? a.url.localeCompare(b.url) : 0));
+      groupedTabs.sort((a, b) =>
+        a.url && b.url ? a.url.localeCompare(b.url) : 0,
+      );
       const firstIndex = Math.min(...groupedTabs.map((t) => t.index));
       for (let i = 0; i < groupedTabs.length; i++) {
-        await chrome.tabs.move(groupedTabs[i].id as number, { index: firstIndex + i });
+        await chrome.tabs.move(groupedTabs[i].id as number, {
+          index: firstIndex + i,
+        });
       }
     }
   }
@@ -263,7 +266,6 @@ function determineDomainMapIsSortable(domainMap: DomainMap): boolean {
   return false;
 }
 
-
 interface SyncStore {
   getState: () => Promise<{ rules: Rule[] }>;
 }
@@ -292,7 +294,9 @@ async function collapseDuplicateDomains(): Promise<void> {
 
       if (tabsToMove.length > 0) {
         await chrome.tabs.move(
-          tabsToMove.map((t) => t.id).filter((id) => id !== undefined) as number[],
+          tabsToMove
+            .map((t) => t.id)
+            .filter((id) => id !== undefined) as number[],
           { windowId: targetWindow, index: -1 },
         );
       }
@@ -314,4 +318,3 @@ async function collapseDuplicateDomains(): Promise<void> {
     console.warn(e);
   }
 }
-
