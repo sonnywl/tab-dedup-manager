@@ -214,7 +214,20 @@ async function getRelevantTabs(
   rulesByDomain: RulesByDomain,
 ): Promise<chrome.tabs.Tab[]> {
   const allTabs = await chrome.tabs.query({});
+  const windows = await chrome.windows.getAll({ populate: false });
+  const appWindowIds = new Set(
+    windows.filter((w) => w.type === "app").map((w) => w.id),
+  );
+
   return allTabs.filter((tab) => {
+    if (
+      !tab.url ||
+      tab.url.startsWith("chrome-extension://") ||
+      (tab.windowId && appWindowIds.has(tab.windowId))
+    ) {
+      return false;
+    }
+
     const domain = getDomain(tab.url);
     const rule = rulesByDomain[domain];
     return rule?.skipProcess == null || rule?.skipProcess === false;
