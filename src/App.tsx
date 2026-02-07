@@ -5,11 +5,17 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import reactLogo from "./assets/react.svg";
 import startSyncStore from "./utils/startSyncStore";
-import viteLogo from "/vite.svg";
+
+interface DomainRule {
+  id: string;
+  domain: string;
+  autoDelete: boolean;
+  skipProcess: boolean;
+  splitByPath: boolean;
+}
 
 function isValidDomain(url: string): boolean {
   const trimmed = url.trim();
@@ -30,7 +36,6 @@ export default function App() {
     });
 
     const appConfig = await getState();
-    console.log(appConfig, rules);
     setRules(rules);
     await setState({ ...appConfig, rules });
   }, []);

@@ -186,20 +186,14 @@ async function buildGroupState(
     const { tabs } = data;
 
     if (tabs.length < 2) {
-      if (tabs[0] && isGrouped(tabs[0])) {
-        groupStates.push({
-          domain,
-          tabIds: extractTabIds([tabs[0]]),
-          groupId: tabs[0].groupId,
-          needsReposition: false,
-        });
-      }
       continue;
     }
 
     const validTabs = await getValidTabsForDomain(tabs, domain, tabCache);
 
-    if (validTabs.length < 2) continue;
+    if (validTabs.length < 2) {
+      continue;
+    }
 
     validTabs.sort((a, b) => (a.url && b.url ? a.url.localeCompare(b.url) : 0));
 
@@ -312,6 +306,21 @@ export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
       }
     }
 
+    const allGroupedTabIds = new Set(groupStates.flatMap((s) => s.tabIds));
+
+    for (const [domain, data] of Object.entries(domainMap)) {
+      if (data.tabs.length === 1) {
+        const singleTab = data.tabs[0];
+        if (
+          singleTab?.id &&
+          isGrouped(singleTab) &&
+          !allGroupedTabIds.has(singleTab.id)
+        ) {
+          await chrome.tabs.ungroup([singleTab.id]);
+        }
+      }
+    }
+
     groupStates = await calculateRepositionNeeds(groupStates);
 
     const needsReposition = groupStates.filter((s) => s.needsReposition);
@@ -323,14 +332,18 @@ export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
       return;
     }
 
+    for (const state of groupStates) {
+      if (state.tabIds.length === 0) continue;
+      await chrome.tabs.ungroup(state.tabIds);
+    }
+
     let targetIndex = 0;
     for (const state of groupStates) {
       if (state.tabIds.length === 0) continue;
 
-      if (state.needsReposition) {
-        await chrome.tabs.ungroup(state.tabIds);
-        await chrome.tabs.move(state.tabIds, { index: targetIndex });
+      await chrome.tabs.move(state.tabIds, { index: targetIndex });
 
+      if (state.tabIds.length >= 2) {
         const newGroupId = await chrome.tabs.group({ tabIds: state.tabIds });
         await chrome.tabGroups.update(newGroupId, {
           collapsed: false,
