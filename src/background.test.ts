@@ -115,10 +115,9 @@ describe("groupDomainTabs", () => {
       title: "example.com",
     });
 
-    // Check that tabs were moved to be sorted
-    expect(mockChrome.tabs.move).toHaveBeenCalledTimes(2);
-    expect(mockChrome.tabs.move).toHaveBeenCalledWith(1, { index: 0 });
-    expect(mockChrome.tabs.move).toHaveBeenCalledWith(2, { index: 1 });
+    // Check that tabs were moved in a single, sorted batch
+    expect(mockChrome.tabs.move).toHaveBeenCalledTimes(1);
+    expect(mockChrome.tabs.move).toHaveBeenCalledWith([1, 2], { index: 0 });
   });
 
   it("should add tabs to an existing group", async () => {

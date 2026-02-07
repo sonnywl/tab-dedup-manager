@@ -197,14 +197,16 @@ export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
       const groupedTabs = await chrome.tabs.query({
         groupId: domainToGroupId[domain].groupID as number,
       });
+      const firstIndex = Math.min(...groupedTabs.map((t) => t.index));
+      
       groupedTabs.sort((a, b) =>
         a.url && b.url ? a.url.localeCompare(b.url) : 0,
       );
-      const firstIndex = Math.min(...groupedTabs.map((t) => t.index));
-      for (let i = 0; i < groupedTabs.length; i++) {
-        await chrome.tabs.move(groupedTabs[i].id as number, {
-          index: firstIndex + i,
-        });
+      
+      const sortedTabIds = groupedTabs.map((t) => t.id).filter((id): id is number => id !== undefined);
+
+      if (sortedTabIds.length > 0) {
+        await chrome.tabs.move(sortedTabIds, { index: firstIndex });
       }
     }
   }
@@ -232,51 +234,6 @@ async function getRelevantTabs(
     const rule = rulesByDomain[domain];
     return rule?.skipProcess == null || rule?.skipProcess === false;
   });
-}
-
-function determineDomainMapIsSortable(domainMap: DomainMap): boolean {
-  for (const [, data] of Object.entries(domainMap)) {
-    const { tabs } = data;
-    if (tabs.length < 2) continue;
-
-    // Check 1: Duplicate URLs
-    const urls = new Set<string>();
-    for (const tab of tabs) {
-      if (tab.url) {
-        if (urls.has(tab.url)) return true;
-        urls.add(tab.url);
-      }
-    }
-
-    // Check 3: Ungrouped tabs (when multiple tabs exist)
-    const hasUngrouped = tabs.some((t) => t.groupId === -1);
-    if (hasUngrouped) return true;
-
-    // Check 4: Unsorted tabs within groups
-    const grouped = tabs.filter((t) => t.groupId !== -1);
-    if (grouped.length > 1) {
-      const sortedUrls = [...grouped].sort((a, b) =>
-        a.url && b.url ? a.url.localeCompare(b.url) : 0,
-      );
-      for (let i = 0; i < grouped.length - 1; i++) {
-        if (grouped[i].url !== sortedUrls[i].url) return true;
-      }
-    }
-  }
-
-  // Check 5: Mixed domains in same group (global check)
-  const allTabs = Object.values(domainMap).flatMap((d) => d.tabs);
-  const groupMap: { [groupId: number]: Set<string> } = {};
-  for (const tab of allTabs) {
-    if (tab.groupId === -1) continue;
-    if (!groupMap[tab.groupId]) groupMap[tab.groupId] = new Set();
-    groupMap[tab.groupId].add(getDomain(tab.url));
-  }
-  for (const domains of Object.values(groupMap)) {
-    if (domains.size > 1) return true;
-  }
-
-  return false;
 }
 
 interface SyncStore {
@@ -309,24 +266,23 @@ async function collapseDuplicateDomains(): Promise<void> {
         await chrome.tabs.move(
           tabsToMove
             .map((t) => t.id)
-            .filter((id) => id !== undefined) as number[],
+            .filter((id): id is number => id !== undefined),
           { windowId: targetWindow, index: -1 },
         );
       }
     }
 
+    // Get the latest tab status after potential moves
     tabs = await getRelevantTabs(rulesByDomain);
-    const isDomainMapSortable = determineDomainMapIsSortable(
-      buildDomainMap(tabs),
+    
+    // Always run the organization sequence. The functions are idempotent.
+    const uniqueTabs = await deduplicateAllTabs(tabs);
+    const remainingTabs = await applyAutoDeleteRules(
+      uniqueTabs,
+      rulesByDomain,
     );
-    if (isDomainMapSortable) {
-      const uniqueTabs = await deduplicateAllTabs(tabs);
-      const remainingTabs = await applyAutoDeleteRules(
-        uniqueTabs,
-        rulesByDomain,
-      );
-      await groupDomainTabs(buildDomainMap(remainingTabs));
-    }
+    await groupDomainTabs(buildDomainMap(remainingTabs));
+
   } catch (e) {
     console.warn(e);
   }
