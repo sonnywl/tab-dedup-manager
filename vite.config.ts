@@ -1,6 +1,8 @@
+/// <reference types="vitest" />
+
 import { URL, fileURLToPath } from "url";
 
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -9,6 +11,9 @@ const aliases = [{ find: "utils", url: "./src/utils" }];
 // https://vitejs.dev/config/
 export default defineConfig((configEnv) => ({
   plugins: [react(), tailwindcss()],
+  test: {
+    environment: "jsdom",
+  },
   resolve: {
     alias: aliases.reduce((acc, curr) => {
       acc[curr.find] = fileURLToPath(new URL(curr.url, import.meta.url));
