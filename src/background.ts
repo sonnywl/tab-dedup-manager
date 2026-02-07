@@ -131,7 +131,7 @@ interface DomainToGroupIdMap {
   };
 }
 
-function buildDomainToGroupMap(domainMap: DomainMap): DomainToGroupIdMap {
+export function buildDomainToGroupMap(domainMap: DomainMap): DomainToGroupIdMap {
   const domainToGroupId: DomainToGroupIdMap = {};
   const discoveredGroupId = new Set<number>();
 
@@ -156,7 +156,7 @@ function buildDomainToGroupMap(domainMap: DomainMap): DomainToGroupIdMap {
   return domainToGroupId;
 }
 
-async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
+export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
   const domainToGroupId = buildDomainToGroupMap(domainMap);
   for (const [domain, data] of Object.entries(domainToGroupId)) {
     const { groupID, tabs } = data;
@@ -172,7 +172,7 @@ async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
         tabIds: tabIDs,
       });
     } else {
-      const incorrectTabGroup = tabs.filter((t) => t.groupId !== -1);
+      const incorrectTabGroup = tabs.filter((t) => t.groupId !== groupID && t.groupId !== -1);
       if (incorrectTabGroup.length > 0) {
         await chrome.tabs.ungroup(
           incorrectTabGroup
