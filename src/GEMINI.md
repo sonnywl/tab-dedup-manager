@@ -1,36 +1,49 @@
-# `background.ts` - TypeScript Background Service Worker
+# Tab Grouping Rules
 
-This TypeScript file (`background.ts`) serves as the background service worker for the Chrome extension. Its primary role is to manage browser tabs by grouping them based on their domain, applying user-defined rules, and maintaining a clear, organized tab experience.
+## Requirements
 
-The script is event-driven, responding to browser events and managing tab states through a series of procedural steps and rules.
+| Rule            | Behavior                                          |
+| --------------- | ------------------------------------------------- |
+| Group threshold | 2+ tabs with same domain → group, 1 tab → ungroup |
+| Group title     | Domain name, must match all tab domains           |
+| Sort order      | Groups alphabetical by domain → ungrouped tabs    |
+| Exclusions      | Skip PWA windows, extension pages                 |
 
-## Operational Flow and Rules
+## Flow
 
-The `background.ts` script operates based on the following flow and rules:
+```
+Filter tabs (exclude PWAs) → Deduplicate → Auto-delete → Build domain map
+  ↓
+Build state (validate domains, sort URLs, track groupIds)
+  ↓
+Apply state (create/reuse groups, ungroup singles)
+  ↓
+Calculate reposition needs (compare current vs expected indices)
+  ↓
+Conditional reposition (only if needsReposition = true)
+```
 
-1.  **Event Listeners & Triggers**:
-    *   **Tab Events**: It continuously monitors `chrome.tabs.onCreated`, `chrome.tabs.onRemoved`, and `chrome.tabs.onUpdated` to keep track of tab changes.
-    *   **Action Click**: The core functionality is triggered when the user clicks the extension's icon (`chrome.action.onClicked`), which initiates the `collapseDuplicateDomains` process.
+## State Components
 
-2.  **Badge Updates (`updateBadge`)**:
-    *   **Rule**: After any tab creation, removal, or update, the script calculates the number of duplicate tabs.
-    *   **Procedure**: If duplicates exist, the extension's badge is updated with the count and a distinctive background color, providing immediate visual feedback to the user.
+| Function                   | Input        | Output                  | Side Effects     |
+| -------------------------- | ------------ | ----------------------- | ---------------- |
+| `buildGroupState`          | Domain map   | GroupState[]            | None             |
+| `calculateRepositionNeeds` | GroupState[] | GroupState[] with flags | None             |
+| `applyGroupState`          | GroupState   | void                    | Chrome API calls |
 
-3.  **Tab Grouping and Management (`collapseDuplicateDomains`)**:
-    *   **Rule**: When triggered by a user action, this function orchestrates the entire tab organization process.
-    *   **Procedure**:
-        *   **Fetch Rules**: It retrieves user-defined rules (e.g., `autoDelete`, `skipProcess`) from `chrome.storage.sync`.
-        *   **Identify Relevant Tabs**: Filters out tabs based on `skipProcess` rules.
-        *   **Window Consolidation (Optional)**: If multiple browser windows are open, it moves tabs from other windows into the current active window to consolidate them, improving grouping efficiency.
-        *   **Deduplication (`deduplicateAllTabs`)**: Identifies and closes tabs with identical URLs, ensuring only unique tabs remain.
-        *   **Auto-Deletion (`applyAutoDeleteRules`)**: Closes tabs matching `autoDelete` rules configured by the user.
-        *   **Domain-Based Grouping (`groupDomainTabs`)**: Groups remaining tabs into logical tab groups based on their domain. It handles existing groups, ensures proper group titles, and sorts tabs within groups for consistency.
-            *   **Condition for Grouping**: Grouping only occurs if a domain has two or more tabs.
+## Edge Cases
 
-## Key Data Structures for State Management
+| Condition                | Action                     |
+| ------------------------ | -------------------------- |
+| Tab domain ≠ group title | Ungroup, regroup correctly |
+| Tabs already positioned  | Skip reposition            |
+| Group creation fails     | Create new group           |
+| Single tab in domain     | Ungroup if grouped         |
 
-While event-driven, the script uses several internal data structures to manage and process tab information dynamically:
+## Performance
 
-*   **`DomainMap`**: Temporarily stores tabs organized by their domain, facilitating domain-specific operations.
-*   **`RulesByDomain`**: A derived map of user rules, efficiently associating rules with their respective domains.
-*   **`DomainToGroupIdMap`**: Helps track existing tab group IDs for domains to ensure tabs are added to correct groups or new ones are created as needed.
+- O(n) tab filtering + deduplication
+- O(g) group operations
+- O(r) repositions where r ≤ g
+- Single tab query cached in Map
+- Skip Chrome API when state matches desired

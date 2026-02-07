@@ -54,7 +54,7 @@ function countDuplicates(tabs: chrome.tabs.Tab[]): number {
 }
 
 async function updateBadge(): Promise<void> {
-  const tabs = await chrome.tabs.query({});
+  const tabs = await getAllNonAppTabs();
   const duplicateCount = countDuplicates(tabs);
 
   if (duplicateCount > 0) {
@@ -124,97 +124,235 @@ async function applyAutoDeleteRules(
   return remaining;
 }
 
-interface DomainToGroupIdMap {
-  [domain: string]: {
-    tabs: chrome.tabs.Tab[];
-    groupID: number | null;
-  };
+function extractTabIds(tabs: chrome.tabs.Tab[]): number[] {
+  return tabs.map((t) => t.id).filter((id): id is number => id !== undefined);
 }
 
-export function buildDomainToGroupMap(domainMap: DomainMap): DomainToGroupIdMap {
-  const domainToGroupId: DomainToGroupIdMap = {};
-  const discoveredGroupId = new Set<number>();
+function isGrouped(tab: chrome.tabs.Tab): boolean {
+  return tab.groupId != null && tab.groupId !== -1;
+}
 
-  for (const [domain, data] of Object.entries(domainMap)) {
-    for (const tab of data.tabs) {
-      if (tab.groupId) {
-        const isDiscovered = discoveredGroupId.has(tab.groupId);
-        if (!isDiscovered) {
-          discoveredGroupId.add(tab.groupId);
-        }
-        if (domainToGroupId[domain] == null) {
-          domainToGroupId[domain] = {
-            tabs: [],
-            groupID: isDiscovered ? null : tab.groupId,
-          };
-        }
-        domainToGroupId[domain].tabs.push(tab);
-      }
+async function ungroupSingleTab(
+  tab: chrome.tabs.Tab | undefined,
+): Promise<void> {
+  if (tab?.id && isGrouped(tab)) {
+    await chrome.tabs.ungroup([tab.id]);
+  }
+}
+
+async function getValidTabsForDomain(
+  tabs: chrome.tabs.Tab[],
+  domain: string,
+  tabCache: Map<number, chrome.tabs.Tab>,
+): Promise<chrome.tabs.Tab[]> {
+  const tabIDs = extractTabIds(tabs);
+  const freshTabs = tabIDs
+    .map((id) => tabCache.get(id))
+    .filter((t): t is chrome.tabs.Tab => t !== undefined);
+  return freshTabs.filter((t) => getDomain(t.url) === domain);
+}
+
+async function ungroupIfNeeded(tabs: chrome.tabs.Tab[]): Promise<void> {
+  const tabIds = extractTabIds(tabs);
+  if (tabIds.length > 0) {
+    const grouped = tabs.filter(isGrouped);
+    if (grouped.length > 0) {
+      await chrome.tabs.ungroup(tabIds);
     }
   }
-
-  return domainToGroupId;
 }
 
-export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
-  const domainToGroupId = buildDomainToGroupMap(domainMap);
-  for (const [domain, data] of Object.entries(domainToGroupId)) {
-    const { groupID, tabs } = data;
+interface GroupState {
+  domain: string;
+  tabIds: number[];
+  groupId: number | null;
+  needsReposition: boolean;
+}
+
+interface GroupState {
+  domain: string;
+  tabIds: number[];
+  groupId: number | null;
+  needsReposition: boolean;
+}
+
+async function buildGroupState(
+  domainMap: DomainMap,
+  tabCache: Map<number, chrome.tabs.Tab>,
+): Promise<GroupState[]> {
+  const groupStates: GroupState[] = [];
+
+  for (const [domain, data] of Object.entries(domainMap)) {
+    const { tabs } = data;
+
     if (tabs.length < 2) {
+      if (tabs[0] && isGrouped(tabs[0])) {
+        groupStates.push({
+          domain,
+          tabIds: extractTabIds([tabs[0]]),
+          groupId: tabs[0].groupId,
+          needsReposition: false,
+        });
+      }
       continue;
     }
 
-    const tabIDs = tabs
-      .map((t) => t.id)
-      .filter((id) => id !== undefined) as number[];
-    if (groupID == null || groupID === -1) {
-      domainToGroupId[domain].groupID = await chrome.tabs.group({
-        tabIds: tabIDs,
+    const validTabs = await getValidTabsForDomain(tabs, domain, tabCache);
+
+    if (validTabs.length < 2) continue;
+
+    validTabs.sort((a, b) => (a.url && b.url ? a.url.localeCompare(b.url) : 0));
+
+    const existingGroup = validTabs.find(isGrouped);
+    const sortedTabIds = extractTabIds(validTabs);
+
+    groupStates.push({
+      domain,
+      tabIds: sortedTabIds,
+      groupId: existingGroup?.groupId ?? null,
+      needsReposition: false,
+    });
+  }
+
+  return groupStates;
+}
+
+async function calculateRepositionNeeds(
+  groupStates: GroupState[],
+): Promise<GroupState[]> {
+  groupStates.sort((a, b) => a.domain.localeCompare(b.domain));
+
+  const allTabs = await getAllNonAppTabs();
+  const tabIndexMap = new Map(allTabs.map((t) => [t.id, t.index]));
+
+  let expectedIndex = 0;
+
+  return groupStates.map((state) => {
+    if (state.tabIds.length === 0) {
+      return state;
+    }
+
+    const currentIndices = state.tabIds
+      .map((id) => tabIndexMap.get(id))
+      .filter((idx): idx is number => idx !== undefined);
+
+    const currentFirstIndex =
+      currentIndices.length > 0 ? Math.min(...currentIndices) : expectedIndex;
+
+    const needsReposition = currentFirstIndex !== expectedIndex;
+    expectedIndex += state.tabIds.length;
+
+    return { ...state, needsReposition };
+  });
+}
+
+async function applyGroupState(
+  state: GroupState,
+  tabCache: Map<number, chrome.tabs.Tab>,
+): Promise<void> {
+  if (state.tabIds.length < 2) {
+    if (state.groupId !== null && state.tabIds.length > 0) {
+      await chrome.tabs.ungroup(state.tabIds);
+    }
+    return;
+  }
+
+  if (state.groupId === null) {
+    const newGroupId = await chrome.tabs.group({ tabIds: state.tabIds });
+    await chrome.tabGroups.update(newGroupId, {
+      collapsed: false,
+      title: state.domain,
+    });
+    state.groupId = newGroupId;
+  } else {
+    const wrongGroup = state.tabIds.filter((id) => {
+      const tab = tabCache.get(id);
+      return tab && tab.groupId !== state.groupId && isGrouped(tab);
+    });
+
+    if (wrongGroup.length > 0) {
+      await chrome.tabs.ungroup(wrongGroup);
+    }
+
+    try {
+      await chrome.tabs.group({ groupId: state.groupId, tabIds: state.tabIds });
+    } catch {
+      const newGroupId = await chrome.tabs.group({ tabIds: state.tabIds });
+      await chrome.tabGroups.update(newGroupId, {
+        collapsed: false,
+        title: state.domain,
       });
-    } else {
-      const incorrectTabGroup = tabs.filter((t) => t.groupId !== groupID && t.groupId !== -1);
-      if (incorrectTabGroup.length > 0) {
-        await chrome.tabs.ungroup(
-          incorrectTabGroup
-            .map((tab) => tab.id)
-            .filter((id) => id !== undefined) as number[],
-        );
-      }
+      state.groupId = newGroupId;
+    }
+
+    await chrome.tabGroups.update(state.groupId, {
+      collapsed: false,
+      title: state.domain,
+    });
+  }
+}
+
+export async function groupDomainTabs(domainMap: DomainMap): Promise<void> {
+  const errors: Array<{ domain: string; error: Error }> = [];
+
+  try {
+    const allCurrentTabs = await getAllNonAppTabs();
+    const tabCache = new Map(allCurrentTabs.map((t) => [t.id, t]));
+
+    let groupStates = await buildGroupState(domainMap, tabCache);
+
+    for (const state of groupStates) {
       try {
-        await chrome.tabs.group({ groupId: groupID, tabIds: tabIDs });
-      } catch {
-        domainToGroupId[domain].groupID = await chrome.tabs.group({
-          tabIds: tabIDs,
+        await applyGroupState(state, tabCache);
+      } catch (error) {
+        errors.push({
+          domain: state.domain,
+          error: error instanceof Error ? error : new Error(String(error)),
         });
       }
     }
 
-    if (domainToGroupId[domain].groupID !== null) {
-      await chrome.tabGroups.update(domainToGroupId[domain].groupID as number, {
-        collapsed: false,
-        title: domain,
-      });
-      const groupedTabs = await chrome.tabs.query({
-        groupId: domainToGroupId[domain].groupID as number,
-      });
-      const firstIndex = Math.min(...groupedTabs.map((t) => t.index));
-      
-      groupedTabs.sort((a, b) =>
-        a.url && b.url ? a.url.localeCompare(b.url) : 0,
-      );
-      
-      const sortedTabIds = groupedTabs.map((t) => t.id).filter((id): id is number => id !== undefined);
+    groupStates = await calculateRepositionNeeds(groupStates);
 
-      if (sortedTabIds.length > 0) {
-        await chrome.tabs.move(sortedTabIds, { index: firstIndex });
+    const needsReposition = groupStates.filter((s) => s.needsReposition);
+
+    if (needsReposition.length === 0) {
+      if (errors.length > 0) {
+        console.warn("Grouping errors:", errors);
       }
+      return;
     }
+
+    let targetIndex = 0;
+    for (const state of groupStates) {
+      if (state.tabIds.length === 0) continue;
+
+      if (state.needsReposition) {
+        await chrome.tabs.ungroup(state.tabIds);
+        await chrome.tabs.move(state.tabIds, { index: targetIndex });
+
+        const newGroupId = await chrome.tabs.group({ tabIds: state.tabIds });
+        await chrome.tabGroups.update(newGroupId, {
+          collapsed: false,
+          title: state.domain,
+        });
+      }
+
+      targetIndex += state.tabIds.length;
+    }
+  } catch (error) {
+    errors.push({
+      domain: "global",
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
+  }
+
+  if (errors.length > 0) {
+    console.warn("Grouping errors:", errors);
   }
 }
 
-async function getRelevantTabs(
-  rulesByDomain: RulesByDomain,
-): Promise<chrome.tabs.Tab[]> {
+async function getAllNonAppTabs(): Promise<chrome.tabs.Tab[]> {
   const allTabs = await chrome.tabs.query({});
   const windows = await chrome.windows.getAll({ populate: false });
   const appWindowIds = new Set(
@@ -222,14 +360,22 @@ async function getRelevantTabs(
   );
 
   return allTabs.filter((tab) => {
-    if (
-      !tab.url ||
-      tab.url.startsWith("chrome-extension://") ||
-      (tab.windowId && appWindowIds.has(tab.windowId))
-    ) {
+    if (!tab.url || tab.url.startsWith("chrome-extension://")) {
       return false;
     }
+    if (tab.windowId && appWindowIds.has(tab.windowId)) {
+      return false;
+    }
+    return true;
+  });
+}
 
+async function getRelevantTabs(
+  rulesByDomain: RulesByDomain,
+): Promise<chrome.tabs.Tab[]> {
+  const nonAppTabs = await getAllNonAppTabs();
+
+  return nonAppTabs.filter((tab) => {
     const domain = getDomain(tab.url);
     const rule = rulesByDomain[domain];
     return rule?.skipProcess == null || rule?.skipProcess === false;
@@ -263,26 +409,19 @@ async function collapseDuplicateDomains(): Promise<void> {
       const tabsToMove = tabs.filter((t) => t.windowId !== targetWindow);
 
       if (tabsToMove.length > 0) {
-        await chrome.tabs.move(
-          tabsToMove
-            .map((t) => t.id)
-            .filter((id): id is number => id !== undefined),
-          { windowId: targetWindow, index: -1 },
-        );
+        await chrome.tabs.move(extractTabIds(tabsToMove), {
+          windowId: targetWindow,
+          index: -1,
+        });
       }
     }
 
-    // Get the latest tab status after potential moves
     tabs = await getRelevantTabs(rulesByDomain);
-    
-    // Always run the organization sequence. The functions are idempotent.
     const uniqueTabs = await deduplicateAllTabs(tabs);
-    const remainingTabs = await applyAutoDeleteRules(
-      uniqueTabs,
-      rulesByDomain,
-    );
-    await groupDomainTabs(buildDomainMap(remainingTabs));
+    const remainingTabs = await applyAutoDeleteRules(uniqueTabs, rulesByDomain);
 
+    const freshDomainMap = buildDomainMap(remainingTabs);
+    await groupDomainTabs(freshDomainMap);
   } catch (e) {
     console.warn(e);
   }
