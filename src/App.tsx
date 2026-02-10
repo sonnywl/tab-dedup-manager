@@ -14,7 +14,8 @@ interface DomainRule {
   domain: string;
   autoDelete: boolean;
   skipProcess: boolean;
-  splitByPath: boolean;
+  splitByPath: boolean | undefined;
+  groupName: string | undefined;
 }
 
 function isValidDomain(url: string): boolean {
