@@ -24,6 +24,7 @@ build
 *.sln
 *.sw?
 *.zip
+.gemini
 package-lock.json
 
 # Build
