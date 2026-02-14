@@ -10,12 +10,16 @@ The application is structured into three distinct layers to promote separation o
 
 ## Requirements
 
-| Rule            | Behavior                                                             |
-| --------------- | -------------------------------------------------------------------- |
-| Group threshold | 2+ tabs with same domain → group, 1 tab → ungroup, stay in place     |
-| Group title     | Domain name, must match all tab domains                              |
-| Sort order      | Groups alphabetical by domain → ungrouped tabs (unmodified position) |
-| Exclusions      | Skip PWA windows, extension pages                                    |
+| Rule            | Behavior                                                                        |
+| --------------- | ------------------------------------------------------------------------------- |
+| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, stay in place |
+| Grouping Scope  | Global (merge all to active window) OR per-window grouping                      |
+| Group title     | Domain name by default, or user-defined custom group name                       |
+| Custom Groups   | Multiple domains can be mapped to a single group name to merge them together    |
+| Sort order      | Groups alphabetical by title → ungrouped tabs (unmodified position)             |
+| Rule: Skip      | Completely ignore domain during deduplication and grouping                      |
+| Rule: Delete    | Automatically close tabs matching domain when processing                        |
+| Exclusions      | Always skip PWA windows and extension internal pages                            |
 
 ## Flow (Orchestrated by `TabGroupingController.execute()`)
 
