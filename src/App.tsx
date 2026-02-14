@@ -32,7 +32,7 @@ function GroupNameInput({
         value={value}
         disabled={disabled}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-          onChange(e.target.value.trim())
+          onChange(e.target.value)
         }
         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
         placeholder="Group name..."
