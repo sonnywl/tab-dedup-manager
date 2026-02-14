@@ -11,9 +11,9 @@ type WindowId = number & { readonly __brand: "WindowId" };
 
 interface Rule {
   domain: string;
-  autoDelete: boolean | null;
-  skipProcess: boolean | null;
-  groupName: string | null;
+  autoDelete: boolean | null | undefined;
+  skipProcess: boolean | null | undefined;
+  groupName: string | null | undefined;
 }
 
 interface RulesByDomain {
@@ -135,12 +135,12 @@ async function retry<T>(
 function validateRule(rule: any): rule is Rule {
   return (
     (typeof rule === "object" &&
-      rule !== null &&
+      rule != null &&
       typeof rule.domain === "string" &&
-      rule.autoDelete === null) ||
-    (typeof rule.autoDelete === "boolean" && rule.skipProcess === null) ||
+      rule.autoDelete == null) ||
+    (typeof rule.autoDelete === "boolean" && rule.skipProcess == null) ||
     (typeof rule.skipProcess === "boolean" &&
-      (rule.groupName === null || typeof rule.groupName === "string"))
+      (rule.groupName == null || typeof rule.groupName === "string"))
   );
 }
 
