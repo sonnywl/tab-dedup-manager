@@ -632,7 +632,6 @@ describe("TabGroupingController", () => {
 
       const result = serviceInstance.calculateRepositionNeeds(
         groupStates as any,
-        tabIndexMap as any,
         tabCache as any,
       );
 

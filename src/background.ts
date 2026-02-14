@@ -275,6 +275,21 @@ export class TabGroupingService {
     groupStates: GroupState[],
     tabCache: Map<TabId, Tab>,
   ): GroupState[] {
+    // Pre-calculate a map of groupId to the number of tabs actually in that group in Chrome
+    const tabsInGroupCount = new Map<number, number>();
+    const tabsInGroupIdMap = new Map<number, Set<TabId>>();
+
+    tabCache.forEach((tab) => {
+      if (isGrouped(tab)) {
+        const gid = tab.groupId!;
+        tabsInGroupCount.set(gid, (tabsInGroupCount.get(gid) || 0) + 1);
+        if (!tabsInGroupIdMap.has(gid)) {
+          tabsInGroupIdMap.set(gid, new Set());
+        }
+        tabsInGroupIdMap.get(gid)!.add(asTabId(tab.id)!);
+      }
+    });
+
     // Sort groups alphabetically based on the URL of their constituent tabs
     const sorted = [...groupStates].sort((a, b) => {
       const isGroupA = a.tabIds.length >= 2;
@@ -305,13 +320,26 @@ export class TabGroupingService {
         return isAtRightIndex && isInRightGroup;
       });
 
-      // Check if the group contains tabs that shouldn't be there
+      // Check if the group contains exactly and only the tabs it should have
       let isClean = true;
-      if (state.tabIds.length >= 2 && state.groupId !== null) {
-        const tabsInGroup = Array.from(tabCache.values()).filter(
-          (t) => t.groupId === state.groupId,
-        );
-        if (tabsInGroup.length !== state.tabIds.length) {
+      if (state.groupId !== null) {
+        const actualCount = tabsInGroupCount.get(state.groupId as number) || 0;
+        if (actualCount !== state.tabIds.length) {
+          isClean = false;
+        } else {
+          // Verify they are the SAME tabs
+          const currentTabIds = tabsInGroupIdMap.get(state.groupId as number);
+          if (
+            !currentTabIds ||
+            !state.tabIds.every((id) => currentTabIds.has(id))
+          ) {
+            isClean = false;
+          }
+        }
+      } else if (state.tabIds.length === 1) {
+        // Single tab should not be in any group
+        const tab = tabCache.get(state.tabIds[0]);
+        if (tab && isGrouped(tab)) {
           isClean = false;
         }
       }
@@ -722,7 +750,7 @@ export class ChromeTabAdapter {
 // ============================================================================
 
 export class TabGroupingController {
-  private isProcessing = false;
+  private static isProcessing = false;
   private service = new TabGroupingService();
   private adapter = new ChromeTabAdapter();
 
@@ -802,12 +830,12 @@ export class TabGroupingController {
   }
 
   async execute(): Promise<void> {
-    if (this.isProcessing) {
+    if (TabGroupingController.isProcessing) {
       console.log("Already processing, skipping...");
       return;
     }
 
-    this.isProcessing = true;
+    TabGroupingController.isProcessing = true;
 
     try {
       const store: SyncStore = await startSyncStore({
@@ -893,7 +921,7 @@ export class TabGroupingController {
     } catch (e) {
       console.warn("Execute error:", e);
     } finally {
-      this.isProcessing = false;
+      TabGroupingController.isProcessing = false;
     }
   }
 }
@@ -902,9 +930,9 @@ export class TabGroupingController {
 // EVENT HANDLERS
 // ============================================================================
 
+const controller = new TabGroupingController();
+
 export function init() {
-  console.log("Hello");
-  const controller = new TabGroupingController();
   const service = new TabGroupingService();
   const adapter = new ChromeTabAdapter();
 
