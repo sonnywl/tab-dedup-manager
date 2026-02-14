@@ -884,6 +884,7 @@ export class TabGroupingController {
 // ============================================================================
 
 export function init() {
+  console.log("Hello");
   const controller = new TabGroupingController();
   const service = new TabGroupingService();
   const adapter = new ChromeTabAdapter();
@@ -900,4 +901,4 @@ export function init() {
 }
 
 // In a non-test environment, you would typically call init() here:
-// init();
+init();
