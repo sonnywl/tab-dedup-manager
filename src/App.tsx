@@ -1,12 +1,7 @@
 import { PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
 import { useCallback, useEffect, useState } from "react";
 
+// @ts-ignore
 import startSyncStore from "./utils/startSyncStore";
 
 interface DomainRule {
@@ -16,6 +11,39 @@ interface DomainRule {
   skipProcess: boolean;
   splitByPath: boolean | undefined;
   groupName: string | undefined;
+}
+
+function GroupNameInput({
+  value,
+  onChange,
+  existingGroups,
+  disabled,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  existingGroups: string[];
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <input
+        list="group-names"
+        type="text"
+        value={value}
+        disabled={disabled}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+          onChange(e.target.value.trim())
+        }
+        className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
+        placeholder="Group name..."
+      />
+      <datalist id="group-names">
+        {existingGroups.map((group) => (
+          <option key={group} value={group} />
+        ))}
+      </datalist>
+    </>
+  );
 }
 
 function isValidDomain(url: string): boolean {
@@ -31,7 +59,11 @@ export default function App() {
   const [rules, setRules] = useState<DomainRule[]>([]);
   const [input, setInput] = useState("");
 
-  const setRulesWithLocal = useCallback(async (rules) => {
+  const existingGroups = Array.from(
+    new Set(rules.map((r) => r.groupName).filter(Boolean)),
+  ) as string[];
+
+  const setRulesWithLocal = useCallback(async (rules: DomainRule[]) => {
     const { setState, getState } = await startSyncStore({
       rules: [],
     });
@@ -53,7 +85,7 @@ export default function App() {
     retrieveData();
   }, []);
 
-  const addDomain = (e) => {
+  const addDomain = (e: React.SubmitEvent) => {
     e.preventDefault();
     const inputValue = input.trim();
     if (!isValidDomain(inputValue)) {
@@ -67,6 +99,7 @@ export default function App() {
       autoDelete: false,
       skipProcess: false,
       splitByPath: false,
+      groupName: "",
     };
 
     setRulesWithLocal([...rules, newRule]);
@@ -98,7 +131,9 @@ export default function App() {
             <input
               type="text"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setInput(e.target.value)
+              }
               placeholder="example.com"
               className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -125,9 +160,9 @@ export default function App() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Auto Delete
                 </th>
-                {/* <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                  Split by Path
-                </th> */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Group
+                </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Actions
                 </th>
@@ -137,7 +172,7 @@ export default function App() {
               {rules.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={4}
+                    colSpan={5}
                     className="px-6 py-8 text-center text-gray-500"
                   >
                     No domains added
@@ -153,7 +188,7 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={rule.skipProcess}
-                        onChange={(e) => {
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           updateRule(rule.id, "skipProcess", e.target.checked);
                         }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
@@ -163,22 +198,23 @@ export default function App() {
                       <input
                         type="checkbox"
                         checked={rule.autoDelete}
-                        onChange={(e) => {
+                        disabled={rule.skipProcess}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                           updateRule(rule.id, "autoDelete", e.target.checked);
                         }}
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                       />
                     </td>
-                    {/* <td className="px-6 py-4">
-                      <input
-                        type="checkbox"
-                        checked={rule.splitByPath}
-                        onChange={(e) =>
-                          updateRule(rule.id, "splitByPath", e.target.checked)
+                    <td className="px-6 py-4">
+                      <GroupNameInput
+                        value={rule.groupName || ""}
+                        disabled={rule.skipProcess}
+                        onChange={(val) =>
+                          updateRule(rule.id, "groupName", val)
                         }
-                        className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                        existingGroups={existingGroups}
                       />
-                    </td> */}
+                    </td>
                     <td className="px-6 py-4">
                       <button
                         onClick={() => removeDomain(rule.id)}
