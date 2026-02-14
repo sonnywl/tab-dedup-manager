@@ -273,7 +273,6 @@ export class TabGroupingService {
 
   calculateRepositionNeeds(
     groupStates: GroupState[],
-    tabIndexMap: Map<TabId, number>,
     tabCache: Map<TabId, Tab>,
   ): GroupState[] {
     // Sort groups alphabetically based on the URL of their constituent tabs
@@ -306,7 +305,18 @@ export class TabGroupingService {
         return isAtRightIndex && isInRightGroup;
       });
 
-      const needsReposition = !isConsistent;
+      // Check if the group contains tabs that shouldn't be there
+      let isClean = true;
+      if (state.tabIds.length >= 2 && state.groupId !== null) {
+        const tabsInGroup = Array.from(tabCache.values()).filter(
+          (t) => t.groupId === state.groupId,
+        );
+        if (tabsInGroup.length !== state.tabIds.length) {
+          isClean = false;
+        }
+      }
+
+      const needsReposition = !isConsistent || !isClean;
       expectedIndex += state.tabIds.length;
 
       return { ...state, needsReposition };
@@ -324,7 +334,11 @@ export class TabGroupingService {
       if (state.tabIds.length === 0) return;
 
       if (state.needsReposition) {
+        toUngroup.push(...state.tabIds);
         toMove.push({ tabIds: state.tabIds, index: targetIndex });
+        if (state.tabIds.length >= 2) {
+          toGroup.push({ tabIds: state.tabIds, displayName: state.domain });
+        }
       }
 
       targetIndex += state.tabIds.length;
@@ -766,12 +780,8 @@ export class TabGroupingController {
         : allCurrentTabs;
       tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
 
-      const tabIndexMap = new Map(
-        relevantTabs.map((t) => [asTabId(t.id)!, t.index]),
-      );
       groupStates = this.service.calculateRepositionNeeds(
         groupStates,
-        tabIndexMap,
         tabCache,
       );
 

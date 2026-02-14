@@ -602,9 +602,11 @@ describe("TabGroupingController", () => {
       const plan = serviceInstance.createGroupPlan(groupStates as any); // Cast for simplicity
 
       // plan follows order of groupStates and only includes those needing repositioning.
-      expect(plan.toUngroup).toEqual([]);
+      expect(plan.toUngroup).toEqual([1, 2]);
       expect(plan.toMove).toEqual([{ tabIds: [1, 2], index: 0 }]);
-      expect(plan.toGroup).toEqual([]);
+      expect(plan.toGroup).toEqual([
+        { tabIds: [1, 2], displayName: "example.com" },
+      ]);
     });
 
     it("should sort grouped tabs before ungrouped tabs while maintaining alphabetical order", () => {
