@@ -246,19 +246,14 @@ export class TabGroupingService {
     for (const data of domainMap.values()) {
       const { tabs, displayName, domains } = data;
 
-      if (tabs.length < 2) {
-        continue;
-      }
-
       const validTabs = this.filterValidTabs(tabs, domains, tabCache);
 
-      if (validTabs.length < 2) {
+      if (validTabs.length === 0) {
         continue;
       }
 
-      validTabs.sort((a, b) =>
-        a.url && b.url ? a.url.localeCompare(b.url) : 0,
-      );
+      // Sort tabs within the group alphabetically by URL
+      validTabs.sort((a, b) => (a.url || "").localeCompare(b.url || ""));
 
       const existingGroup = validTabs.find(isGrouped);
       const sortedTabIds = extractTabIds(validTabs);
@@ -279,26 +274,39 @@ export class TabGroupingService {
   calculateRepositionNeeds(
     groupStates: GroupState[],
     tabIndexMap: Map<TabId, number>,
+    tabCache: Map<TabId, Tab>,
   ): GroupState[] {
-    const sorted = [...groupStates].sort((a, b) =>
-      a.domain.localeCompare(b.domain),
-    );
+    // Sort groups alphabetically based on the URL of their constituent tabs
+    const sorted = [...groupStates].sort((a, b) => {
+      const isGroupA = a.tabIds.length >= 2;
+      const isGroupB = b.tabIds.length >= 2;
+
+      if (isGroupA !== isGroupB) {
+        return isGroupA ? -1 : 1;
+      }
+
+      const urlA = tabCache.get(a.tabIds[0])?.url || "";
+      const urlB = tabCache.get(b.tabIds[0])?.url || "";
+      return urlA.localeCompare(urlB);
+    });
 
     let expectedIndex = 0;
 
     return sorted.map((state) => {
-      if (state.tabIds.length === 0) {
-        return state;
-      }
+      const isConsistent = state.tabIds.every((id, i) => {
+        const tab = tabCache.get(id);
+        if (!tab) return false;
 
-      const currentIndices = state.tabIds
-        .map((id) => tabIndexMap.get(id))
-        .filter(isDefined);
+        const isAtRightIndex = tab.index === expectedIndex + i;
+        const isInRightGroup =
+          state.tabIds.length >= 2
+            ? tab.groupId === state.groupId
+            : tab.groupId === -1;
 
-      const currentFirstIndex =
-        currentIndices.length > 0 ? Math.min(...currentIndices) : expectedIndex;
+        return isAtRightIndex && isInRightGroup;
+      });
 
-      const needsReposition = currentFirstIndex !== expectedIndex;
+      const needsReposition = !isConsistent;
       expectedIndex += state.tabIds.length;
 
       return { ...state, needsReposition };
@@ -311,19 +319,12 @@ export class TabGroupingService {
       [];
     const toMove: Array<{ tabIds: readonly TabId[]; index: number }> = [];
 
-    groupStates.forEach((state) => {
-      if (state.tabIds.length === 0) return;
-      toUngroup.push(...state.tabIds);
-    });
-
     let targetIndex = 0;
     groupStates.forEach((state) => {
       if (state.tabIds.length === 0) return;
 
-      toMove.push({ tabIds: state.tabIds, index: targetIndex });
-
-      if (state.tabIds.length >= 2) {
-        toGroup.push({ tabIds: state.tabIds, displayName: state.domain });
+      if (state.needsReposition) {
+        toMove.push({ tabIds: state.tabIds, index: targetIndex });
       }
 
       targetIndex += state.tabIds.length;
@@ -731,11 +732,11 @@ export class TabGroupingController {
     windowId?: WindowId,
   ): Promise<Result<void, Error>> {
     try {
-      const allCurrentTabs = await this.adapter.getAllNonAppTabs();
-      const relevantTabs = windowId
+      let allCurrentTabs = await this.adapter.getAllNonAppTabs();
+      let relevantTabs = windowId
         ? allCurrentTabs.filter((t) => t.windowId === windowId)
         : allCurrentTabs;
-      const tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
+      let tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
 
       let groupStates = this.service.buildGroupStates(domainMap, tabCache);
 
@@ -758,12 +759,20 @@ export class TabGroupingController {
       const allGroupedTabIds = new Set(groupStates.flatMap((s) => s.tabIds));
       await this.adapter.ungroupSingleTabs(domainMap, allGroupedTabIds);
 
+      // Refresh cache after grouping as it may have changed indices and group IDs
+      allCurrentTabs = await this.adapter.getAllNonAppTabs();
+      relevantTabs = windowId
+        ? allCurrentTabs.filter((t) => t.windowId === windowId)
+        : allCurrentTabs;
+      tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
+
       const tabIndexMap = new Map(
         relevantTabs.map((t) => [asTabId(t.id)!, t.index]),
       );
       groupStates = this.service.calculateRepositionNeeds(
         groupStates,
         tabIndexMap,
+        tabCache,
       );
 
       const needsReposition = groupStates.filter((s) => s.needsReposition);
@@ -901,4 +910,6 @@ export function init() {
 }
 
 // In a non-test environment, you would typically call init() here:
-init();
+if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
+  init();
+}

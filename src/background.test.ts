@@ -1,4 +1,11 @@
-import { vi, describe, it, expect, beforeEach } from "vitest";
+// Import the actual classes and init function from background.ts
+import {
+  ChromeTabAdapter,
+  TabGroupingController,
+  TabGroupingService,
+  init,
+} from "./background";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock chrome API needs to be available at the top level for the module to load correctly.
 const mockChrome = {
@@ -14,7 +21,7 @@ const mockChrome = {
   },
   action: {
     onClicked: {
-        addListener: vi.fn(),
+      addListener: vi.fn(),
     },
     setBadgeText: vi.fn(),
     setBadgeBackgroundColor: vi.fn(),
@@ -26,13 +33,13 @@ const mockChrome = {
     move: vi.fn(),
     ungroup: vi.fn(),
     onCreated: {
-        addListener: vi.fn(),
+      addListener: vi.fn(),
     },
     onRemoved: {
-        addListener: vi.fn(),
+      addListener: vi.fn(),
     },
     onUpdated: {
-        addListener: vi.fn(),
+      addListener: vi.fn(),
     },
     remove: vi.fn(), // Added for deduplication and auto-delete
   },
@@ -43,7 +50,7 @@ const mockChrome = {
   windows: {
     getAll: vi.fn(),
     getCurrent: vi.fn(),
-  }
+  },
 };
 
 vi.stubGlobal("chrome", mockChrome);
@@ -61,7 +68,13 @@ vi.mock("./utils/startSyncStore.js", () => ({
 }));
 
 // Helper to create a mock tab
-const createMockTab = (id: number, url: string, groupId: number | null = null, index = 0, windowId = 1): chrome.tabs.Tab => ({
+const createMockTab = (
+  id: number,
+  url: string,
+  groupId: number | null = null,
+  index = 0,
+  windowId = 1,
+): chrome.tabs.Tab => ({
   id,
   url,
   groupId: groupId === null ? -1 : groupId,
@@ -82,9 +95,6 @@ const createMockTab = (id: number, url: string, groupId: number | null = null, i
   title: "",
   width: 0,
 });
-
-// Import the actual classes and init function from background.ts
-import { TabGroupingController, TabGroupingService, ChromeTabAdapter, init } from "./background";
 
 describe("TabGroupingController", () => {
   let controller: TabGroupingController;
@@ -119,14 +129,18 @@ describe("TabGroupingController", () => {
     } as unknown as ChromeTabAdapter; // Cast to ChromeTabAdapter
 
     // Spy on the constructors to make them return our mock instances
-    vi.spyOn(TabGroupingService.prototype, 'constructor').mockImplementation(function (this: TabGroupingService) {
+    vi.spyOn(TabGroupingService.prototype, "constructor").mockImplementation(
+      function (this: TabGroupingService) {
         Object.assign(this, mockInternalService);
         return this;
-    });
-    vi.spyOn(ChromeTabAdapter.prototype, 'constructor').mockImplementation(function (this: ChromeTabAdapter) {
+      },
+    );
+    vi.spyOn(ChromeTabAdapter.prototype, "constructor").mockImplementation(
+      function (this: ChromeTabAdapter) {
         Object.assign(this, mockInternalAdapter);
         return this;
-    });
+      },
+    );
 
     controller = new TabGroupingController();
 
@@ -139,27 +153,28 @@ describe("TabGroupingController", () => {
 
     // Call init to set up event listeners after mocks are ready
     // We can spy on init itself if we want to assert its call
-    vi.spyOn(init, 'call').mockImplementation(() => {}); // Prevent actual init logic from running during tests.
+    vi.spyOn(init, "call").mockImplementation(() => {}); // Prevent actual init logic from running during tests.
     init(); // Call the mocked init
     vi.mocked(init.call).mockRestore(); // Restore original init after it's been called once.
-
 
     // Clear all mocks for each test
     // We already did clearAllMocks() initially, this is for sanity or if some mocks were setup outside.
     // For mockInternalService and mockInternalAdapter, their methods are vi.fn(), so we clear them.
-    Object.values(mockInternalService).forEach(mockFn => {
+    Object.values(mockInternalService).forEach((mockFn) => {
       if (vi.isMockFunction(mockFn)) mockFn.mockClear();
     });
-    Object.values(mockInternalAdapter).forEach(mockFn => {
+    Object.values(mockInternalAdapter).forEach((mockFn) => {
       if (vi.isMockFunction(mockFn)) mockFn.mockClear();
     });
 
     // Clear controller's own methods that might have been spied on in previous tests
-    vi.spyOn(controller, 'groupByWindow' as any).mockClear();
-    vi.spyOn(controller, 'processGrouping' as any).mockClear();
-    vi.spyOn(controller, 'execute' as any).mockClear();
+    vi.spyOn(controller, "groupByWindow" as any).mockClear();
+    vi.spyOn(controller, "processGrouping" as any).mockClear();
+    vi.spyOn(controller, "execute" as any).mockClear();
 
     mockStore.getState.mockClear();
+    mockChrome.tabs.query.mockResolvedValue([]);
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
     mockChrome.tabs.query.mockClear();
     mockChrome.windows.getAll.mockClear();
     mockChrome.windows.getCurrent.mockClear();
@@ -193,7 +208,7 @@ describe("TabGroupingController", () => {
         displayName: "example.com",
         domains: new Set(["example.com"]),
       });
-      
+
       mockInternalAdapter.getAllNonAppTabs.mockResolvedValue(mockTabs);
       mockInternalService.buildGroupStates.mockReturnValue([]);
 
@@ -215,7 +230,11 @@ describe("TabGroupingController", () => {
 
       // Directly mock chrome API calls that are used in ChromeTabAdapter's actual methods
       mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
-      mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, focused: true, type: "normal" });
+      mockChrome.windows.getCurrent.mockResolvedValue({
+        id: 1,
+        focused: true,
+        type: "normal",
+      });
       mockChrome.tabs.query.mockResolvedValue([]); // Default for getAllNonAppTabs
       mockChrome.tabs.remove.mockResolvedValue(undefined);
       mockChrome.tabs.move.mockResolvedValue(undefined);
@@ -263,13 +282,20 @@ describe("TabGroupingController", () => {
           createMockTab(3, "https://example.com/page2"),
         ];
         const rulesByDomain = {
-          "autodelete.com": { domain: "autodelete.com", autoDelete: true, skipProcess: null, groupName: null },
+          "autodelete.com": {
+            domain: "autodelete.com",
+            autoDelete: true,
+            skipProcess: null,
+            groupName: null,
+          },
         };
 
-        const serviceGetDomainSpy = vi.spyOn(serviceInstance, 'getDomain').mockImplementation((url: string) => {
-          if (url.includes("autodelete.com")) return "autodelete.com" as any;
-          return new URL(url).hostname as any;
-        });
+        const serviceGetDomainSpy = vi
+          .spyOn(serviceInstance, "getDomain")
+          .mockImplementation((url: string) => {
+            if (url.includes("autodelete.com")) return "autodelete.com" as any;
+            return new URL(url).hostname as any;
+          });
 
         const remainingTabs = await adapterInstance.applyAutoDeleteRules(
           tabs,
@@ -292,9 +318,11 @@ describe("TabGroupingController", () => {
         ];
         const rulesByDomain = {};
 
-        const serviceGetDomainSpy = vi.spyOn(serviceInstance, 'getDomain').mockImplementation((url: string) => {
-          return new URL(url).hostname as any;
-        });
+        const serviceGetDomainSpy = vi
+          .spyOn(serviceInstance, "getDomain")
+          .mockImplementation((url: string) => {
+            return new URL(url).hostname as any;
+          });
 
         const remainingTabs = await adapterInstance.applyAutoDeleteRules(
           tabs,
@@ -313,18 +341,34 @@ describe("TabGroupingController", () => {
         const activeWindowId = 1;
         const otherWindowId = 2;
         const tabs = [
-          createMockTab(1, "https://example.com/page1", null, 0, activeWindowId),
+          createMockTab(
+            1,
+            "https://example.com/page1",
+            null,
+            0,
+            activeWindowId,
+          ),
           createMockTab(2, "https://example.com/page2", null, 0, otherWindowId),
-          createMockTab(3, "https://example.com/page3", null, 0, activeWindowId),
+          createMockTab(
+            3,
+            "https://example.com/page3",
+            null,
+            0,
+            activeWindowId,
+          ),
         ];
 
         mockChrome.windows.getAll.mockResolvedValue([
           { id: activeWindowId, type: "normal" },
           { id: otherWindowId, type: "normal" },
         ]);
-        mockChrome.windows.getCurrent.mockResolvedValue({ id: activeWindowId, focused: true, type: "normal" });
+        mockChrome.windows.getCurrent.mockResolvedValue({
+          id: activeWindowId,
+          focused: true,
+          type: "normal",
+        });
 
-        vi.spyOn(adapterInstance, 'getAllNonAppTabs').mockResolvedValue(tabs); // Mock this internal call
+        vi.spyOn(adapterInstance, "getAllNonAppTabs").mockResolvedValue(tabs); // Mock this internal call
 
         await adapterInstance.mergeToActiveWindow(tabs);
 
@@ -342,10 +386,13 @@ describe("TabGroupingController", () => {
         mockChrome.windows.getAll.mockResolvedValue([
           { id: 1, type: "normal" },
         ]);
-        mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, focused: true, type: "normal" });
+        mockChrome.windows.getCurrent.mockResolvedValue({
+          id: 1,
+          focused: true,
+          type: "normal",
+        });
 
-        vi.spyOn(adapterInstance, 'getAllNonAppTabs').mockResolvedValue(tabs); // Mock this internal call
-
+        vi.spyOn(adapterInstance, "getAllNonAppTabs").mockResolvedValue(tabs); // Mock this internal call
 
         await adapterInstance.mergeToActiveWindow(tabs);
 
@@ -357,7 +404,10 @@ describe("TabGroupingController", () => {
       it("should ungroup, move, and group tabs according to the plan", async () => {
         const plan = {
           toUngroup: [1, 2, 3],
-          toMove: [{ tabIds: [1, 2], index: 0 }, { tabIds: [3], index: 2 }],
+          toMove: [
+            { tabIds: [1, 2], index: 0 },
+            { tabIds: [3], index: 2 },
+          ],
           toGroup: [{ tabIds: [1, 2], displayName: "example.com" }],
         };
 
@@ -374,7 +424,10 @@ describe("TabGroupingController", () => {
         expect(mockChrome.tabs.move).toHaveBeenCalledWith([1, 2], { index: 0 });
         expect(mockChrome.tabs.move).toHaveBeenCalledWith([3], { index: 2 });
         expect(mockChrome.tabs.group).toHaveBeenCalledWith({ tabIds: [1, 2] });
-        expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(101, { collapsed: false, title: "example.com" });
+        expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(101, {
+          collapsed: false,
+          title: "example.com",
+        });
       });
     });
 
@@ -391,7 +444,10 @@ describe("TabGroupingController", () => {
 
         mockChrome.tabs.ungroup.mockResolvedValue(undefined);
 
-        await adapterInstance.ungroupSingleTabs(domainMap, allGroupedTabIds as Set<any>);
+        await adapterInstance.ungroupSingleTabs(
+          domainMap,
+          allGroupedTabIds as Set<any>,
+        );
 
         expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
       });
@@ -406,13 +462,20 @@ describe("TabGroupingController", () => {
         });
         const allGroupedTabIds = new Set<number>([1]); // Simulate tab 1 was grouped by the current process
 
-        await adapterInstance.ungroupSingleTabs(domainMap, allGroupedTabIds as Set<any>);
+        await adapterInstance.ungroupSingleTabs(
+          domainMap,
+          allGroupedTabIds as Set<any>,
+        );
 
         expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
       });
 
       it("should not ungroup tabs that are not grouped", async () => {
-        const ungroupedTab = createMockTab(1, "https://example.com/page1", null);
+        const ungroupedTab = createMockTab(
+          1,
+          "https://example.com/page1",
+          null,
+        );
         const domainMap = new Map();
         domainMap.set("example.com", {
           tabs: [ungroupedTab],
@@ -421,7 +484,10 @@ describe("TabGroupingController", () => {
         });
         const allGroupedTabIds = new Set<number>();
 
-        await adapterInstance.ungroupSingleTabs(domainMap, allGroupedTabIds as Set<any>);
+        await adapterInstance.ungroupSingleTabs(
+          domainMap,
+          allGroupedTabIds as Set<any>,
+        );
 
         expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
       });
@@ -438,8 +504,12 @@ describe("TabGroupingController", () => {
     });
 
     it("should extract domain correctly from URL", () => {
-      expect(serviceInstance.getDomain("https://www.example.com/path")).toBe("www.example.com");
-      expect(serviceInstance.getDomain("http://sub.domain.org")).toBe("sub.domain.org");
+      expect(serviceInstance.getDomain("https://www.example.com/path")).toBe(
+        "www.example.com",
+      );
+      expect(serviceInstance.getDomain("http://sub.domain.org")).toBe(
+        "sub.domain.org",
+      );
       expect(serviceInstance.getDomain("invalid-url")).toBe("other");
       expect(serviceInstance.getDomain(undefined)).toBe("other");
     });
@@ -450,8 +520,18 @@ describe("TabGroupingController", () => {
         createMockTab(2, "https://sub.example.com/page2"),
       ];
       const rulesByDomain = {
-        "www.example.com": { domain: "www.example.com", groupName: "Example Group", autoDelete: null, skipProcess: null },
-        "sub.example.com": { domain: "sub.example.com", groupName: "Example Group", autoDelete: null, skipProcess: null },
+        "www.example.com": {
+          domain: "www.example.com",
+          groupName: "Example Group",
+          autoDelete: null,
+          skipProcess: null,
+        },
+        "sub.example.com": {
+          domain: "sub.example.com",
+          groupName: "Example Group",
+          autoDelete: null,
+          skipProcess: null,
+        },
       };
 
       const domainMap = serviceInstance.buildDomainMap(tabs, rulesByDomain);
@@ -473,7 +553,7 @@ describe("TabGroupingController", () => {
       expect(serviceInstance.countDuplicates(tabs)).toBe(3);
     });
 
-    it("should build group states for domains with multiple tabs", () => {
+    it("should build group states for all domains, including single tabs", () => {
       const tabs = [
         createMockTab(1, "https://example.com/page1", null),
         createMockTab(2, "https://example.com/page2", null),
@@ -482,35 +562,85 @@ describe("TabGroupingController", () => {
         createMockTab(5, "https://single.com", null),
       ];
       const domainMap = serviceInstance.buildDomainMap(tabs, {});
-      const tabCache = new Map(tabs.map(t => [(t.id as number), t]));
+      const tabCache = new Map(tabs.map((t) => [t.id as number, t]));
 
       const groupStates = serviceInstance.buildGroupStates(domainMap, tabCache);
 
-      expect(groupStates.length).toBe(2);
-      expect(groupStates[0].domain).toBe("example.com");
-      expect(groupStates[0].tabIds).toEqual([1, 2]);
-      expect(groupStates[0].groupId).toBeNull();
-      expect(groupStates[1].domain).toBe("anothersite.com");
-      expect(groupStates[1].tabIds).toEqual([3, 4]);
-      expect(groupStates[1].groupId).toBe(101); // From tab 3
+      // Now includes all 3 domains because single tabs are no longer skipped
+      expect(groupStates.length).toBe(3);
+
+      const exampleState = groupStates.find((s) => s.domain === "example.com")!;
+      expect(exampleState.tabIds).toEqual([1, 2]);
+      expect(exampleState.groupId).toBeNull();
+
+      const anotherState = groupStates.find(
+        (s) => s.domain === "anothersite.com",
+      )!;
+      expect(anotherState.tabIds).toEqual([3, 4]);
+      expect(anotherState.groupId).toBe(101);
+
+      const singleState = groupStates.find((s) => s.domain === "single.com")!;
+      expect(singleState.tabIds).toEqual([5]);
     });
 
     it("should create group plan correctly", () => {
       const groupStates = [
-        { domain: "example.com", tabIds: [1, 2], groupId: null, needsReposition: true },
-        { domain: "anothersite.com", tabIds: [3], groupId: 101, needsReposition: false }, // Single tab, should not be in toGroup
+        {
+          domain: "example.com",
+          tabIds: [1, 2],
+          groupId: null,
+          needsReposition: true,
+        },
+        {
+          domain: "anothersite.com",
+          tabIds: [3],
+          groupId: 101,
+          needsReposition: false,
+        },
       ];
 
       const plan = serviceInstance.createGroupPlan(groupStates as any); // Cast for simplicity
 
-      expect(plan.toUngroup).toEqual([1, 2, 3]);
-      expect(plan.toMove).toEqual([
-        { tabIds: [1, 2], index: 0 },
-        { tabIds: [3], index: 2 },
-      ]);
-      expect(plan.toGroup).toEqual([
-        { tabIds: [1, 2], displayName: "example.com" },
-      ]);
+      // plan follows order of groupStates and only includes those needing repositioning.
+      expect(plan.toUngroup).toEqual([]);
+      expect(plan.toMove).toEqual([{ tabIds: [1, 2], index: 0 }]);
+      expect(plan.toGroup).toEqual([]);
+    });
+
+    it("should sort grouped tabs before ungrouped tabs while maintaining alphabetical order", () => {
+      const tabs = [
+        createMockTab(1, "https://z.com", null, 0), // single, alphabetical last
+        createMockTab(2, "https://a.com", null, 1), // single, alphabetical first
+        createMockTab(3, "https://m.com", 101, 2), // group, alphabetical middle
+        createMockTab(4, "https://m.com/2", 101, 3), // group
+      ];
+      const tabCache = new Map(tabs.map((t) => [t.id as number, t]));
+      const tabIndexMap = new Map(tabs.map((t) => [t.id as number, t.index]));
+
+      const groupStates = [
+        { domain: "z.com", tabIds: [1], groupId: null, needsReposition: false },
+        { domain: "a.com", tabIds: [2], groupId: null, needsReposition: false },
+        {
+          domain: "m.com",
+          tabIds: [3, 4],
+          groupId: 101,
+          needsReposition: false,
+        },
+      ];
+
+      const result = serviceInstance.calculateRepositionNeeds(
+        groupStates as any,
+        tabIndexMap as any,
+        tabCache as any,
+      );
+
+      // Expected order:
+      // 1. m.com (Grouped)
+      // 2. a.com (Ungrouped, alphabetical 1st)
+      // 3. z.com (Ungrouped, alphabetical 2nd)
+      expect(result[0].domain).toBe("m.com");
+      expect(result[1].domain).toBe("a.com");
+      expect(result[2].domain).toBe("z.com");
     });
   });
 });
