@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  cleanup,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as matchers from "@testing-library/jest-dom/matchers";
 import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -46,7 +52,9 @@ describe("App Component", () => {
 
   it("renders the app title", async () => {
     render(<App />);
-    expect(await screen.findByText("Tab Group Dedup Management Preferences")).toBeDefined();
+    expect(
+      await screen.findByText("Tab Group Dedup Management Preferences"),
+    ).toBeDefined();
   });
 
   it("shows 'No domains added' when rules list is empty", async () => {
@@ -102,9 +110,11 @@ describe("App Component", () => {
     await user.click(removeButton);
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(expect.objectContaining({
-        rules: []
-      }));
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [],
+        }),
+      );
     });
   });
 
@@ -124,17 +134,19 @@ describe("App Component", () => {
     render(<App />);
 
     const checkboxes = await screen.findAllByRole("checkbox");
-    const skipCheckbox = checkboxes[0]; // Skip is now the first checkbox in the row after reordering? 
+    const skipCheckbox = checkboxes[0]; // Skip is now the first checkbox in the row after reordering?
     // Wait, let's check the order in the code again.
     // Body order: Domain, Group (GroupNameInput), Skip (checkbox), Auto Delete (checkbox)
     // So Skip is the FIRST checkbox.
-    
+
     fireEvent.click(skipCheckbox);
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(expect.objectContaining({
-        rules: [expect.objectContaining({ id: "1", skipProcess: true })]
-      }));
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [expect.objectContaining({ id: "1", skipProcess: true })],
+        }),
+      );
     });
   });
 
@@ -159,9 +171,11 @@ describe("App Component", () => {
     fireEvent.click(autoDeleteCheckbox);
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(expect.objectContaining({
-        rules: [expect.objectContaining({ id: "1", autoDelete: true })]
-      }));
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [expect.objectContaining({ id: "1", autoDelete: true })],
+        }),
+      );
     });
   });
 
@@ -185,9 +199,13 @@ describe("App Component", () => {
     await user.type(groupInput, "Search Engine");
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(expect.objectContaining({
-        rules: [expect.objectContaining({ id: "1", groupName: "Search Engine" })]
-      }));
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [
+            expect.objectContaining({ id: "1", groupName: "Search Engine" }),
+          ],
+        }),
+      );
     });
   });
 
@@ -212,7 +230,7 @@ describe("App Component", () => {
 
     expect(groupInput).toBeDisabled();
     expect(autoDeleteCheckbox).toBeDisabled();
-    
+
     const removeButton = screen.getByRole("button", { name: "" }); // TrashIcon button
     expect(removeButton).not.toBeDisabled();
   });
