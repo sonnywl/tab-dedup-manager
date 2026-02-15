@@ -12,11 +12,11 @@ The application is structured into three distinct layers to promote separation o
 
 | Rule            | Behavior                                                                        |
 | --------------- | ------------------------------------------------------------------------------- |
-| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, stay in place |
+| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end   |
 | Grouping Scope  | Global (merge all to active window) OR per-window grouping                      |
 | Group title     | Domain name by default, or user-defined custom group name                       |
 | Custom Groups   | Multiple domains can be mapped to a single group name to merge them together    |
-| Sort order      | Groups alphabetical by title → ungrouped tabs (unmodified position)             |
+| Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)              |
 | Rule: Skip      | Completely ignore domain during deduplication and grouping                      |
 | Rule: Delete    | Automatically close tabs matching domain when processing                        |
 | Exclusions      | Always skip PWA windows and extension internal pages                            |
@@ -52,10 +52,10 @@ The application is structured into three distinct layers to promote separation o
 
 ## Positioning Logic
 
-| Type             | Included in repositioning | Final position                   |
-| ---------------- | ------------------------- | -------------------------------- |
-| Groups (2+ tabs) | Yes                       | Index 0 → n, sorted by domain    |
-| Single tabs      | No                        | Original position (after groups) |
+| Type             | Included in repositioning | Final position               |
+| ---------------- | ------------------------- | ---------------------------- |
+| Groups (2+ tabs) | Yes                       | Index 0 → n, sorted by URL   |
+| Single tabs      | Yes                       | Index n+1 → m, sorted by URL |
 
 ## Edge Cases
 
@@ -73,4 +73,3 @@ The application is structured into three distinct layers to promote separation o
 - O(r) repositions where r ≤ g
 - Single tab query cached in Map
 - Skip Chrome API when state matches desired
-- Single tabs excluded from repositioning (O(1) per single)
