@@ -9,6 +9,7 @@ interface DomainRule {
   domain: string;
   autoDelete: boolean;
   skipProcess: boolean;
+  splitByPath: number | null;
   groupName: string | undefined;
 }
 
@@ -108,6 +109,7 @@ export default function App() {
       domain: url.hostname,
       autoDelete: false,
       skipProcess: false,
+      splitByPath: null,
       groupName: "",
     };
 
@@ -220,6 +222,9 @@ export default function App() {
                   Auto Delete
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                  Split Path
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                   Group
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
@@ -231,7 +236,7 @@ export default function App() {
               {rules.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-6 py-8 text-center text-gray-500"
                   >
                     No domains added
@@ -263,6 +268,44 @@ export default function App() {
                         }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                       />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Off"
+                          value={rule.splitByPath ?? ""}
+                          disabled={rule.skipProcess}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                            const val = parseInt(e.target.value, 10);
+                            updateRule(
+                              rule.id,
+                              "splitByPath",
+                              isNaN(val) || val <= 0 ? null : val,
+                            );
+                          }}
+                          className="w-14 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        />
+                        {rule.splitByPath !== null && (
+                          <button
+                            onClick={() =>
+                              updateRule(rule.id, "splitByPath", null)
+                            }
+                            className="text-gray-400 hover:text-gray-600 p-0.5"
+                            title="Clear"
+                          >
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                              className="w-4 h-4"
+                            >
+                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <GroupNameInput

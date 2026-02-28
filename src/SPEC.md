@@ -123,3 +123,25 @@ The `startSyncStore` utility provides a unified interface for interacting with `
 - **Build System**: Powered by **Vite**, configured with multiple entry points for the background script and the options page.
 - **Type Safety**: Uses branded types for IDs and strict TypeScript configurations to eliminate common extension-related bugs.
 - **Testing**: Employs **Vitest** with `jsdom` for unit and integration testing of both the domain logic and the React components.
+
+---
+
+## 9. Domain Rules & Grouping Logic
+
+### 9.1 Rule Configuration
+Rules are defined per-domain and stored in `chrome.storage.local`.
+- **domain**: The hostname (e.g., "google.com").
+- **autoDelete**: If true, tabs matching this domain are automatically closed.
+- **skipProcess**: If true, tabs are ignored by the grouper.
+- **groupName**: Custom name for the group (overrides domain name).
+- **splitByPath**: If set to a number `n >= 1`, tabs are grouped by domain + the `n`-th path segment (e.g., `n=1` for `google.com/mail` -> "google.com - mail"). If null/undefined, no path splitting occurs.
+
+### 9.2 Split by Path Logic
+When `splitByPath` is set to a number `n` for a domain:
+1.  **Path Extraction**: The `n`-th path segment is extracted from the URL (1-based index).
+2.  **Grouping**: Tabs with different values for the selected path segment form separate groups.
+3.  **Naming**:
+    -   Default: Title is the selected path segment (e.g., "images").
+    -   **Intra-Domain Collision**: If the path segment matches the base group name, the title becomes `${Domain}/${PathSegment}` to avoid ambiguity.
+    -   **Batch Collision**: If multiple groups in a batch share the same title, they are renamed to `${Domain} - ${PathSegment}` to prevent merging.
+    -   **Fallback**: If the URL has fewer than `n` segments, it falls back to standard domain grouping.

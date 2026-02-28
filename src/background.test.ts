@@ -103,7 +103,7 @@ describe("TabGrouping Application Layer", () => {
         }
       }),
       getGroupKey: vi.fn(),
-      buildDomainMap: vi.fn(),
+      buildGroupMap: vi.fn(),
       countDuplicates: vi.fn(),
       filterValidTabs: vi.fn(),
       buildGroupStates: vi.fn(),
@@ -170,7 +170,7 @@ describe("TabGrouping Application Layer", () => {
       mockAdapter.deduplicateAllTabs.mockResolvedValue(tabs);
       mockAdapter.applyAutoDeleteRules.mockResolvedValue(tabs);
 
-      mockService.buildDomainMap.mockReturnValue(new Map());
+      mockService.buildGroupMap.mockReturnValue(new Map());
 
       const processSpy = vi
         .spyOn(controller, "processGrouping")
@@ -250,8 +250,8 @@ describe("TabGroupingService Domain Layer", () => {
 
   it("should sort groups alphabetically by URL", () => {
     const groupStates: any[] = [
-      { domain: "z.com", tabIds: [1], needsReposition: false },
-      { domain: "a.com", tabIds: [2], needsReposition: false },
+      { title: "z.com", tabIds: [1], needsReposition: false },
+      { title: "a.com", tabIds: [2], needsReposition: false },
     ];
     const cache = new Map<number, chrome.tabs.Tab>([
       [1, createMockTab(1, "z.com")],
@@ -262,8 +262,83 @@ describe("TabGroupingService Domain Layer", () => {
       groupStates as any,
       cache as any,
     );
-    expect(result[0].domain).toBe("a.com");
-    expect(result[1].domain).toBe("z.com");
+    expect(result[0].title).toBe("a.com");
+    expect(result[1].title).toBe("z.com");
+  });
+
+  describe("getGroupKey", () => {
+    const domain = "google.com" as any;
+    const rules: any = {
+      "google.com": { domain: "google.com", splitByPath: 1 },
+    };
+
+    it("should split by first path segment if splitByPath is 1", () => {
+      const res = service.getGroupKey(domain, "https://google.com/search?q=1", rules);
+      expect(res.key).toBe("google.com::search");
+      expect(res.title).toBe("search");
+    });
+
+    it("should split by second path segment if splitByPath is 2", () => {
+      const res = service.getGroupKey(domain, "https://google.com/mail/inbox", {
+        "google.com": { domain: "google.com", splitByPath: 2 },
+      });
+      expect(res.key).toBe("google.com::inbox");
+      expect(res.title).toBe("inbox");
+    });
+
+    it("should not split by path if splitByPath is null", () => {
+      const res = service.getGroupKey(domain, "https://google.com/search", {
+        "google.com": { domain: "google.com", splitByPath: null },
+      });
+      expect(res.key).toBe("google.com");
+      expect(res.title).toBe("google.com");
+    });
+
+    it("should resolve intra-domain title collisions", () => {
+      const res = service.getGroupKey(domain, "https://google.com/google.com", rules);
+      expect(res.key).toBe("google.com::google.com");
+      expect(res.title).toBe("google.com/google.com");
+    });
+
+    it("should handle root paths by falling back to base", () => {
+      const res = service.getGroupKey(domain, "https://google.com/", rules);
+      expect(res.key).toBe("google.com");
+      expect(res.title).toBe("google.com");
+    });
+
+    it("should handle indices greater than path segments by falling back", () => {
+      const res = service.getGroupKey(domain, "https://google.com/a", {
+        "google.com": { domain: "google.com", splitByPath: 2 },
+      });
+      expect(res.key).toBe("google.com");
+      expect(res.title).toBe("google.com");
+    });
+  });
+
+  describe("buildGroupStates with Smart Naming", () => {
+    it("should resolve batch title collisions", () => {
+      const groupMap = new Map<string, any>([
+        ["google::images", { tabs: [createMockTab(1, "google.com/images")], displayName: "images", domains: new Set(["google.com"])}],
+        ["bing::images", { tabs: [createMockTab(2, "bing.com/images")], displayName: "images", domains: new Set(["bing.com"])}],
+      ]);
+      const cache = new Map<number, any>([[1, createMockTab(1, "google.com/images")], [2, createMockTab(2, "bing.com/images")]]);
+
+      const states = service.buildGroupStates(groupMap as any, cache as any);
+      expect(states.find(s => s.sourceDomain === "google.com")?.title).toBe("google.com - images");
+      expect(states.find(s => s.sourceDomain === "bing.com")?.title).toBe("bing.com - images");
+    });
+
+    it("should resolve collisions with existing groups", () => {
+      const groupMap = new Map<string, any>([
+        ["google::images", { tabs: [createMockTab(1, "google.com/images")], displayName: "images", domains: new Set(["google.com"])}],
+      ]);
+      const cache = new Map<number, any>([[1, createMockTab(1, "google.com/images")]]);
+      const groupsByTitle = new Map([["images", 999 as any]]);
+
+      const states = service.buildGroupStates(groupMap as any, cache as any, groupsByTitle);
+      expect(states[0].title).toBe("google.com - images");
+      expect(states[0].groupId).toBe(null); // Should NOT merge into existing "images" because it was renamed
+    });
   });
 });
 

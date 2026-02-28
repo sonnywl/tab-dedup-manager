@@ -61,6 +61,8 @@ describe("App Component", () => {
   it("shows 'No domains added' when rules list is empty", async () => {
     render(<App />);
     expect(await screen.findByText("No domains added")).toBeDefined();
+    const noDomainsCell = screen.getByText("No domains added");
+    expect(noDomainsCell).toHaveAttribute("colspan", "6");
   });
 
   it("adds a new domain rule", async () => {
@@ -98,6 +100,7 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
+        splitByPath: null,
         groupName: "",
       },
     ];
@@ -125,6 +128,7 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
+        splitByPath: null,
         groupName: "",
       },
     ];
@@ -134,10 +138,7 @@ describe("App Component", () => {
 
     const tbody = document.querySelector("tbody");
     const checkboxes = await within(tbody!).findAllByRole("checkbox");
-    const skipCheckbox = checkboxes[0]; // Skip is now the first checkbox in the row after reordering?
-    // Wait, let's check the order in the code again.
-    // Body order: Domain, Group (GroupNameInput), Skip (checkbox), Auto Delete (checkbox)
-    // So Skip is the FIRST checkbox.
+    const skipCheckbox = checkboxes[0];
 
     fireEvent.click(skipCheckbox);
 
@@ -157,6 +158,7 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
+        splitByPath: null,
         groupName: "",
       },
     ];
@@ -166,7 +168,7 @@ describe("App Component", () => {
 
     const tbody = document.querySelector("tbody");
     const checkboxes = await within(tbody!).findAllByRole("checkbox");
-    const autoDeleteCheckbox = checkboxes[1]; // Auto Delete is the second checkbox
+    const autoDeleteCheckbox = checkboxes[1];
 
     fireEvent.click(autoDeleteCheckbox);
 
@@ -179,6 +181,46 @@ describe("App Component", () => {
     });
   });
 
+  it("updates splitByPath numeric input", async () => {
+    const initialRules = [
+      {
+        id: "1",
+        domain: "google.com",
+        autoDelete: false,
+        skipProcess: false,
+        splitByPath: null,
+        groupName: "",
+      },
+    ];
+    mockStore.getState.mockResolvedValue({ rules: initialRules });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    const splitInput = await screen.findByPlaceholderText("Off");
+    await user.type(splitInput, "1");
+
+    await waitFor(() => {
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [expect.objectContaining({ id: "1", splitByPath: 1 })],
+        }),
+      );
+    });
+
+    // Clear it
+    const clearButton = screen.getByTitle("Clear");
+    await user.click(clearButton);
+
+    await waitFor(() => {
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: [expect.objectContaining({ id: "1", splitByPath: null })],
+        }),
+      );
+    });
+  });
+
   it("updates group name", async () => {
     const initialRules = [
       {
@@ -186,6 +228,7 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
+        splitByPath: null,
         groupName: "",
       },
     ];
@@ -215,6 +258,7 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: true,
+        splitByPath: null,
         groupName: "Test Group",
       },
     ];
@@ -223,12 +267,14 @@ describe("App Component", () => {
     render(<App />);
 
     const groupInput = await screen.findByPlaceholderText("Group name...");
+    const splitInput = await screen.findByPlaceholderText("Off");
     const tbody = document.querySelector("tbody");
     const checkboxes = await within(tbody!).findAllByRole("checkbox");
     const autoDeleteCheckbox = checkboxes[1];
 
     expect(groupInput).toBeDisabled();
     expect(autoDeleteCheckbox).toBeDisabled();
+    expect(splitInput).toBeDisabled();
 
     const removeButton = screen.getByRole("button", { name: "" }); // TrashIcon button
     expect(removeButton).not.toBeDisabled();
