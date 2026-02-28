@@ -47,7 +47,7 @@ The application is structured into three distinct layers to promote separation o
 | Component               | Responsibility                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TabGroupingService`    | Pure business logic: `getDomain`, `getGroupKey`, `buildDomainMap`, `countDuplicates`, `filterValidTabs`, `buildGroupStates`, `calculateRepositionNeeds`, `createGroupPlan`. Operates on tab data without Chrome API calls.                            |
-| `ChromeTabAdapter`      | Chrome API interactions: `getAllNonAppTabs`, `getRelevantTabs`, `deduplicateAllTabs`, `applyAutoDeleteRules`, `mergeToActiveWindow`, `applyGroupState`, `executeGroupPlan`, `ungroupSingleTabs`, `updateBadge`. Provides abstraction over Chrome API. |
+| `ChromeTabAdapter`      | Chrome API interactions: `getNormalTabs`, `getRelevantTabs`, `deduplicateAllTabs`, `applyAutoDeleteRules`, `mergeToActiveWindow`, `applyGroupState`, `executeGroupPlan`, `ungroupSingleTabs`, `updateBadge`. Provides abstraction over Chrome API. |
 | `TabGroupingController` | Orchestration: `groupByWindow`, `processGrouping`, `execute`. Coordinates operations between `TabGroupingService` and `ChromeTabAdapter`.                                                                                                             |
 
 ## Positioning Logic

@@ -384,20 +384,15 @@ export class ChromeTabAdapter {
   private readonly MAX_BATCH_SIZE = 100;
   private readonly RATE_LIMIT_DELAY = 50;
 
-  async getAllNonAppTabs(): Promise<Tab[]> {
+  async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
-      const allTabs = await chrome.tabs.query({});
-      const windows = await chrome.windows.getAll({ populate: false });
-      const appWindowIds = new Set(
-        windows.filter((w) => w.type === "app").map((w) => w.id),
-      );
+      // Query only for tabs in normal windows to avoid "Tabs can only be moved to and from normal windows" error
+      const allTabs = await chrome.tabs.query({ windowType: "normal" });
 
       return allTabs.filter((tab) => {
         if (!validateTab(tab)) return false;
+        // Skip extension internal pages
         if (!tab.url || tab.url.startsWith("chrome-extension://")) {
-          return false;
-        }
-        if (tab.windowId && appWindowIds.has(tab.windowId)) {
           return false;
         }
         return true;
@@ -416,7 +411,7 @@ export class ChromeTabAdapter {
     rulesByDomain: RulesByDomain,
     service: TabGroupingService,
   ): Promise<Tab[]> {
-    const nonAppTabs = await this.getAllNonAppTabs();
+    const nonAppTabs = await this.getNormalTabs();
 
     return nonAppTabs.filter((tab) => {
       const domain = service.getDomain(tab.url);
@@ -487,14 +482,16 @@ export class ChromeTabAdapter {
   }
 
   async mergeToActiveWindow(tabs: Tab[]): Promise<void> {
-    const windows = await chrome.windows.getAll();
-    if (windows.length <= 1) return;
+    const normalWindows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    if (normalWindows.length <= 1) return;
 
     const activeWindow = await chrome.windows.getCurrent();
-    const targetWindow = activeWindow.id;
-    if (!targetWindow) return;
+    // Use current window if it's normal, otherwise fallback to the first available normal window
+    const targetWindowId =
+      activeWindow.type === "normal" ? activeWindow.id : normalWindows[0].id;
+    if (!targetWindowId) return;
 
-    const tabsToMove = tabs.filter((t) => t.windowId !== targetWindow);
+    const tabsToMove = tabs.filter((t) => t.windowId !== targetWindowId);
     if (tabsToMove.length === 0) return;
 
     const batches = this.batchArray(
@@ -504,7 +501,7 @@ export class ChromeTabAdapter {
     for (const batch of batches) {
       const result = await retry(() =>
         chrome.tabs.move(batch as number[], {
-          windowId: targetWindow,
+          windowId: targetWindowId,
           index: -1,
         }),
       );
@@ -685,7 +682,7 @@ export class ChromeTabAdapter {
   }
 
   async updateBadge(service: TabGroupingService): Promise<void> {
-    const tabs = await this.getAllNonAppTabs();
+    const tabs = await this.getNormalTabs();
     const duplicateCount = service.countDuplicates(tabs);
 
     if (duplicateCount > 0) {
@@ -774,7 +771,7 @@ export class TabGroupingController {
     windowId?: WindowId,
   ): Promise<Result<void, Error>> {
     try {
-      let allCurrentTabs = await this.adapter.getAllNonAppTabs();
+      let allCurrentTabs = await this.adapter.getNormalTabs();
       let relevantTabs = windowId
         ? allCurrentTabs.filter((t) => t.windowId === windowId)
         : allCurrentTabs;
@@ -802,7 +799,7 @@ export class TabGroupingController {
       await this.adapter.ungroupSingleTabs(domainMap, allGroupedTabIds);
 
       // Refresh cache after grouping as it may have changed indices and group IDs
-      allCurrentTabs = await this.adapter.getAllNonAppTabs();
+      allCurrentTabs = await this.adapter.getNormalTabs();
       relevantTabs = windowId
         ? allCurrentTabs.filter((t) => t.windowId === windowId)
         : allCurrentTabs;

@@ -117,7 +117,7 @@ describe("TabGroupingController", () => {
     } as unknown as TabGroupingService; // Cast to TabGroupingService
 
     mockInternalAdapter = {
-      getAllNonAppTabs: vi.fn(),
+      getNormalTabs: vi.fn(),
       getRelevantTabs: vi.fn(),
       deduplicateAllTabs: vi.fn(),
       applyAutoDeleteRules: vi.fn(),
@@ -195,7 +195,7 @@ describe("TabGroupingController", () => {
     it("should not process if already processing", async () => {
       (controller as any).isProcessing = true;
       await controller.execute();
-      expect(mockInternalAdapter.getAllNonAppTabs).not.toHaveBeenCalled();
+      expect(mockInternalAdapter.getNormalTabs).not.toHaveBeenCalled();
     });
   });
 
@@ -209,7 +209,7 @@ describe("TabGroupingController", () => {
         domains: new Set(["example.com"]),
       });
 
-      mockInternalAdapter.getAllNonAppTabs.mockResolvedValue(mockTabs);
+      mockInternalAdapter.getNormalTabs.mockResolvedValue(mockTabs);
       mockInternalService.buildGroupStates.mockReturnValue([]);
 
       const result = await controller.processGrouping(domainMap);
@@ -235,7 +235,7 @@ describe("TabGroupingController", () => {
         focused: true,
         type: "normal",
       });
-      mockChrome.tabs.query.mockResolvedValue([]); // Default for getAllNonAppTabs
+      mockChrome.tabs.query.mockResolvedValue([]); // Default for getNormalTabs
       mockChrome.tabs.remove.mockResolvedValue(undefined);
       mockChrome.tabs.move.mockResolvedValue(undefined);
       mockChrome.tabs.group.mockResolvedValue(101); // Default for group creation
@@ -336,6 +336,26 @@ describe("TabGroupingController", () => {
       });
     });
 
+    describe("getNormalTabs", () => {
+      it("should only query for tabs in normal windows", async () => {
+        mockChrome.tabs.query.mockResolvedValue([]);
+        await adapterInstance.getNormalTabs();
+        expect(mockChrome.tabs.query).toHaveBeenCalledWith({
+          windowType: "normal",
+        });
+      });
+
+      it("should filter out extension internal pages", async () => {
+        const tabs = [
+          createMockTab(1, "https://example.com"),
+          createMockTab(2, "chrome-extension://abc/popup.html"),
+        ];
+        mockChrome.tabs.query.mockResolvedValue(tabs);
+        const result = await adapterInstance.getNormalTabs();
+        expect(result).toEqual([tabs[0]]);
+      });
+    });
+
     describe("mergeToActiveWindow", () => {
       it("should move tabs from other windows to the active window", async () => {
         const activeWindowId = 1;
@@ -368,12 +388,41 @@ describe("TabGroupingController", () => {
           type: "normal",
         });
 
-        vi.spyOn(adapterInstance, "getAllNonAppTabs").mockResolvedValue(tabs); // Mock this internal call
+        vi.spyOn(adapterInstance, "getNormalTabs").mockResolvedValue(tabs); // Mock this internal call
+
+        await adapterInstance.mergeToActiveWindow(tabs);
+
+        expect(mockChrome.windows.getAll).toHaveBeenCalledWith({
+          windowTypes: ["normal"],
+        });
+        expect(mockChrome.tabs.move).toHaveBeenCalledWith([2], {
+          windowId: activeWindowId,
+          index: -1,
+        });
+      });
+
+      it("should use the first available normal window if the current window is not normal", async () => {
+        const popupWindowId = 10;
+        const normalWindowId = 1;
+        const otherNormalWindowId = 2;
+        const tabs = [
+          createMockTab(2, "https://example.com/page2", null, 0, otherNormalWindowId),
+        ];
+
+        mockChrome.windows.getAll.mockResolvedValue([
+          { id: normalWindowId, type: "normal" },
+          { id: otherNormalWindowId, type: "normal" },
+        ]);
+        mockChrome.windows.getCurrent.mockResolvedValue({
+          id: popupWindowId,
+          focused: true,
+          type: "popup",
+        });
 
         await adapterInstance.mergeToActiveWindow(tabs);
 
         expect(mockChrome.tabs.move).toHaveBeenCalledWith([2], {
-          windowId: activeWindowId,
+          windowId: normalWindowId,
           index: -1,
         });
       });
@@ -392,7 +441,7 @@ describe("TabGroupingController", () => {
           type: "normal",
         });
 
-        vi.spyOn(adapterInstance, "getAllNonAppTabs").mockResolvedValue(tabs); // Mock this internal call
+        vi.spyOn(adapterInstance, "getNormalTabs").mockResolvedValue(tabs); // Mock this internal call
 
         await adapterInstance.mergeToActiveWindow(tabs);
 
