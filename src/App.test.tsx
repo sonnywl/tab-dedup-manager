@@ -57,7 +57,9 @@ describe("App Component", () => {
 
   it("renders the app title", async () => {
     render(<App />);
-    expect(await screen.findByText("Tab Group Dedup Management")).toBeDefined();
+    expect(
+      await screen.findByText("One-click Tab Dedup/Grouper Manager Options"),
+    ).toBeDefined();
   });
 
   it("shows empty state when rules list is empty", async () => {
@@ -73,7 +75,7 @@ describe("App Component", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const input = screen.getByPlaceholderText("https://example.com");
+    const input = screen.getByPlaceholderText("example.com or www.example.com");
     const addButton = screen.getByRole("button", { name: /add/i });
 
     await user.type(input, "https://www.google.com");
@@ -94,7 +96,7 @@ describe("App Component", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const input = screen.getByPlaceholderText("https://example.com");
+    const input = screen.getByPlaceholderText("example.com or www.example.com");
     const addButton = screen.getByRole("button", { name: /add/i });
 
     await user.type(input, "invalid-domain");

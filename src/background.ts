@@ -217,6 +217,23 @@ export class TabGroupingService {
     return { key: baseGroupName, title: baseGroupName };
   }
 
+  isInternalTitle(
+    title: string,
+    domain: Domain,
+    url: string | undefined,
+    rulesByDomain: RulesByDomain,
+  ): boolean {
+    const { title: expectedTitle } = this.getGroupKey(
+      domain,
+      url,
+      rulesByDomain,
+    );
+    if (title === expectedTitle) return true;
+    // Check for collision-resolved title: `${sourceDomain} - ${title}`
+    if (title === `${domain} - ${expectedTitle}`) return true;
+    return false;
+  }
+
   buildGroupMap(tabs: Tab[], rulesByDomain: RulesByDomain): GroupMap {
     const groupMap = new Map<string, GroupMapEntry>();
 
@@ -397,6 +414,43 @@ export class TabGroupingService {
     groupStates: GroupState[],
     tabCache: Map<TabId, Tab>,
   ): GroupState[] {
+    const allTabs = Array.from(tabCache.values()).sort(
+      (a, b) => a.index - b.index,
+    );
+    const managedTabIds = new Set(groupStates.flatMap((s) => s.tabIds));
+
+    // 1. Partition into blocks to respect browser constraints (Pinned first) and External Groups
+    const ignoredPinned = allTabs.filter(
+      (t) => t.pinned && !managedTabIds.has(asTabId(t.id)!),
+    );
+    const ignoredUnpinned = allTabs.filter(
+      (t) => !t.pinned && !managedTabIds.has(asTabId(t.id)!),
+    );
+
+    const managedPinnedStates = groupStates
+      .filter((s) => tabCache.get(s.tabIds[0])?.pinned)
+      .sort((a, b) => {
+        const urlA = tabCache.get(a.tabIds[0])?.url || "";
+        const urlB = tabCache.get(b.tabIds[0])?.url || "";
+        return urlA.localeCompare(urlB);
+      });
+
+    const managedUnpinnedStates = groupStates
+      .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
+      .sort((a, b) => {
+        const isGroupA = a.tabIds.length >= 2;
+        const isGroupB = b.tabIds.length >= 2;
+
+        if (isGroupA !== isGroupB) {
+          return isGroupA ? -1 : 1;
+        }
+
+        const urlA = tabCache.get(a.tabIds[0])?.url || "";
+        const urlB = tabCache.get(b.tabIds[0])?.url || "";
+        return urlA.localeCompare(urlB);
+      });
+
+    // 2. State Validation Helpers
     const tabsInGroupCount = new Map<number, number>();
     const tabsInGroupIdMap = new Map<number, Set<TabId>>();
 
@@ -411,24 +465,11 @@ export class TabGroupingService {
       }
     }
 
-    // Sort groups alphabetically based on the URL of their constituent tabs
-    const sorted = [...groupStates].sort((a, b) => {
-      const isGroupA = a.tabIds.length >= 2;
-      const isGroupB = b.tabIds.length >= 2;
-
-      if (isGroupA !== isGroupB) {
-        return isGroupA ? -1 : 1;
-      }
-
-      const urlA = tabCache.get(a.tabIds[0])?.url || "";
-      const urlB = tabCache.get(b.tabIds[0])?.url || "";
-      return urlA.localeCompare(urlB);
-    });
-
-    let expectedIndex = 0;
     const results: GroupState[] = [];
 
-    for (const state of sorted) {
+    // 3. Process Pinned Managed (Sorted after Pinned Ignored)
+    let expectedIndex = ignoredPinned.length;
+    for (const state of managedPinnedStates) {
       const isValid = this.validateGroupState(
         state,
         tabCache,
@@ -436,7 +477,23 @@ export class TabGroupingService {
         tabsInGroupIdMap,
         expectedIndex,
       );
+      results.push({ ...state, needsReposition: !isValid });
+      expectedIndex += state.tabIds.length;
+    }
 
+    // 4. Process Unpinned Managed (Sorted after all Pinned and Unpinned Ignored)
+    expectedIndex =
+      ignoredPinned.length +
+      managedPinnedStates.length +
+      ignoredUnpinned.length;
+    for (const state of managedUnpinnedStates) {
+      const isValid = this.validateGroupState(
+        state,
+        tabCache,
+        tabsInGroupCount,
+        tabsInGroupIdMap,
+        expectedIndex,
+      );
       results.push({ ...state, needsReposition: !isValid });
       expectedIndex += state.tabIds.length;
     }
@@ -559,12 +616,28 @@ export class ChromeTabAdapter {
     rulesByDomain: RulesByDomain,
     service: TabGroupingService,
   ): Promise<Tab[]> {
-    const nonAppTabs = await this.getNormalTabs();
+    const [nonAppTabs, groups] = await Promise.all([
+      this.getNormalTabs(),
+      chrome.tabGroups.query({}),
+    ]);
+    const groupMap = new Map(groups.map((g) => [g.id, g]));
 
     return nonAppTabs.filter((tab) => {
       const domain = service.getDomain(tab.url);
       const rule = rulesByDomain[domain];
-      return rule?.skipProcess == null || rule?.skipProcess === false;
+      if (rule?.skipProcess === true) return false;
+
+      // Respect External Groups: Filter out tabs in groups that are NOT managed by us
+      if (isGrouped(tab)) {
+        const group = groupMap.get(tab.groupId!);
+        if (group && group.title) {
+          if (!service.isInternalTitle(group.title, domain, tab.url, rulesByDomain)) {
+            return false;
+          }
+        }
+      }
+
+      return true;
     });
   }
 
@@ -662,8 +735,15 @@ export class ChromeTabAdapter {
     }
   }
 
-  private async handleSingleTab(state: GroupState): Promise<void> {
+  private async handleSingleTab(
+    state: GroupState,
+    tabCache: Map<TabId, Tab>,
+  ): Promise<void> {
     if (state.groupId === null || state.tabIds.length === 0) return;
+
+    const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
+    const alreadyUngrouped = tabs.every((t) => !isGrouped(t));
+    if (alreadyUngrouped) return;
 
     const result = await retry(() =>
       chrome.tabs.ungroup(state.tabIds as number[]),
@@ -679,7 +759,10 @@ export class ChromeTabAdapter {
   private async handleMultiTabGroup(
     state: GroupState,
     tabCache: Map<TabId, Tab>,
+    groupMap?: Map<number, chrome.tabGroups.TabGroup>,
   ): Promise<void> {
+    const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
+
     if (state.groupId === null) {
       const result = await retry(() =>
         chrome.tabs.group({ tabIds: state.tabIds as number[] }),
@@ -702,6 +785,14 @@ export class ChromeTabAdapter {
       if (updateResult.success) {
         state.groupId = asGroupId(result.value);
       }
+      return;
+    }
+
+    // Optimization: Check if all tabs are already in the correct group and title is correct
+    const group = groupMap?.get(state.groupId as number);
+    const allInCorrectGroup = tabs.every((t) => t.groupId === state.groupId);
+
+    if (allInCorrectGroup && group && group.title === state.title) {
       return;
     }
 
@@ -735,22 +826,26 @@ export class ChromeTabAdapter {
       state.groupId = asGroupId(newGroupResult.value);
     }
 
-    await retry(() =>
-      chrome.tabGroups.update(state.groupId as number, {
-        collapsed: false,
-        title: state.title,
-      }),
-    );
+    // Update title ONLY if it's different
+    if (!group || group.title !== state.title) {
+      await retry(() =>
+        chrome.tabGroups.update(state.groupId as number, {
+          collapsed: false,
+          title: state.title,
+        }),
+      );
+    }
   }
 
   async applyGroupState(
     state: GroupState,
     tabCache: Map<TabId, Tab>,
+    groupMap?: Map<number, chrome.tabGroups.TabGroup>,
   ): Promise<void> {
     if (state.tabIds.length < 2) {
-      await this.handleSingleTab(state);
+      await this.handleSingleTab(state, tabCache);
     } else {
-      await this.handleMultiTabGroup(state, tabCache);
+      await this.handleMultiTabGroup(state, tabCache, groupMap);
     }
   }
 
@@ -939,9 +1034,31 @@ export class ChromeTabAdapter {
 
 export class TabGroupingController {
   private static isProcessing = false;
+  private lastStateHash: string | null = null;
   private service = new TabGroupingService();
   private windowService = new WindowManagementService();
   private adapter = new ChromeTabAdapter();
+
+  private calculateStateHash(
+    tabs: Tab[],
+    rulesByDomain: RulesByDomain,
+    config: GroupingConfig,
+  ): string {
+    const tabFingerprints = tabs.map((t) => ({
+      id: t.id,
+      url: t.url,
+      groupId: t.groupId,
+      windowId: t.windowId,
+      index: t.index,
+      pinned: t.pinned,
+    }));
+
+    return JSON.stringify({
+      tabs: tabFingerprints,
+      rules: rulesByDomain,
+      config: config,
+    });
+  }
 
   async groupByWindow(tabs: Tab[]): Promise<Map<WindowId, Tab[]>> {
     const byWindow = new Map<WindowId, Tab[]>();
@@ -970,12 +1087,15 @@ export class TabGroupingController {
       let tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
 
       const groupsByTitle = new Map<string, GroupId>();
-      if (windowId) {
-        const groups = await this.adapter.getGroupsInWindow(windowId);
-        for (const g of groups) {
-          if (g.title) {
-            groupsByTitle.set(g.title, asGroupId(g.id));
-          }
+      const groupIdToGroup = new Map<number, chrome.tabGroups.TabGroup>();
+
+      const groups = await this.adapter.getGroupsInWindow(
+        windowId || (await chrome.windows.getCurrent()).id!,
+      );
+      for (const g of groups) {
+        groupIdToGroup.set(g.id, g);
+        if (g.title) {
+          groupsByTitle.set(g.title, asGroupId(g.id));
         }
       }
 
@@ -986,7 +1106,9 @@ export class TabGroupingController {
       );
 
       const results = await Promise.allSettled(
-        groupStates.map((s) => this.adapter.applyGroupState(s, tabCache)),
+        groupStates.map((s) =>
+          this.adapter.applyGroupState(s, tabCache, groupIdToGroup),
+        ),
       );
 
       const failures = results
@@ -1146,6 +1268,19 @@ export class TabGroupingController {
 
       const { rulesByDomain, config } = configData;
 
+      // Initial query to check for state changes
+      const allTabs = await this.adapter.getNormalTabs();
+      const currentStateHash = this.calculateStateHash(
+        allTabs,
+        rulesByDomain,
+        config,
+      );
+
+      if (this.lastStateHash === currentStateHash) {
+        console.log("No state changes detected, skipping...");
+        return;
+      }
+
       let tabs = await this.adapter.getRelevantTabs(
         rulesByDomain,
         this.service,
@@ -1180,6 +1315,14 @@ export class TabGroupingController {
           console.error("Grouping failed:", result.error);
         }
       }
+
+      // Update state hash after successful execution
+      const finalTabs = await this.adapter.getNormalTabs();
+      this.lastStateHash = this.calculateStateHash(
+        finalTabs,
+        rulesByDomain,
+        config,
+      );
     } catch (e) {
       console.warn("Execute error:", e);
     } finally {

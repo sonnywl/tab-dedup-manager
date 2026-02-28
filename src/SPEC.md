@@ -28,6 +28,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Responsibility**: Orchestration and workflow management.
 - **Key Characteristics**:
     - **Process Guarding**: Uses an `isProcessing` semaphore to prevent re-entrant execution and race conditions.
+    - **State Fingerprinting**: Employs a `lastStateHash` mechanism. It calculates a hash of the current tabs (IDs, URLs, group IDs, window IDs, indices), rules, and configuration. If the hash hasn't changed since the last successful execution, it skips the entire grouping process to save resources.
     - **State Integration**: Connects the `SyncStore` (user rules) with the Domain and Infrastructure layers.
     - **Window Consolidation**: Orchestrates the move of tabs from excess windows into retained windows *before* the grouping process begins.
     - **Group Persistence**: Ensures existing group IDs are reused by title when tabs cross window boundaries, preventing visual flickering and redundant API calls.
@@ -43,7 +44,12 @@ Instead of "blindly" moving tabs, the system performs a **diffing** operation:
 3. Only tabs that are out of order or in the wrong group are included in the `GroupPlan`.
 This minimizes screen flicker and unnecessary API overhead.
 
-### 2.2 Branded Type Safety
+### 2.2 External Group Management
+The extension respects groups created or named manually by the user.
+- **Internal Title Detection**: `TabGroupingService.isInternalTitle` verifies if a group title matches the generated title (domain, custom name, or split path) or its collision-resolved variant.
+- **Filtering**: During `getRelevantTabs`, any tab that is part of a group with an "external" (non-matching) title is automatically excluded from the extension's grouping, moving, and sorting logic.
+
+### 2.3 Branded Type Safety
 To prevent the common "id mixup" bug (e.g., using a `WindowId` where a `TabId` is expected), the script employs **Branded Types**:
 ```typescript
 type TabId = number & { readonly __brand: "TabId" };

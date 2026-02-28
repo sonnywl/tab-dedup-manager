@@ -32,7 +32,10 @@ const mockChrome = {
     onUpdated: { addListener: vi.fn() },
   },
   tabGroups: { update: vi.fn(), query: vi.fn() },
-  windows: { getAll: vi.fn(), getCurrent: vi.fn() },
+  windows: {
+    getAll: vi.fn(),
+    getCurrent: vi.fn().mockResolvedValue({ id: 1, type: "normal" }),
+  },
 };
 
 vi.stubGlobal("chrome", mockChrome);
@@ -103,12 +106,12 @@ describe("TabGrouping Application Layer", () => {
         }
       }),
       getGroupKey: vi.fn(),
-      buildGroupMap: vi.fn(),
+      buildGroupMap: vi.fn().mockReturnValue(new Map()),
       countDuplicates: vi.fn(),
-      filterValidTabs: vi.fn(),
-      buildGroupStates: vi.fn(),
-      calculateRepositionNeeds: vi.fn(),
-      createGroupPlan: vi.fn(),
+      filterValidTabs: vi.fn().mockReturnValue([]),
+      buildGroupStates: vi.fn().mockReturnValue([]),
+      calculateRepositionNeeds: vi.fn().mockReturnValue([]),
+      createGroupPlan: vi.fn().mockReturnValue({ toUngroup: [], toGroup: [], toMove: [] }),
     };
     mockAdapter = {
       getNormalTabs: vi.fn(),
@@ -151,6 +154,23 @@ describe("TabGrouping Application Layer", () => {
       (TabGroupingController as any).isProcessing = true;
       await controller.execute();
       expect(mockAdapter.getNormalTabs).not.toHaveBeenCalled();
+    });
+
+    it("should skip execution if state hasn't changed", async () => {
+      const tabs = [createMockTab(1, "google.com")];
+      mockAdapter.getNormalTabs.mockResolvedValue(tabs);
+      mockStore.getState.mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: false },
+      });
+
+      // First run
+      await controller.execute();
+      expect(mockAdapter.getRelevantTabs).toHaveBeenCalledTimes(3);
+
+      // Second run with same state
+      await controller.execute();
+      expect(mockAdapter.getRelevantTabs).toHaveBeenCalledTimes(3); // Still 3!
     });
 
     it("should process only top windows and merge others when numWindowsToKeep is set", async () => {
@@ -234,6 +254,41 @@ describe("ChromeTabAdapter Infrastructure Layer", () => {
     expect(unique.length).toBe(1);
     expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
   });
+
+  describe("getRelevantTabs", () => {
+    it("should filter out tabs in external groups", async () => {
+      const tabs = [
+        createMockTab(1, "google.com", 101), // In group 101
+        createMockTab(2, "bing.com"), // Ungrouped
+      ];
+      mockChrome.tabs.query.mockResolvedValue(tabs);
+      mockChrome.tabGroups.query.mockResolvedValue([
+        { id: 101, title: "My Research" }, // External title
+      ]);
+
+      const service = new TabGroupingService();
+      const relevant = await adapter.getRelevantTabs({}, service);
+
+      expect(relevant.length).toBe(1);
+      expect(relevant[0].id).toBe(2);
+    });
+
+    it("should NOT filter out tabs in internal groups", async () => {
+      const tabs = [
+        createMockTab(1, "google.com", 101),
+      ];
+      mockChrome.tabs.query.mockResolvedValue(tabs);
+      mockChrome.tabGroups.query.mockResolvedValue([
+        { id: 101, title: "google.com" }, // Internal title
+      ]);
+
+      const service = new TabGroupingService();
+      const relevant = await adapter.getRelevantTabs({}, service);
+
+      expect(relevant.length).toBe(1);
+      expect(relevant[0].id).toBe(1);
+    });
+  });
 });
 
 describe("TabGroupingService Domain Layer", () => {
@@ -264,6 +319,81 @@ describe("TabGroupingService Domain Layer", () => {
     );
     expect(result[0].title).toBe("a.com");
     expect(result[1].title).toBe("z.com");
+  });
+
+  it("should correctly position tabs respecting pinned and ignored constraints", () => {
+    // Scenario:
+    // Tab 1 (id:1): Pinned, Managed (google.com)
+    // Tab 2 (id:2): Pinned, Ignored (external/manual)
+    // Tab 3 (id:3): Unpinned, Managed Group (a.com)
+    // Tab 4 (id:4): Unpinned, Managed Group (a.com)
+    // Tab 5 (id:5): Unpinned, Ignored (manual)
+    // Tab 6 (id:6): Unpinned, Managed Single (z.com)
+
+    const tab1 = createMockTab(1, "google.com"); tab1.pinned = true;
+    const tab2 = createMockTab(2, "manual.com"); tab2.pinned = true;
+    const tab3 = createMockTab(3, "a.com/1");
+    const tab4 = createMockTab(4, "a.com/2");
+    const tab5 = createMockTab(5, "bing.com");
+    const tab6 = createMockTab(6, "z.com");
+
+    const cache = new Map<number, chrome.tabs.Tab>([
+      [1, tab1], [2, tab2], [3, tab3], [4, tab4], [5, tab5], [6, tab6]
+    ]);
+
+    const groupStates: any[] = [
+      { title: "google.com", tabIds: [1], groupId: null, needsReposition: false }, // Managed Pinned
+      { title: "a.com", tabIds: [3, 4], groupId: 101, needsReposition: false },    // Managed Group
+      { title: "z.com", tabIds: [6], groupId: null, needsReposition: false },       // Managed Single
+    ];
+
+    const result = service.calculateRepositionNeeds(groupStates as any, cache as any);
+
+    // Expected Sorting:
+    // 1. ignoredPinned: Tab 2 (Index 0)
+    // 2. managedPinned: Tab 1 (Index 1)
+    // 3. ignoredUnpinned: Tab 5 (Index 2)
+    // 4. managedUnpinned Group: Tabs 3,4 (Index 3, 4)
+    // 5. managedUnpinned Single: Tab 6 (Index 5)
+
+    // We verify the logic by checking if they "need repositioning" when placed at the WRONG indices
+    // In our test, tab objects have index=0 by default from createMockTab.
+    // So all should return needsReposition: true except if their target index is 0.
+
+    // google.com target index is 1. Current is 0.
+    expect(result.find(r => r.title === "google.com")!.needsReposition).toBe(true);
+
+    // a.com target index is 3. Current is 0.
+    expect(result.find(r => r.title === "a.com")!.needsReposition).toBe(true);
+
+    // Now let's simulate a "Perfect" state and ensure needsReposition is FALSE
+    // Expected Sorting:
+    // 0. ignoredPinned: Tab 2 (manual.com)
+    // 1. managedPinned: Tab 1 (google.com)
+    // 2. ignoredUnpinned: Tab 5 (bing.com)
+    // 3. managedUnpinned Group: Tab 3 (a.com/1)
+    // 4. managedUnpinned Group: Tab 4 (a.com/2)
+    // 5. managedUnpinned Single: Tab 6 (z.com)
+
+    tab2.index = 0;
+    tab1.index = 1;
+    tab5.index = 2;
+    tab3.index = 3;
+    tab4.index = 4;
+    tab6.index = 5;
+
+    tab1.groupId = -1;
+    tab2.groupId = -1;
+    tab5.groupId = -1;
+    tab6.groupId = -1;
+
+    tab3.groupId = 101;
+    tab4.groupId = 101;
+
+    const perfectResult = service.calculateRepositionNeeds(groupStates as any, cache as any);
+    expect(perfectResult.find(r => r.title === "google.com")?.needsReposition).toBe(false);
+    expect(perfectResult.find(r => r.title === "a.com")?.needsReposition).toBe(false);
+    expect(perfectResult.find(r => r.title === "z.com")?.needsReposition).toBe(false);
   });
 
   describe("getGroupKey", () => {
@@ -312,6 +442,29 @@ describe("TabGroupingService Domain Layer", () => {
       });
       expect(res.key).toBe("google.com");
       expect(res.title).toBe("google.com");
+    });
+  });
+
+  describe("isInternalTitle", () => {
+    const domain = "google.com" as any;
+    const rules: any = {
+      "google.com": { domain: "google.com", groupName: "Search" },
+    };
+
+    it("should return true for default domain title", () => {
+      expect(service.isInternalTitle("google.com", domain, "https://google.com", {})).toBe(true);
+    });
+
+    it("should return true for custom group name", () => {
+      expect(service.isInternalTitle("Search", domain, "https://google.com", rules)).toBe(true);
+    });
+
+    it("should return true for collision-resolved title", () => {
+      expect(service.isInternalTitle("google.com - Search", domain, "https://google.com", rules)).toBe(true);
+    });
+
+    it("should return false for external title", () => {
+      expect(service.isInternalTitle("My Work", domain, "https://google.com", rules)).toBe(false);
     });
   });
 

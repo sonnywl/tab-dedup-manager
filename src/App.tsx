@@ -201,25 +201,43 @@ const GroupingSettings = ({
           <span className="text-sm text-gray-700">
             Keep top windows by tab count:
           </span>
-          <input
-            type="number"
-            min="1"
-            placeholder="All"
-            value={
-              typeof config.numWindowsToKeep === "number"
-                ? config.numWindowsToKeep
-                : ""
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="1"
+              placeholder="All"
+              value={
+                typeof config.numWindowsToKeep === "number"
+                  ? config.numWindowsToKeep
+                  : ""
+              }
+              onChange={(e) => {
+                const val = parseInt(e.target.value);
+                onChange({
+                  ...config,
+                  numWindowsToKeep: isNaN(val) ? null : val,
+                });
+              }}
+              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Number of windows to keep"
+            />
+            {
+              <button
+                disabled={typeof config.numWindowsToKeep !== "number"}
+                onClick={() =>
+                  onChange({
+                    ...config,
+                    numWindowsToKeep: null,
+                  })
+                }
+                className="text-gray-400 hover:text-gray-600 p-0.5"
+                title="Clear window limit"
+                aria-label="Clear window limit"
+              >
+                <XMarkIcon className="w-4 h-4" />
+              </button>
             }
-            onChange={(e) => {
-              const val = parseInt(e.target.value);
-              onChange({
-                ...config,
-                numWindowsToKeep: isNaN(val) ? null : val,
-              });
-            }}
-            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            aria-label="Number of windows to keep"
-          />
+          </div>
           <span className="text-xs text-gray-500">
             (Empty = retain all windows)
           </span>
@@ -306,8 +324,9 @@ const RuleRow = React.memo(
               className="w-14 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
               aria-label="Split by path segment index"
             />
-            {rule.splitByPath !== null && (
+            {
               <button
+                disabled={rule.splitByPath === null}
                 onClick={() => onUpdate(rule.id, { splitByPath: null })}
                 className="text-gray-400 hover:text-gray-600 p-0.5"
                 title="Clear split path"
@@ -315,7 +334,7 @@ const RuleRow = React.memo(
               >
                 <XMarkIcon className="w-4 h-4" />
               </button>
-            )}
+            }
           </div>
         </td>
         <td className="px-6 py-4">

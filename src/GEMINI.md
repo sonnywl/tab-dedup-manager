@@ -17,6 +17,7 @@ The application is structured into three distinct layers to promote separation o
 | Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.                        |
 | Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic)                      |
 | Group title     | Domain name by default, or user-defined custom group name                                            |
+| External Groups | Skip tabs in groups with manual/external titles (not matching program's naming pattern)              |
 | Custom Groups   | Multiple domains can be mapped to a single group name to merge them together                         |
 | Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)                                   |
 | Rule: Skip      | Completely ignore domain; mutually exclusive with Delete; clears/disables split path and group name  |
@@ -60,7 +61,8 @@ The application is structured into three distinct layers to promote separation o
 
 | Condition                       | Action                                                              |
 | ------------------------------- | ------------------------------------------------------------------- |
-| Tab domain ≠ group title        | Ungroup, regroup correctly                                          |
+| Tab domain ≠ group title        | Ungroup, regroup correctly (unless it's an External Group)          |
+| External/Manual group title     | Skip processing (ignore tabs in that group)                         |
 | Single tab accidentally grouped | Ungroup explicitly                                                  |
 | Groups already positioned       | Skip reposition                                                     |
 | Group creation fails            | Create new group                                                    |
@@ -70,8 +72,9 @@ The application is structured into three distinct layers to promote separation o
 
 ## Performance
 
+- **State Fingerprinting**: `lastStateHash` skips redundant executions if tabs/rules haven't changed.
+- **Redundancy Checks**: `applyGroupState` skips Chrome API calls if title and group membership are already correct.
 - O(n) tab filtering + deduplication
 - O(g) group operations where g = domains with 2+ tabs
 - O(r) repositions where r ≤ g
 - Single tab query cached in Map
-- Skip Chrome API when state matches desired
