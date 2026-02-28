@@ -4,6 +4,7 @@ import {
   fireEvent,
   waitFor,
   cleanup,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as matchers from "@testing-library/jest-dom/matchers";
@@ -97,7 +98,6 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
-        splitByPath: false,
         groupName: "",
       },
     ];
@@ -125,7 +125,6 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
-        splitByPath: false,
         groupName: "",
       },
     ];
@@ -133,7 +132,8 @@ describe("App Component", () => {
 
     render(<App />);
 
-    const checkboxes = await screen.findAllByRole("checkbox");
+    const tbody = document.querySelector("tbody");
+    const checkboxes = await within(tbody!).findAllByRole("checkbox");
     const skipCheckbox = checkboxes[0]; // Skip is now the first checkbox in the row after reordering?
     // Wait, let's check the order in the code again.
     // Body order: Domain, Group (GroupNameInput), Skip (checkbox), Auto Delete (checkbox)
@@ -157,7 +157,6 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
-        splitByPath: false,
         groupName: "",
       },
     ];
@@ -165,7 +164,8 @@ describe("App Component", () => {
 
     render(<App />);
 
-    const checkboxes = await screen.findAllByRole("checkbox");
+    const tbody = document.querySelector("tbody");
+    const checkboxes = await within(tbody!).findAllByRole("checkbox");
     const autoDeleteCheckbox = checkboxes[1]; // Auto Delete is the second checkbox
 
     fireEvent.click(autoDeleteCheckbox);
@@ -186,7 +186,6 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: false,
-        splitByPath: false,
         groupName: "",
       },
     ];
@@ -216,7 +215,6 @@ describe("App Component", () => {
         domain: "google.com",
         autoDelete: false,
         skipProcess: true,
-        splitByPath: false,
         groupName: "Test Group",
       },
     ];
@@ -225,7 +223,8 @@ describe("App Component", () => {
     render(<App />);
 
     const groupInput = await screen.findByPlaceholderText("Group name...");
-    const checkboxes = await screen.findAllByRole("checkbox");
+    const tbody = document.querySelector("tbody");
+    const checkboxes = await within(tbody!).findAllByRole("checkbox");
     const autoDeleteCheckbox = checkboxes[1];
 
     expect(groupInput).toBeDisabled();

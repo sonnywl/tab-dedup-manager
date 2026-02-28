@@ -22,6 +22,7 @@ interface RulesByDomain {
 
 interface GroupingConfig {
   byWindow: boolean;
+  numWindowsToKeep: number | null | undefined;
 }
 
 interface SyncStore {
@@ -29,6 +30,7 @@ interface SyncStore {
     rules: Rule[];
     grouping: {
       byWindow: boolean;
+      numWindowsToKeep?: number | null;
     };
   }>;
 }
@@ -240,6 +242,7 @@ export class TabGroupingService {
   buildGroupStates(
     domainMap: DomainMap,
     tabCache: Map<TabId, Tab>,
+    groupsByTitle?: Map<string, GroupId>,
   ): GroupState[] {
     const groupStates: GroupState[] = [];
 
@@ -255,15 +258,21 @@ export class TabGroupingService {
       // Sort tabs within the group alphabetically by URL
       validTabs.sort((a, b) => (a.url || "").localeCompare(b.url || ""));
 
-      const existingGroup = validTabs.find(isGrouped);
+      // Try to find an existing group:
+      // 1. By searching for already grouped tabs in the list
+      // 2. By searching for a group with the same title in the window
+      const existingInTabs = validTabs.find(isGrouped);
+      const groupId =
+        existingInTabs?.groupId != null
+          ? asGroupId(existingInTabs.groupId)
+          : groupsByTitle?.get(displayName) || null;
+
       const sortedTabIds = extractTabIds(validTabs);
 
       groupStates.push({
         domain: displayName,
         tabIds: sortedTabIds,
-        groupId: existingGroup?.groupId
-          ? asGroupId(existingGroup.groupId)
-          : null,
+        groupId,
         needsReposition: false,
       });
     }
@@ -376,6 +385,61 @@ export class TabGroupingService {
   }
 }
 
+export class WindowManagementService {
+  calculateMergePlan(
+    retainedWindows: Map<WindowId, Tab[]>,
+    excessTabs: Tab[],
+    service: TabGroupingService,
+  ): Map<WindowId, TabId[]> {
+    const plan = new Map<WindowId, TabId[]>();
+
+    // Pre-calculate domain counts for each retained window
+    const windowDomainCounts = new Map<WindowId, Map<Domain, number>>();
+
+    retainedWindows.forEach((tabs, windowId) => {
+      const counts = new Map<Domain, number>();
+      tabs.forEach((tab) => {
+        const domain = service.getDomain(tab.url);
+        counts.set(domain, (counts.get(domain) || 0) + 1);
+      });
+      windowDomainCounts.set(windowId, counts);
+    });
+
+    // Find the default window (the one with the most tabs)
+    let defaultWindowId: WindowId | undefined;
+    let maxTabs = -1;
+    retainedWindows.forEach((tabs, windowId) => {
+      if (tabs.length > maxTabs) {
+        maxTabs = tabs.length;
+        defaultWindowId = windowId;
+      }
+    });
+
+    excessTabs.forEach((tab) => {
+      const domain = service.getDomain(tab.url);
+      let bestWindowId = defaultWindowId;
+      let maxDomainCount = 0;
+
+      windowDomainCounts.forEach((counts, windowId) => {
+        const count = counts.get(domain) || 0;
+        if (count > maxDomainCount) {
+          maxDomainCount = count;
+          bestWindowId = windowId;
+        }
+      });
+
+      if (bestWindowId && tab.id) {
+        if (!plan.has(bestWindowId)) {
+          plan.set(bestWindowId, []);
+        }
+        plan.get(bestWindowId)!.push(asTabId(tab.id)!);
+      }
+    });
+
+    return plan;
+  }
+}
+
 // ============================================================================
 // INFRASTRUCTURE LAYER (Chrome API)
 // ============================================================================
@@ -482,7 +546,9 @@ export class ChromeTabAdapter {
   }
 
   async mergeToActiveWindow(tabs: Tab[]): Promise<void> {
-    const normalWindows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    const normalWindows = await chrome.windows.getAll({
+      windowTypes: ["normal"],
+    });
     if (normalWindows.length <= 1) return;
 
     const activeWindow = await chrome.windows.getCurrent();
@@ -681,6 +747,12 @@ export class ChromeTabAdapter {
     }
   }
 
+  async getGroupsInWindow(
+    windowId: number,
+  ): Promise<chrome.tabGroups.TabGroup[]> {
+    return (await chrome.tabGroups.query({ windowId })) || [];
+  }
+
   async updateBadge(service: TabGroupingService): Promise<void> {
     const tabs = await this.getNormalTabs();
     const duplicateCount = service.countDuplicates(tabs);
@@ -690,6 +762,30 @@ export class ChromeTabAdapter {
       chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
     } else {
       chrome.action.setBadgeText({ text: "" });
+    }
+  }
+
+  async moveTabsToWindow(
+    tabIds: TabId[],
+    targetWindowId: number,
+  ): Promise<void> {
+    if (tabIds.length === 0) return;
+
+    const batches = this.batchArray(tabIds, this.MAX_BATCH_SIZE);
+    for (const batch of batches) {
+      const result = await retry(() =>
+        chrome.tabs.move(batch as number[], {
+          windowId: targetWindowId,
+          index: -1,
+        }),
+      );
+      if (!result.success) {
+        console.warn(
+          `Failed to move tabs to window ${targetWindowId}:`,
+          result.error,
+        );
+      }
+      await this.sleep(this.RATE_LIMIT_DELAY);
     }
   }
 
@@ -749,6 +845,7 @@ export class ChromeTabAdapter {
 export class TabGroupingController {
   private static isProcessing = false;
   private service = new TabGroupingService();
+  private windowService = new WindowManagementService();
   private adapter = new ChromeTabAdapter();
 
   async groupByWindow(tabs: Tab[]): Promise<Map<WindowId, Tab[]>> {
@@ -777,7 +874,21 @@ export class TabGroupingController {
         : allCurrentTabs;
       let tabCache = new Map(relevantTabs.map((t) => [asTabId(t.id)!, t]));
 
-      let groupStates = this.service.buildGroupStates(domainMap, tabCache);
+      const groupsByTitle = new Map<string, GroupId>();
+      if (windowId) {
+        const groups = await this.adapter.getGroupsInWindow(windowId);
+        groups.forEach((g) => {
+          if (g.title) {
+            groupsByTitle.set(g.title, asGroupId(g.id));
+          }
+        });
+      }
+
+      let groupStates = this.service.buildGroupStates(
+        domainMap,
+        tabCache,
+        groupsByTitle,
+      );
 
       const results = await Promise.allSettled(
         groupStates.map((s) => this.adapter.applyGroupState(s, tabCache)),
@@ -857,6 +968,7 @@ export class TabGroupingController {
 
       const config: GroupingConfig = {
         byWindow: grouping.byWindow,
+        numWindowsToKeep: grouping.numWindowsToKeep,
       };
 
       const rulesByDomain: RulesByDomain = validRules.reduce(
@@ -886,18 +998,56 @@ export class TabGroupingController {
       );
 
       if (config.byWindow) {
-        const windowGroups = await this.groupByWindow(remainingTabs);
+        let windowGroups = await this.groupByWindow(remainingTabs);
+        let windowEntries = Array.from(windowGroups.entries());
+
+        if (
+          isDefined(config.numWindowsToKeep) &&
+          windowEntries.length > config.numWindowsToKeep
+        ) {
+          // Sort windows by amount of tabs (descending)
+          windowEntries.sort((a, b) => b[1].length - a[1].length);
+
+          const retainedEntries = windowEntries.slice(
+            0,
+            config.numWindowsToKeep,
+          );
+          const excessEntries = windowEntries.slice(config.numWindowsToKeep);
+
+          const retainedMap = new Map(retainedEntries);
+          const excessTabs = excessEntries.flatMap((e) => e[1]);
+
+          const mergePlan = this.windowService.calculateMergePlan(
+            retainedMap,
+            excessTabs,
+            this.service,
+          );
+
+          // Execute merge plan
+          for (const [targetWindowId, tabIds] of mergePlan.entries()) {
+            await this.adapter.moveTabsToWindow(
+              tabIds,
+              targetWindowId as number,
+            );
+            // Update local model for subsequent processing
+            const targetTabs = retainedMap.get(targetWindowId)!;
+            const movedTabs = excessTabs.filter((t) =>
+              tabIds.includes(asTabId(t.id)!),
+            );
+            targetTabs.push(...movedTabs);
+          }
+
+          windowEntries = Array.from(retainedMap.entries());
+        }
 
         const results = await Promise.allSettled(
-          Array.from(windowGroups.entries()).map(
-            async ([windowId, windowTabs]) => {
-              const domainMap = this.service.buildDomainMap(
-                windowTabs,
-                rulesByDomain,
-              );
-              return this.processGrouping(domainMap, windowId);
-            },
-          ),
+          windowEntries.map(async ([windowId, windowTabs]) => {
+            const domainMap = this.service.buildDomainMap(
+              windowTabs,
+              rulesByDomain,
+            );
+            return this.processGrouping(domainMap, windowId);
+          }),
         );
 
         const failures = results.filter((r) => r.status === "rejected");

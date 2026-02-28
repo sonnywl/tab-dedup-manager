@@ -9,7 +9,6 @@ interface DomainRule {
   domain: string;
   autoDelete: boolean;
   skipProcess: boolean;
-  splitByPath: boolean | undefined;
   groupName: string | undefined;
 }
 
@@ -63,24 +62,35 @@ export default function App() {
     new Set(rules.map((r) => r.groupName).filter(Boolean)),
   ) as string[];
 
-  const setRulesWithLocal = useCallback(async (rules: DomainRule[]) => {
-    const { setState, getState } = await startSyncStore({
-      rules: [],
-    });
+  const [grouping, setGrouping] = useState<{
+    byWindow: boolean;
+    numWindowsToKeep?: number | null;
+  }>({ byWindow: false });
 
-    const appConfig = await getState();
-    setRules(rules);
-    await setState({ ...appConfig, rules });
-  }, []);
+  const setRulesWithLocal = useCallback(
+    async (rules: DomainRule[], newGrouping = grouping) => {
+      const { setState } = await startSyncStore({
+        rules: [],
+        grouping: { byWindow: false },
+      });
+
+      setRules(rules);
+      setGrouping(newGrouping);
+      await setState({ rules, grouping: newGrouping });
+    },
+    [grouping],
+  );
 
   useEffect(() => {
     const retrieveData = async () => {
       const { getState } = await startSyncStore({
         rules: [],
+        grouping: { byWindow: false },
       });
 
       const config = await getState();
-      setRules(config.rules);
+      setRules(config.rules || []);
+      setGrouping(config.grouping || { byWindow: false });
     };
     retrieveData();
   }, []);
@@ -98,7 +108,6 @@ export default function App() {
       domain: url.hostname,
       autoDelete: false,
       skipProcess: false,
-      splitByPath: false,
       groupName: "",
     };
 
@@ -145,6 +154,56 @@ export default function App() {
               Add
             </button>
           </form>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <label className="block text-sm font-medium text-gray-700 mb-4">
+            Grouping Settings
+          </label>
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={grouping.byWindow}
+                  onChange={(e) => {
+                    const isByWindow = e.target.checked;
+                    setRulesWithLocal(rules, {
+                      ...grouping,
+                      byWindow: isByWindow,
+                      numWindowsToKeep: isByWindow ? grouping.numWindowsToKeep : null,
+                    });
+                  }}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">Group per window</span>
+              </label>
+            </div>
+            {grouping.byWindow && (
+              <div className="flex items-center gap-2 ml-6">
+                <span className="text-sm text-gray-700">
+                  Keep top windows by tab count:
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="All"
+                  value={grouping.numWindowsToKeep || ""}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    setRulesWithLocal(rules, {
+                      ...grouping,
+                      numWindowsToKeep: isNaN(val) ? null : val,
+                    });
+                  }}
+                  className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-500">
+                  (Empty = retain all windows)
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-lg shadow overflow-hidden mb-6">
