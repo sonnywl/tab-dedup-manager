@@ -173,7 +173,9 @@ export default function App() {
                     setRulesWithLocal(rules, {
                       ...grouping,
                       byWindow: isByWindow,
-                      numWindowsToKeep: isByWindow ? grouping.numWindowsToKeep : null,
+                      numWindowsToKeep: isByWindow
+                        ? grouping.numWindowsToKeep
+                        : null,
                     });
                   }}
                   className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
@@ -277,7 +279,9 @@ export default function App() {
                           placeholder="Off"
                           value={rule.splitByPath ?? ""}
                           disabled={rule.skipProcess}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                          onChange={(
+                            e: React.ChangeEvent<HTMLInputElement>,
+                          ) => {
                             const val = parseInt(e.target.value, 10);
                             updateRule(
                               rule.id,

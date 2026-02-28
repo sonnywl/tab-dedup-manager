@@ -121,15 +121,15 @@ describe("App Component", () => {
     });
   });
 
-  it("toggles skipProcess checkbox", async () => {
+  it("toggles skipProcess checkbox and clears other fields", async () => {
     const initialRules = [
       {
         id: "1",
         domain: "google.com",
-        autoDelete: false,
+        autoDelete: true,
         skipProcess: false,
-        splitByPath: null,
-        groupName: "",
+        splitByPath: 1,
+        groupName: "Test Group",
       },
     ];
     mockStore.getState.mockResolvedValue({ rules: initialRules });
@@ -145,21 +145,29 @@ describe("App Component", () => {
     await waitFor(() => {
       expect(mockStore.setState).toHaveBeenCalledWith(
         expect.objectContaining({
-          rules: [expect.objectContaining({ id: "1", skipProcess: true })],
+          rules: [
+            expect.objectContaining({
+              id: "1",
+              skipProcess: true,
+              autoDelete: false,
+              splitByPath: null,
+              groupName: "",
+            }),
+          ],
         }),
       );
     });
   });
 
-  it("toggles autoDelete checkbox", async () => {
+  it("toggles autoDelete checkbox and clears other fields", async () => {
     const initialRules = [
       {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: false,
-        splitByPath: null,
-        groupName: "",
+        skipProcess: true,
+        splitByPath: 1,
+        groupName: "Test Group",
       },
     ];
     mockStore.getState.mockResolvedValue({ rules: initialRules });
@@ -175,7 +183,15 @@ describe("App Component", () => {
     await waitFor(() => {
       expect(mockStore.setState).toHaveBeenCalledWith(
         expect.objectContaining({
-          rules: [expect.objectContaining({ id: "1", autoDelete: true })],
+          rules: [
+            expect.objectContaining({
+              id: "1",
+              autoDelete: true,
+              skipProcess: false,
+              splitByPath: null,
+              groupName: "",
+            }),
+          ],
         }),
       );
     });
@@ -251,7 +267,7 @@ describe("App Component", () => {
     });
   });
 
-  it("disables inputs when skip is enabled", async () => {
+  it("disables inputs when skip or autoDelete is enabled", async () => {
     const initialRules = [
       {
         id: "1",
@@ -261,22 +277,37 @@ describe("App Component", () => {
         splitByPath: null,
         groupName: "Test Group",
       },
+      {
+        id: "2",
+        domain: "bing.com",
+        autoDelete: true,
+        skipProcess: false,
+        splitByPath: null,
+        groupName: "Search",
+      },
     ];
     mockStore.getState.mockResolvedValue({ rules: initialRules });
 
     render(<App />);
 
-    const groupInput = await screen.findByPlaceholderText("Group name...");
-    const splitInput = await screen.findByPlaceholderText("Off");
-    const tbody = document.querySelector("tbody");
-    const checkboxes = await within(tbody!).findAllByRole("checkbox");
-    const autoDeleteCheckbox = checkboxes[1];
+    const groupInputs = await screen.findAllByPlaceholderText("Group name...");
+    const splitInputs = await screen.findAllByPlaceholderText("Off");
+    const rows = document.querySelectorAll("tbody tr");
 
-    expect(groupInput).toBeDisabled();
-    expect(autoDeleteCheckbox).toBeDisabled();
-    expect(splitInput).toBeDisabled();
+    // Row 1 (Skip enabled)
+    expect(groupInputs[0]).toBeDisabled();
+    expect(splitInputs[0]).toBeDisabled();
+    const row1Checkboxes = within(rows[0] as HTMLElement).getAllByRole(
+      "checkbox",
+    );
+    expect(row1Checkboxes[1]).toBeDisabled(); // autoDelete checkbox
 
-    const removeButton = screen.getByRole("button", { name: "" }); // TrashIcon button
-    expect(removeButton).not.toBeDisabled();
+    // Row 2 (AutoDelete enabled)
+    expect(groupInputs[1]).toBeDisabled();
+    expect(splitInputs[1]).toBeDisabled();
+    const row2Checkboxes = within(rows[1] as HTMLElement).getAllByRole(
+      "checkbox",
+    );
+    expect(row2Checkboxes[0]).not.toBeDisabled(); // skip checkbox (can still toggle)
   });
 });
