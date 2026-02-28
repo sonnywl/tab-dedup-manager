@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Grouper Manager",
   "version": "0.4.12",
-"description": "One click - groups and dedups tabs without worry",  "options_page": "index.html",
+  "description": "One click - groups and dedups tabs without worry",
+  "options_page": "index.html",
   "icons": {
     "192": "logo192.png",
     "512": "logo512.png"
@@ -18,5 +19,9 @@
     "type": "module"
   },
   "incognito": "spanning",
-  "permissions": ["storage", "tabs", "tabGroups"]
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups"
+  ]
 }
