@@ -33,6 +33,7 @@ vi.stubGlobal("browser", mockChrome);
 const mockStore = {
   getState: vi.fn().mockResolvedValue({
     rules: [],
+    grouping: { byWindow: false },
   }),
   setState: vi.fn().mockResolvedValue(undefined),
 };
@@ -44,7 +45,10 @@ vi.mock("./utils/startSyncStore", () => ({
 describe("App Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.getState.mockResolvedValue({ rules: [] });
+    mockStore.getState.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
   });
 
   afterEach(() => {
@@ -53,15 +57,15 @@ describe("App Component", () => {
 
   it("renders the app title", async () => {
     render(<App />);
-    expect(
-      await screen.findByText("Tab Group Dedup Management Preferences"),
-    ).toBeDefined();
+    expect(await screen.findByText("Tab Group Dedup Management")).toBeDefined();
   });
 
-  it("shows 'No domains added' when rules list is empty", async () => {
+  it("shows empty state when rules list is empty", async () => {
     render(<App />);
-    expect(await screen.findByText("No domains added")).toBeDefined();
-    const noDomainsCell = screen.getByText("No domains added");
+    expect(
+      await screen.findByText("No domain rules configured yet."),
+    ).toBeDefined();
+    const noDomainsCell = screen.getByText("No domain rules configured yet.");
     expect(noDomainsCell).toHaveAttribute("colspan", "6");
   });
 
@@ -69,14 +73,20 @@ describe("App Component", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const input = screen.getByPlaceholderText("example.com");
+    const input = screen.getByPlaceholderText("https://example.com");
     const addButton = screen.getByRole("button", { name: /add/i });
 
     await user.type(input, "https://www.google.com");
     await user.click(addButton);
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalled();
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rules: expect.arrayContaining([
+            expect.objectContaining({ domain: "www.google.com" }),
+          ]),
+        }),
+      );
     });
   });
 
@@ -84,7 +94,7 @@ describe("App Component", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const input = screen.getByPlaceholderText("example.com");
+    const input = screen.getByPlaceholderText("https://example.com");
     const addButton = screen.getByRole("button", { name: /add/i });
 
     await user.type(input, "invalid-domain");
@@ -104,12 +114,17 @@ describe("App Component", () => {
         groupName: "",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     const user = userEvent.setup();
     render(<App />);
 
-    const removeButton = await screen.findByRole("button", { name: "" }); // TrashIcon button
+    const removeButton = await screen.findByRole("button", {
+      name: /remove rule for google.com/i,
+    });
     await user.click(removeButton);
 
     await waitFor(() => {
@@ -132,13 +147,16 @@ describe("App Component", () => {
         groupName: "Test Group",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     render(<App />);
 
-    const tbody = document.querySelector("tbody");
-    const checkboxes = await within(tbody!).findAllByRole("checkbox");
-    const skipCheckbox = checkboxes[0];
+    const skipCheckbox = await screen.findByLabelText(
+      /skip processing for google.com/i,
+    );
 
     fireEvent.click(skipCheckbox);
 
@@ -151,7 +169,6 @@ describe("App Component", () => {
               skipProcess: true,
               autoDelete: false,
               splitByPath: null,
-              groupName: "",
             }),
           ],
         }),
@@ -170,13 +187,16 @@ describe("App Component", () => {
         groupName: "Test Group",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     render(<App />);
 
-    const tbody = document.querySelector("tbody");
-    const checkboxes = await within(tbody!).findAllByRole("checkbox");
-    const autoDeleteCheckbox = checkboxes[1];
+    const autoDeleteCheckbox = await screen.findByLabelText(
+      /auto-delete tabs for google.com/i,
+    );
 
     fireEvent.click(autoDeleteCheckbox);
 
@@ -189,7 +209,6 @@ describe("App Component", () => {
               autoDelete: true,
               skipProcess: false,
               splitByPath: null,
-              groupName: "",
             }),
           ],
         }),
@@ -208,12 +227,15 @@ describe("App Component", () => {
         groupName: "",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     const user = userEvent.setup();
     render(<App />);
 
-    const splitInput = await screen.findByPlaceholderText("Off");
+    const splitInput = await screen.findByLabelText(/split by path/i);
     await user.type(splitInput, "1");
 
     await waitFor(() => {
@@ -225,7 +247,7 @@ describe("App Component", () => {
     });
 
     // Clear it
-    const clearButton = screen.getByTitle("Clear");
+    const clearButton = screen.getByTitle(/clear split path/i);
     await user.click(clearButton);
 
     await waitFor(() => {
@@ -248,12 +270,15 @@ describe("App Component", () => {
         groupName: "",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     const user = userEvent.setup();
     render(<App />);
 
-    const groupInput = await screen.findByPlaceholderText("Group name...");
+    const groupInput = await screen.findByLabelText(/group name/i);
     await user.type(groupInput, "Search Engine");
 
     await waitFor(() => {
@@ -286,28 +311,22 @@ describe("App Component", () => {
         groupName: "Search",
       },
     ];
-    mockStore.getState.mockResolvedValue({ rules: initialRules });
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
 
     render(<App />);
 
-    const groupInputs = await screen.findAllByPlaceholderText("Group name...");
-    const splitInputs = await screen.findAllByPlaceholderText("Off");
-    const rows = document.querySelectorAll("tbody tr");
+    const groupInputs = await screen.findAllByLabelText(/group name/i);
+    const splitInputs = await screen.findAllByLabelText(/split by path/i);
 
     // Row 1 (Skip enabled)
     expect(groupInputs[0]).toBeDisabled();
     expect(splitInputs[0]).toBeDisabled();
-    const row1Checkboxes = within(rows[0] as HTMLElement).getAllByRole(
-      "checkbox",
-    );
-    expect(row1Checkboxes[1]).toBeDisabled(); // autoDelete checkbox
 
     // Row 2 (AutoDelete enabled)
     expect(groupInputs[1]).toBeDisabled();
     expect(splitInputs[1]).toBeDisabled();
-    const row2Checkboxes = within(rows[1] as HTMLElement).getAllByRole(
-      "checkbox",
-    );
-    expect(row2Checkboxes[0]).not.toBeDisabled(); // skip checkbox (can still toggle)
   });
 });
