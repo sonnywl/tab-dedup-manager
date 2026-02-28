@@ -14,28 +14,26 @@ The application is structured into three distinct layers to promote separation o
 | --------------- | ------------------------------------------------------------------------------- |
 | Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end   |
 | Grouping Scope  | Global (merge all to active window) OR per-window grouping                      |
+| Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.   |
+| Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic) |
 | Group title     | Domain name by default, or user-defined custom group name                       |
 | Custom Groups   | Multiple domains can be mapped to a single group name to merge them together    |
 | Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)              |
 | Rule: Skip      | Completely ignore domain during deduplication and grouping                      |
 | Rule: Delete    | Automatically close tabs matching domain when processing                        |
-| Exclusions      | Always skip PWA windows and extension internal pages                            |
+| Exclusions      | Always skip non-normal windows (popups, panels), internal pages, and PWAs       |
 
 ## Flow (Orchestrated by `TabGroupingController.execute()`)
 
 1.  **Initialization (`init()`):** Sets up event listeners (e.g., `chrome.action.onClicked`, `chrome.tabs.onCreated`, `chrome.tabs.onRemoved`, `chrome.tabs.onUpdated`) which trigger the `TabGroupingController.execute()` method.
-2.  **State Retrieval:** Fetches user-defined rules and grouping configuration (e.g., `byWindow`) from the synchronized store.
-3.  **Tab Filtering:** Uses `ChromeTabAdapter` to get relevant tabs (excluding PWAs and extension pages) and `TabGroupingService` to apply `skipProcess` rules.
-4.  **Window Merging (Conditional):** If `byWindow` grouping is disabled, `ChromeTabAdapter` merges tabs into the active window.
-5.  **Deduplication:** `ChromeTabAdapter` identifies and removes duplicate tabs.
-6.  **Auto-deletion:** `ChromeTabAdapter` applies auto-delete rules to remove specified tabs.
-7.  **Window-based Processing (Conditional):**
-    - If `byWindow` is enabled, `TabGroupingController` groups remaining tabs by window, and for each window:
-      - `TabGroupingService` builds a domain map.
-      - `TabGroupingController.processGrouping()` handles the grouping for that window.
-    - If `byWindow` is disabled, `TabGroupingService` builds a global domain map.
+2.  **State Retrieval:** Fetches user-defined rules and grouping configuration (e.g., `byWindow`, `numWindowsToKeep`) from the synchronized store.
+3.  **Tab Filtering:** Uses `ChromeTabAdapter` to get relevant tabs from **normal windows** only and `TabGroupingService` to apply `skipProcess` rules.
+4.  **Global Merging (Conditional):** If `byWindow` is disabled, `ChromeTabAdapter` merges all tabs into the active window (fallback to first normal window if active is a popup).
+5.  **Window Consolidation (Conditional):** If `byWindow` is enabled and `numWindowsToKeep` is set, `WindowManagementService` identifies excess windows and calculates a merge plan to consolidate tabs into retained windows based on domain relevance.
+6.  **Deduplication:** `ChromeTabAdapter` identifies and removes duplicate tabs.
+7.  **Auto-deletion:** `ChromeTabAdapter` applies auto-delete rules to remove specified tabs.
 8.  **Grouping Process (`TabGroupingController.processGrouping()`):**
-    - `TabGroupingService` builds `GroupState` objects for domains with 2+ tabs.
+    - `TabGroupingService` builds `GroupState` objects, reusing existing group IDs in the window by title.
     - `ChromeTabAdapter` applies the group states (creating new groups, adding to existing ones, or ungrouping single tabs).
     - `TabGroupingService` calculates repositioning needs.
     - `TabGroupingService` creates a `GroupPlan`.
@@ -47,8 +45,9 @@ The application is structured into three distinct layers to promote separation o
 | Component               | Responsibility                                                                                                                                                                                                                                        |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `TabGroupingService`    | Pure business logic: `getDomain`, `getGroupKey`, `buildDomainMap`, `countDuplicates`, `filterValidTabs`, `buildGroupStates`, `calculateRepositionNeeds`, `createGroupPlan`. Operates on tab data without Chrome API calls.                            |
-| `ChromeTabAdapter`      | Chrome API interactions: `getNormalTabs`, `getRelevantTabs`, `deduplicateAllTabs`, `applyAutoDeleteRules`, `mergeToActiveWindow`, `applyGroupState`, `executeGroupPlan`, `ungroupSingleTabs`, `updateBadge`. Provides abstraction over Chrome API. |
-| `TabGroupingController` | Orchestration: `groupByWindow`, `processGrouping`, `execute`. Coordinates operations between `TabGroupingService` and `ChromeTabAdapter`.                                                                                                             |
+| `WindowManagementService`| Pure business logic: `calculateMergePlan`. Determines optimal target windows for excess tabs based on domain frequency and window size.                                                                                                              |
+| `ChromeTabAdapter`      | Chrome API interactions: `getNormalTabs`, `getRelevantTabs`, `deduplicateAllTabs`, `applyAutoDeleteRules`, `mergeToActiveWindow`, `moveTabsToWindow`, `getGroupsInWindow`, `applyGroupState`, `executeGroupPlan`, `ungroupSingleTabs`, `updateBadge`. |
+| `TabGroupingController` | Orchestration: `groupByWindow`, `processGrouping`, `execute`. Coordinates operations between Services and Adapter.                                                                                                                                    |
 
 ## Positioning Logic
 
@@ -59,12 +58,15 @@ The application is structured into three distinct layers to promote separation o
 
 ## Edge Cases
 
-| Condition                       | Action                     |
-| ------------------------------- | -------------------------- |
-| Tab domain ≠ group title        | Ungroup, regroup correctly |
-| Single tab accidentally grouped | Ungroup explicitly         |
-| Groups already positioned       | Skip reposition            |
-| Group creation fails            | Create new group           |
+| Condition                       | Action                                                              |
+| ------------------------------- | ------------------------------------------------------------------- |
+| Tab domain ≠ group title        | Ungroup, regroup correctly                                          |
+| Single tab accidentally grouped | Ungroup explicitly                                                  |
+| Groups already positioned       | Skip reposition                                                     |
+| Group creation fails            | Create new group                                                    |
+| Active window is not 'normal'   | Target the first available normal window for merging                |
+| Moving tabs across windows      | Search for and reuse existing group by title in target window       |
+| Window limit exceeded           | Merge excess tabs into windows with most matching domains           |
 
 ## Performance
 

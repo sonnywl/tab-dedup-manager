@@ -6,16 +6,20 @@ This document outlines the architecture, critical behaviors, and design principl
 
 The code follows a strict layered architecture to ensure testability, maintainability, and separation of concerns.
 
-### 1.1 Domain Layer (`TabGroupingService`)
-- **Responsibility**: Pure business logic and state transitions.
-- **Key Characteristics**:
+### 1.1 Domain Layer (`TabGroupingService` & `WindowManagementService`)
+- **TabGroupingService**:
     - **Side-effect free**: Does not call Chrome APIs or external services.
     - **Logic**: Domain extraction, group key mapping, building group states, and calculating repositioning needs.
     - **Planning**: Generates a `GroupPlan` (a declarative set of actions: ungroup, move, group) that the Infrastructure layer executes.
+- **WindowManagementService**:
+    - **Responsibility**: Calculates optimal merging strategies for multi-window environments.
+    - **Heuristic**: When windows are limited (via `numWindowsToKeep`), it identifies "excess" tabs and maps them to "retained" windows.
+    - **Optimization**: Favors windows that already contain matching domains to minimize fragmentation. Falls back to the largest window if no domain match is found.
 
 ### 1.2 Infrastructure Layer (`ChromeTabAdapter`)
 - **Responsibility**: Abstraction of the Chrome Extension API.
 - **Key Characteristics**:
+    - **Normal Window Enforcement**: All queries (`getNormalTabs`) and moves (`mergeToActiveWindow`) are restricted to `windowType: "normal"` to prevent API errors with popups or panels.
     - **Resilience**: Implements a `retry` mechanism with exponential backoff for transient API failures.
     - **Rate Limiting**: Batches operations (e.g., removing 100+ tabs) and introduces delays to stay within browser performance envelopes.
     - **State Capture**: Includes logic to capture current state for best-effort rollbacks during complex plan executions.
@@ -25,7 +29,8 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Key Characteristics**:
     - **Process Guarding**: Uses an `isProcessing` semaphore to prevent re-entrant execution and race conditions.
     - **State Integration**: Connects the `SyncStore` (user rules) with the Domain and Infrastructure layers.
-    - **Flow**: Handles the high-level sequence: Filter -> Deduplicate -> Auto-delete -> Group -> Reposition.
+    - **Window Consolidation**: Orchestrates the move of tabs from excess windows into retained windows *before* the grouping process begins.
+    - **Group Persistence**: Ensures existing group IDs are reused by title when tabs cross window boundaries, preventing visual flickering and redundant API calls.
 
 ---
 

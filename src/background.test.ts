@@ -303,4 +303,20 @@ describe("WindowManagementService Domain Layer", () => {
     expect(plan.get(2)).toContain(5); // yahoo.com match
     expect(plan.get(1)).toContain(6); // default to largest
   });
+
+  it("should keep grouped tabs together when merging", () => {
+    const retainedWindows = new Map<number, chrome.tabs.Tab[]>([
+      [1, [createMockTab(1, "https://google.com")]]
+    ]);
+    const excessTabs = [
+      createMockTab(2, "https://google.com", 101),
+      createMockTab(3, "https://google.com", 101)
+    ];
+
+    const plan = windowService.calculateMergePlan(retainedWindows as any, excessTabs, groupingService);
+
+    expect(plan.get(1)).toContain(2);
+    expect(plan.get(1)).toContain(3);
+    expect(plan.get(1)!.length).toBe(2);
+  });
 });
