@@ -592,10 +592,7 @@ export class ChromeTabAdapter {
     }
   }
 
-  private async handleSingleTab(
-    state: GroupState,
-    tabCache: Map<TabId, Tab>,
-  ): Promise<void> {
+  private async handleSingleTab(state: GroupState): Promise<void> {
     if (state.groupId === null || state.tabIds.length === 0) return;
 
     const result = await retry(() =>
@@ -681,7 +678,7 @@ export class ChromeTabAdapter {
     tabCache: Map<TabId, Tab>,
   ): Promise<void> {
     if (state.tabIds.length < 2) {
-      await this.handleSingleTab(state, tabCache);
+      await this.handleSingleTab(state);
     } else {
       await this.handleMultiTabGroup(state, tabCache);
     }
@@ -1079,7 +1076,10 @@ export class TabGroupingController {
 
       const { rulesByDomain, config } = configData;
 
-      let tabs = await this.adapter.getRelevantTabs(rulesByDomain, this.service);
+      let tabs = await this.adapter.getRelevantTabs(
+        rulesByDomain,
+        this.service,
+      );
 
       if (!config.byWindow) {
         await this.adapter.mergeToActiveWindow(tabs);
@@ -1117,7 +1117,6 @@ export class TabGroupingController {
     }
   }
 }
-
 
 // ============================================================================
 // EVENT HANDLERS
