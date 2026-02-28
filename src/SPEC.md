@@ -131,10 +131,12 @@ The `startSyncStore` utility provides a unified interface for interacting with `
 ### 9.1 Rule Configuration
 Rules are defined per-domain and stored in `chrome.storage.local`.
 - **domain**: The hostname (e.g., "google.com").
-- **autoDelete**: If true, tabs matching this domain are automatically closed.
-- **skipProcess**: If true, tabs are ignored by the grouper.
-- **groupName**: Custom name for the group (overrides domain name).
-- **splitByPath**: If set to a number `n >= 1`, tabs are grouped by domain + the `n`-th path segment (e.g., `n=1` for `google.com/mail` -> "google.com - mail"). If null/undefined, no path splitting occurs.
+- **autoDelete**: If true, tabs matching this domain are automatically closed. **Mutually exclusive with `skipProcess`.**
+- **skipProcess**: If true, tabs are ignored by the grouper. **Mutually exclusive with `autoDelete`.**
+- **groupName**: Custom name for the group (overrides domain name). Cleared and disabled if `autoDelete` or `skipProcess` is enabled.
+- **splitByPath**: If set to a number `n >= 1`, tabs are grouped by domain + the `n`-th path segment (e.g., `n=1` for `google.com/mail` -> "google.com - mail"). If null/undefined, no path splitting occurs. Cleared and disabled if `autoDelete` or `skipProcess` is enabled.
+
+**Behavioral Note**: Toggling `autoDelete` or `skipProcess` to `true` automatically resets the other to `false` and clears both `groupName` and `splitByPath` to ensure logical consistency.
 
 ### 9.2 Split by Path Logic
 When `splitByPath` is set to a number `n` for a domain:

@@ -10,18 +10,18 @@ The application is structured into three distinct layers to promote separation o
 
 ## Requirements
 
-| Rule            | Behavior                                                                        |
-| --------------- | ------------------------------------------------------------------------------- |
-| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end   |
-| Grouping Scope  | Global (merge all to active window) OR per-window grouping                      |
-| Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.   |
-| Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic) |
-| Group title     | Domain name by default, or user-defined custom group name                       |
-| Custom Groups   | Multiple domains can be mapped to a single group name to merge them together    |
-| Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)              |
-| Rule: Skip      | Completely ignore domain during deduplication and grouping                      |
-| Rule: Delete    | Automatically close tabs matching domain when processing                        |
-| Exclusions      | Always skip non-normal windows (popups, panels), internal pages, and PWAs       |
+| Rule            | Behavior                                                                                             |
+| --------------- | ---------------------------------------------------------------------------------------------------- |
+| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end                        |
+| Grouping Scope  | Global (merge all to active window) OR per-window grouping ("check to keep all windows or a limit") |
+| Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.                        |
+| Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic)                      |
+| Group title     | Domain name by default, or user-defined custom group name                                            |
+| Custom Groups   | Multiple domains can be mapped to a single group name to merge them together                         |
+| Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)                                   |
+| Rule: Skip      | Completely ignore domain; mutually exclusive with Delete; clears/disables split path and group name  |
+| Rule: Delete    | Automatically close tabs matching domain; mutually exclusive with Skip; clears/disables split path   |
+| Exclusions      | Always skip non-normal windows (popups, panels), internal pages, and PWAs                            |
 
 ## Flow (Orchestrated by `TabGroupingController.execute()`)
 

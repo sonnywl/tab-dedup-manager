@@ -180,7 +180,9 @@ export default function App() {
                   }}
                   className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                 />
-                <span className="text-sm text-gray-700">Group per window</span>
+                <span className="text-sm text-gray-700">
+                  check to keep all open windows or a limited amount of windows
+                </span>
               </label>
             </div>
             {grouping.byWindow && (
@@ -192,7 +194,11 @@ export default function App() {
                   type="number"
                   min="1"
                   placeholder="All"
-                  value={grouping.numWindowsToKeep || ""}
+                  value={
+                    typeof grouping.numWindowsToKeep === "number"
+                      ? grouping.numWindowsToKeep
+                      : ""
+                  }
                   onChange={(e) => {
                     const val = parseInt(e.target.value);
                     setRulesWithLocal(rules, {
@@ -255,7 +261,23 @@ export default function App() {
                         type="checkbox"
                         checked={rule.skipProcess}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          updateRule(rule.id, "skipProcess", e.target.checked);
+                          const checked = e.target.checked;
+                          if (checked) {
+                            setRulesWithLocal(
+                              rules.map((r) =>
+                                r.id === rule.id
+                                  ? {
+                                      ...r,
+                                      skipProcess: true,
+                                      autoDelete: false,
+                                      splitByPath: null,
+                                    }
+                                  : r,
+                              ),
+                            );
+                          } else {
+                            updateRule(rule.id, "skipProcess", false);
+                          }
                         }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                       />
@@ -266,7 +288,23 @@ export default function App() {
                         checked={rule.autoDelete}
                         disabled={rule.skipProcess}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                          updateRule(rule.id, "autoDelete", e.target.checked);
+                          const checked = e.target.checked;
+                          if (checked) {
+                            setRulesWithLocal(
+                              rules.map((r) =>
+                                r.id === rule.id
+                                  ? {
+                                      ...r,
+                                      autoDelete: true,
+                                      skipProcess: false,
+                                      splitByPath: null,
+                                    }
+                                  : r,
+                              ),
+                            );
+                          } else {
+                            updateRule(rule.id, "autoDelete", false);
+                          }
                         }}
                         className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50"
                       />
@@ -277,8 +315,12 @@ export default function App() {
                           type="number"
                           min="0"
                           placeholder="Off"
-                          value={rule.splitByPath ?? ""}
-                          disabled={rule.skipProcess}
+                          value={
+                            typeof rule.splitByPath === "number"
+                              ? rule.splitByPath
+                              : ""
+                          }
+                          disabled={rule.skipProcess || rule.autoDelete}
                           onChange={(
                             e: React.ChangeEvent<HTMLInputElement>,
                           ) => {
@@ -314,7 +356,7 @@ export default function App() {
                     <td className="px-6 py-4">
                       <GroupNameInput
                         value={rule.groupName || ""}
-                        disabled={rule.skipProcess}
+                        disabled={rule.skipProcess || rule.autoDelete}
                         onChange={(val) =>
                           updateRule(rule.id, "groupName", val)
                         }
