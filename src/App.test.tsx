@@ -269,7 +269,7 @@ describe("App Component", () => {
         autoDelete: false,
         skipProcess: false,
         splitByPath: null,
-        groupName: "",
+        groupName: undefined,
       },
     ];
     mockStore.getState.mockResolvedValue({
@@ -284,11 +284,54 @@ describe("App Component", () => {
     await user.type(groupInput, "Search Engine");
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(
+      // normalizeRule removes spaces, so it should be "SearchEngine"
+      expect(mockStore.setState).toHaveBeenLastCalledWith(
         expect.objectContaining({
           rules: [
-            expect.objectContaining({ id: "1", groupName: "Search Engine" }),
+            expect.objectContaining({ id: "1", groupName: "SearchEngine" }),
           ],
+        }),
+      );
+    });
+  });
+
+  it("toggles window grouping and updates limit", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const checkbox = screen.getByLabelText(
+      /Keep tabs grouped per window \(or limit number of windows\)/i,
+    );
+    await user.click(checkbox);
+
+    await waitFor(() => {
+      expect(mockStore.setState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          grouping: expect.objectContaining({ byWindow: true }),
+        }),
+      );
+    });
+
+    // Limit input should now be visible
+    const limitInput = screen.getByLabelText(/Number of windows to keep/i);
+    await user.type(limitInput, "3");
+
+    await waitFor(() => {
+      expect(mockStore.setState).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          grouping: expect.objectContaining({ byWindow: true, numWindowsToKeep: 3 }),
+        }),
+      );
+    });
+
+    // Clear limit
+    const clearButton = screen.getByLabelText(/Clear window limit/i);
+    await user.click(clearButton);
+
+    await waitFor(() => {
+      expect(mockStore.setState).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          grouping: expect.objectContaining({ byWindow: true, numWindowsToKeep: null }),
         }),
       );
     });

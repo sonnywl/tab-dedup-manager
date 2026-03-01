@@ -10,6 +10,7 @@ interface DomainRule {
   autoDelete: boolean;
   skipProcess: boolean;
   splitByPath: number | null;
+  // FIX: undefined (not "") so validateRule never receives an empty string group key
   groupName: string | undefined;
 }
 
@@ -21,6 +22,14 @@ interface GroupingConfig {
 interface SyncStoreState {
   rules: DomainRule[];
   grouping: GroupingConfig;
+}
+
+// FIX: normalize groupName "" → undefined before persisting to avoid empty string group keys
+function normalizeRule(rule: DomainRule): DomainRule {
+  return {
+    ...rule,
+    groupName: rule.groupName?.trim() || undefined,
+  };
 }
 
 function useSyncStore() {
@@ -55,7 +64,7 @@ function useSyncStore() {
 
   const updateRules = useCallback(
     (newRules: DomainRule[]) => {
-      syncToStore({ ...state, rules: newRules });
+      syncToStore({ ...state, rules: newRules.map(normalizeRule) });
     },
     [state, syncToStore],
   );
@@ -78,7 +87,6 @@ function useSyncStore() {
 const isValidInput = (val: string): boolean => {
   const trimmed = val.trim();
   if (!trimmed || trimmed.includes(" ")) return false;
-  // Must contain at least one dot to be a valid domain/hostname
   return trimmed.includes(".");
 };
 
@@ -192,7 +200,7 @@ const GroupingSettings = ({
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
           />
           <span className="text-sm text-gray-700">
-            check to keep all open windows or a limited amount of windows
+            Keep tabs grouped per window (or limit number of windows)
           </span>
         </label>
       </div>
@@ -221,22 +229,15 @@ const GroupingSettings = ({
               className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               aria-label="Number of windows to keep"
             />
-            {
-              <button
-                disabled={typeof config.numWindowsToKeep !== "number"}
-                onClick={() =>
-                  onChange({
-                    ...config,
-                    numWindowsToKeep: null,
-                  })
-                }
-                className="text-gray-400 hover:text-gray-600 p-0.5"
-                title="Clear window limit"
-                aria-label="Clear window limit"
-              >
-                <XMarkIcon className="w-4 h-4" />
-              </button>
-            }
+            <button
+              disabled={typeof config.numWindowsToKeep !== "number"}
+              onClick={() => onChange({ ...config, numWindowsToKeep: null })}
+              className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
+              title="Clear window limit"
+              aria-label="Clear window limit"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
           </div>
           <span className="text-xs text-gray-500">
             (Empty = retain all windows)
@@ -259,7 +260,9 @@ const RuleRow = React.memo(
     onRemove: (id: string) => void;
     existingGroups: string[];
   }) => {
-    const isDisabled = rule.skipProcess || rule.autoDelete;
+    // FIX: splitByPath and groupName are disabled by Skip OR Delete (spec: both clear these fields)
+    const isSplitDisabled = rule.skipProcess || rule.autoDelete;
+    const isGroupNameDisabled = rule.skipProcess || rule.autoDelete;
 
     return (
       <tr>
@@ -272,10 +275,12 @@ const RuleRow = React.memo(
             checked={rule.skipProcess}
             onChange={(e) => {
               if (e.target.checked) {
+                // FIX: Skip clears splitByPath and groupName per spec
                 onUpdate(rule.id, {
                   skipProcess: true,
                   autoDelete: false,
                   splitByPath: null,
+                  groupName: undefined,
                 });
               } else {
                 onUpdate(rule.id, { skipProcess: false });
@@ -292,10 +297,12 @@ const RuleRow = React.memo(
             disabled={rule.skipProcess}
             onChange={(e) => {
               if (e.target.checked) {
+                // FIX: Delete clears splitByPath and groupName per spec
                 onUpdate(rule.id, {
                   autoDelete: true,
                   skipProcess: false,
                   splitByPath: null,
+                  groupName: undefined,
                 });
               } else {
                 onUpdate(rule.id, { autoDelete: false });
@@ -309,12 +316,12 @@ const RuleRow = React.memo(
           <div className="flex items-center gap-1">
             <input
               type="number"
-              min="0"
+              min="1"
               placeholder="Off"
               value={
                 typeof rule.splitByPath === "number" ? rule.splitByPath : ""
               }
-              disabled={isDisabled}
+              disabled={isSplitDisabled}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
                 onUpdate(rule.id, {
@@ -324,23 +331,21 @@ const RuleRow = React.memo(
               className="w-14 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
               aria-label="Split by path segment index"
             />
-            {
-              <button
-                disabled={rule.splitByPath === null}
-                onClick={() => onUpdate(rule.id, { splitByPath: null })}
-                className="text-gray-400 hover:text-gray-600 p-0.5"
-                title="Clear split path"
-                aria-label="Clear split path"
-              >
-                <XMarkIcon className="w-4 h-4" />
-              </button>
-            }
+            <button
+              disabled={rule.splitByPath === null}
+              onClick={() => onUpdate(rule.id, { splitByPath: null })}
+              className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
+              title="Clear split path"
+              aria-label="Clear split path"
+            >
+              <XMarkIcon className="w-4 h-4" />
+            </button>
           </div>
         </td>
         <td className="px-6 py-4">
           <GroupNameInput
             value={rule.groupName || ""}
-            disabled={isDisabled}
+            disabled={isGroupNameDisabled}
             onChange={(val) => onUpdate(rule.id, { groupName: val })}
             existingGroups={existingGroups}
           />
@@ -365,24 +370,28 @@ export default function App() {
   const { rules, grouping, updateRules, updateGrouping } = useSyncStore();
 
   const existingGroups = useMemo(
-    () => Array.from(new Set(rules.map((r) => r.groupName).filter(Boolean))),
+    () =>
+      Array.from(
+        new Set(rules.map((r) => r.groupName).filter((g): g is string => !!g)),
+      ),
     [rules],
-  ) as string[];
+  );
 
   const handleAddDomain = (domainUrl: string) => {
     try {
       const normalized = normalizeDomainInput(domainUrl);
       const url = new URL(normalized);
       const newRule: DomainRule = {
-        id: Date.now().toString(),
+        // FIX: crypto.randomUUID() replaces Date.now() — no collision risk under fast adds
+        id: crypto.randomUUID(),
         domain: url.hostname,
         autoDelete: false,
         skipProcess: false,
         splitByPath: null,
-        groupName: "",
+        groupName: undefined,
       };
       updateRules([...rules, newRule]);
-    } catch (e) {
+    } catch {
       alert("Invalid URL or domain format. Please try again.");
     }
   };
@@ -408,7 +417,6 @@ export default function App() {
         </header>
 
         <AddDomainForm onAdd={handleAddDomain} />
-
         <GroupingSettings config={grouping} onChange={updateGrouping} />
 
         <section className="bg-white rounded-lg shadow overflow-hidden">
