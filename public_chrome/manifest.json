@@ -15,7 +15,7 @@
     "default_icon": {
       "192": "logo192.png"
     },
-    "default_title": "View all available tests"
+    "default_title": "Tab Dedup Manager"
   },
   "background": {
     "service_worker": "assets/background.js",
