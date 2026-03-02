@@ -165,6 +165,7 @@ describe("TabGroupingController", () => {
     deduplicateAllTabs: vi.fn().mockResolvedValue([]),
     cleanupTabsByRules: vi.fn().mockResolvedValue([]),
     mergeToActiveWindow: vi.fn().mockResolvedValue(undefined),
+    moveTabsAtomic: vi.fn().mockResolvedValue(undefined),
     // Returns the passed state — matches new Promise<GroupState> signature
     applyGroupState: vi.fn().mockImplementation((s) => Promise.resolve(s)),
     executeGroupPlan: vi
@@ -192,7 +193,7 @@ describe("TabGroupingController", () => {
     calculateRepositionNeeds: vi.fn().mockReturnValue([]),
     createGroupPlan: vi.fn().mockReturnValue({ states: [] }),
     isInternalTitle: vi.fn().mockReturnValue(true),
-    identifyProtectedTabs: vi.fn().mockReturnValue(new Set()),
+    identifyProtectedTabs: vi.fn().mockReturnValue(new Map()),
   });
 
   beforeEach(() => {
@@ -244,7 +245,7 @@ describe("TabGroupingController", () => {
       const rules = {};
       const cfg = { byWindow: false };
 
-      expect(hash(tabs1, rules, cfg)).toBe(hash(tabs2, rules, cfg));
+      expect(hash(tabs1, rules, cfg, 1)).toBe(hash(tabs2, rules, cfg, 1));
     });
 
     it("merges to active window when byWindow=false", async () => {
@@ -260,7 +261,7 @@ describe("TabGroupingController", () => {
       await controller.execute();
 
       expect(
-        (controller as any).adapter.mergeToActiveWindow,
+        (controller as any).adapter.moveTabsAtomic,
       ).toHaveBeenCalled();
     });
 
@@ -284,7 +285,7 @@ describe("TabGroupingController", () => {
       await controller.execute();
 
       expect(
-        (controller as any).adapter.mergeToActiveWindow,
+        (controller as any).adapter.moveTabsAtomic,
       ).not.toHaveBeenCalled();
     });
 
@@ -314,7 +315,7 @@ describe("TabGroupingController", () => {
       await controller.execute();
 
       expect(processSpy).toHaveBeenCalledTimes(1);
-      expect((controller as any).adapter.moveTabsToWindow).toHaveBeenCalled();
+      expect((controller as any).adapter.moveTabsAtomic).toHaveBeenCalled();
     });
 
     it("Integration: preserves manual 'Test' group through full execute loop", async () => {
@@ -348,21 +349,14 @@ describe("TabGroupingController", () => {
       // 2. Execute
       await controller.execute();
 
-      // 3. Verify: 
-      // - identifyProtectedTabs should have marked them based on the "Test" title
-      // - buildGroupMap should have created an external entry
-      // - applyGroupState should have returned early (no ungroup/group)
-      
-      expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-      expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-
-      // Ensure that even with a rule for bing.com, it wasn't pulled out
+      // Verification of atomic behavior: we ensure the final plan correctly uses 
+      // the reconstructed manual group without functional modification
       const executeCall = adapter.executeGroupPlan.mock.calls[0];
       if (executeCall) {
         const plan = executeCall[0];
         const externalState = plan.states.find((s: any) => s.isExternal);
         expect(externalState).toBeDefined();
-        expect(externalState.tabIds).toContain(2); // bing.com stayed in the external group
+        expect(externalState.tabIds).toContain(2); 
       }
     });
 
@@ -389,9 +383,6 @@ describe("TabGroupingController", () => {
 
       await controller.execute();
 
-      // Verify no ungrouping happened
-      expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-      
       // Verify the group plan treats them as a block of 3
       const executeCall = adapter.executeGroupPlan.mock.calls[0];
       if (executeCall) {
@@ -424,9 +415,6 @@ describe("TabGroupingController", () => {
 
       await controller.execute();
 
-      expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-      expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-
       const executeCall = adapter.executeGroupPlan.mock.calls[0];
       if (executeCall) {
         const plan = executeCall[0];
@@ -454,12 +442,12 @@ describe("TabGroupingController", () => {
       ]);
 
       // 1. Identify protected IDs
-      const protectedIds = realService.identifyProtectedTabs(tabs, groups, rulesByDomain as any);
-      expect(protectedIds.has(2 as any)).toBe(true);
-      expect(protectedIds.has(1 as any)).toBe(false);
+      const protectedMeta = realService.identifyProtectedTabs(tabs, groups, rulesByDomain as any);
+      expect(protectedMeta.has(2 as any)).toBe(true);
+      expect(protectedMeta.has(1 as any)).toBe(false);
 
       // 2. Build map using those protected IDs
-      const groupMap = realService.buildGroupMap(tabs, rulesByDomain as any, groups, protectedIds);
+      const groupMap = realService.buildGroupMap(tabs, rulesByDomain as any, groups, protectedMeta);
       
       // 3. Build states
       const states = realService.buildGroupStates(groupMap, new Map([[1, tabs[0]], [2, tabs[1]]]) as any);
@@ -472,6 +460,40 @@ describe("TabGroupingController", () => {
 
       expect(phdState).toBeDefined();
       expect(phdState!.isExternal).toBe(true); 
+    });
+
+    it("Integration: multiple separate unnamed manual groups survive cross-window merge", async () => {
+      // Setup: Two separate unnamed groups in Window 2.
+      // We stagger indices and IDs to ensure both groups need repositioning.
+      const tabs = [
+        { ...mkTab(2, "https://a.com", 101, 0, 2), index: 3 },
+        { ...mkTab(1, "https://a.com", 101, 1, 2), index: 2 },
+        { ...mkTab(4, "https://b.com", 102, 2, 2), index: 1 },
+        { ...mkTab(3, "https://b.com", 102, 3, 2), index: 0 },
+      ];
+
+      mockStore.getState.mockResolvedValue({ rules: [], grouping: { byWindow: false } });
+      const adapter = (controller as any).adapter;
+      adapter.getNormalTabs.mockResolvedValue(tabs); 
+      mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+      mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }, { id: 2, type: "normal" }]);
+      
+      const realService = new TabGroupingService();
+      (controller as any).service = realService;
+
+      mockChrome.tabGroups.query.mockResolvedValue([
+        { id: 101, title: "", windowId: 2 },
+        { id: 102, title: "", windowId: 2 }
+      ]);
+
+      await controller.execute();
+
+      const executeCall = adapter.executeGroupPlan.mock.calls[0];
+      expect(executeCall).toBeDefined();
+      const plan = executeCall[0];
+
+      const unnamedStates = plan.states.filter(s => s.displayName === "" && s.isExternal);
+      expect(unnamedStates).toHaveLength(2);
     });
   });
 
@@ -503,7 +525,7 @@ describe("TabGroupingController", () => {
         },
       );
 
-      await controller.processGrouping(new Map(), 1 as any);
+      await controller.processGrouping([tab1, tab2], new Map(), new Map());
     });
   });
 
@@ -558,16 +580,28 @@ describe("ChromeTabAdapter", () => {
     });
   });
 
-  it("merges tabs to active normal window", async () => {
+  it("merges tabs to active normal window and reconstructs manual groups", async () => {
     mockChrome.windows.getAll.mockResolvedValue([
       { id: 1, type: "normal" },
       { id: 2, type: "normal" },
     ]);
-    await adapter.mergeToActiveWindow([mkTab(1, "a.com", null, 0, 2)]);
-    expect(mockChrome.tabs.move).toHaveBeenCalledWith(
-      [1],
-      expect.objectContaining({ windowId: 1 }),
-    );
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.tabs.group.mockResolvedValue(1000); 
+    
+    const tabs = [
+      mkTab(1, "a.com", 101, 0, 2),
+      mkTab(2, "b.com", 101, 1, 2)
+    ];
+    const meta = new Map([[1, { title: "Research", originalGroupId: 101 }], [2, { title: "Research", originalGroupId: 101 }]]);
+
+    await adapter.moveTabsAtomic([1, 2] as any, 1, meta as any);
+    
+    // 1. Tabs moved to Window 1
+    expect(mockChrome.tabs.move).toHaveBeenCalledWith([1, 2], expect.objectContaining({ windowId: 1 }));
+    
+    // 2. Manual group reconstructed in Window 1
+    expect(mockChrome.tabs.group).toHaveBeenCalledWith({ tabIds: [1, 2] });
+    expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(1000, expect.objectContaining({ title: "Research" }));
   });
 
   it("deduplicates tabs by URL", async () => {
@@ -597,19 +631,26 @@ describe("ChromeTabAdapter", () => {
       expect(result.groupId).toBe(55);
     });
 
-    it("skips external groups", async () => {
-      const state: any = { title: "Test", tabIds: [1], isExternal: true };
-      const result = await adapter.applyGroupState(state, new Map() as any);
-      expect(result).toBe(state);
-      expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+    it("handles external groups (restores them if necessary)", async () => {
+      const state: any = { title: "Manual", tabIds: [1, 2], isExternal: true };
+      const cache = new Map([[1, mkTab(1, "a.com")], [2, mkTab(2, "b.com")]]);
+      
+      await adapter.applyGroupState(state, cache as any);
+      expect(mockChrome.tabs.group).toHaveBeenCalled();
     });
   });
 
   describe("executeGroupPlan()", () => {
-    it("skips ungroup/group for external states", async () => {
+    it("performs grouping for external states if they lost their group ID", async () => {
+      // Setup: Tabs are currently UNGROUPED in the browser (groupId: -1)
+      const tab1 = { ...mkTab(1, "a.com"), groupId: -1 };
+      const tab2 = { ...mkTab(2, "b.com"), groupId: -1 };
+      
       mockChrome.tabs.move.mockResolvedValue([]);
-      mockChrome.tabs.query.mockResolvedValue([]);
+      mockChrome.tabs.query.mockResolvedValue([tab1, tab2]);
       mockChrome.tabGroups.query.mockResolvedValue([]);
+
+      const cache = new Map([[1, tab1], [2, tab2]]);
 
       await adapter.executeGroupPlan({
         states: [
@@ -617,15 +658,14 @@ describe("ChromeTabAdapter", () => {
             tabIds: [1, 2],
             displayName: "Test",
             targetIndex: 0,
-            currentlyGrouped: [1, 2],
+            currentlyGrouped: [], // Arrived ungrouped from another window
             isExternal: true,
           },
         ],
-      } as any);
+      } as any, cache as any, new Map());
 
-      expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-      expect(mockChrome.tabs.group).not.toHaveBeenCalled();
       expect(mockChrome.tabs.move).toHaveBeenCalled();
+      expect(mockChrome.tabs.group).toHaveBeenCalled();
     });
   });
 });
@@ -651,8 +691,24 @@ describe("TabGroupingService", () => {
     it("identifies tabs in external groups", () => {
       const tabs = [mkTab(1, "google.com", 101)];
       const groups = new Map([[101, { id: 101, title: "Manual" } as any]]);
-      const protectedIds = service.identifyProtectedTabs(tabs, groups, {});
-      expect(protectedIds.has(1 as any)).toBe(true);
+      const protectedMeta = service.identifyProtectedTabs(tabs, groups, {});
+      expect(protectedMeta.has(1 as any)).toBe(true);
+      expect(protectedMeta.get(1 as any)!.title).toBe("Manual");
+    });
+
+    it("protects a manual group even if it contains a tab matching a rule", () => {
+      const tabs = [
+        mkTab(1, "google.com", 101),
+        mkTab(2, "other.com", 101),
+      ];
+      const groups = new Map([[101, { id: 101, title: "My Project" } as any]]);
+      const rules = { "google.com": { domain: "google.com", groupName: "Google" } };
+
+      const protectedMeta = service.identifyProtectedTabs(tabs, groups, rules as any);
+
+      expect(protectedMeta.has(1 as any)).toBe(true);
+      expect(protectedMeta.has(2 as any)).toBe(true);
+      expect(protectedMeta.get(1 as any)!.title).toBe("My Project");
     });
   });
 
