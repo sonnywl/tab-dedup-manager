@@ -3,7 +3,10 @@
   "name": "One-click Tab Dedup/Grouper Manager",
   "version": "0.5.0",
   "description": "One click - groups and dedups tabs without worry",
-  "options_page": "index.html",
+  "options_ui": {
+    "page": "index.html",
+    "open_in_tab": true
+  },
   "icons": {
     "192": "logo192.png",
     "512": "logo512.png"
