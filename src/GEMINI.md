@@ -17,64 +17,33 @@ The application is structured into three distinct layers to promote separation o
 | Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.                        |
 | Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic)                      |
 | Group title     | Domain name by default, or user-defined custom group name                                            |
-| External Groups | Skip tabs in groups with manual/external titles (not matching program's naming pattern)              |
 | Custom Groups   | Multiple domains can be mapped to a single group name to merge them together                         |
 | Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)                                   |
+| External Groups | **Mandate**: Treat manual groups as immutable, atomic blocks. No functional changes (ungroup/group).  |
+| Performance     | **Mandate**: Use state-hashing to skip redundant operations. Skip API calls if state already correct.|
 | Rule: Skip      | Completely ignore domain; mutually exclusive with Delete; clears/disables split path and group name  |
 | Rule: Delete    | Automatically close tabs matching domain; mutually exclusive with Skip; clears/disables split path   |
 | Exclusions      | Always skip non-normal windows (popups, panels), internal pages, and PWAs                            |
 
 ## Flow (Orchestrated by `TabGroupingController.execute()`)
 
-1.  **Initialization (`init()`):** Sets up event listeners (e.g., `chrome.action.onClicked`, `chrome.tabs.onCreated`, `chrome.tabs.onRemoved`, `chrome.tabs.onUpdated`) which trigger the `TabGroupingController.execute()` method.
-2.  **State Retrieval:** Fetches user-defined rules and grouping configuration (e.g., `byWindow`, `numWindowsToKeep`) from the synchronized store.
-3.  **Tab Filtering:** Uses `ChromeTabAdapter` to get relevant tabs from **normal windows** only and `TabGroupingService` to apply `skipProcess` rules.
-4.  **Global Merging (Conditional):** If `byWindow` is disabled, `ChromeTabAdapter` merges all tabs into the active window (fallback to first normal window if active is a popup).
-5.  **Window Consolidation (Conditional):** If `byWindow` is enabled and `numWindowsToKeep` is set, `WindowManagementService` identifies excess windows and calculates a merge plan to consolidate tabs into retained windows based on domain relevance.
-6.  **Deduplication:** `ChromeTabAdapter` identifies and removes duplicate tabs.
-7.  **Auto-deletion:** `ChromeTabAdapter` applies auto-delete rules to remove specified tabs.
-8.  **Grouping Process (`TabGroupingController.processGrouping()`):**
-    - `TabGroupingService` builds `GroupState` objects, reusing existing group IDs in the window by title.
-    - `ChromeTabAdapter` applies the group states (creating new groups, adding to existing ones, or ungrouping single tabs).
-    - `TabGroupingService` calculates repositioning needs.
+1.  **Trigger**: User clicks the extension icon.
+2.  **Fingerprint**: Calculate `lastStateHash`. If identical to previous successful run, return early.
+3.  **Protection**: Identify manual groups via `isInternalTitle`. Gather `protectedTabIds`.
+4.  **Cleaning**: Partition tabs. Deduplicate and auto-delete **only** unprotected tabs.
+5.  **State Retrieval**: Fetches user-defined rules and grouping configuration from the synchronized store.
+6.  **Grouping Process**:
+    - `TabGroupingService` builds `GroupState` objects. Manual groups are marked `isExternal`.
+    - `ChromeTabAdapter` applies states (Managed: ungroup/group; External: skip).
     - `TabGroupingService` creates a `GroupPlan`.
-    - `ChromeTabAdapter` executes the `GroupPlan` (ungrouping, moving, and grouping tabs).
-9.  **Badge Update:** `ChromeTabAdapter` updates the extension badge based on duplicate tab count.
-
-## State Components (Accessed by `TabGroupingController`)
-
-| Component               | Responsibility                                                                                                                                                                                                                                        |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TabGroupingService`    | Pure business logic: `getDomain`, `getGroupKey`, `buildGroupMap`, `countDuplicates`, `filterValidTabs`, `buildGroupStates`, `calculateRepositionNeeds`, `createGroupPlan`. Operates on tab data without Chrome API calls.                            |
-| `WindowManagementService`| Pure business logic: `calculateMergePlan`. Determines optimal target windows for excess tabs based on domain frequency and window size.                                                                                                              |
-| `ChromeTabAdapter`      | Chrome API interactions: `getNormalTabs`, `getRelevantTabs`, `deduplicateAllTabs`, `applyAutoDeleteRules`, `mergeToActiveWindow`, `moveTabsToWindow`, `getGroupsInWindow`, `applyGroupState`, `executeGroupPlan`, `ungroupSingleTabs`, `updateBadge`. |
-| `TabGroupingController` | Orchestration: `groupByWindow`, `processGrouping`, `execute`. Coordinates operations between Services and Adapter.                                                                                                                                    |
-
-## Positioning Logic
-
-| Type             | Included in repositioning | Final position               |
-| ---------------- | ------------------------- | ---------------------------- |
-| Groups (2+ tabs) | Yes                       | Index 0 → n, sorted by URL   |
-| Single tabs      | Yes                       | Index n+1 → m, sorted by URL |
-
-## Edge Cases
-
-| Condition                       | Action                                                              |
-| ------------------------------- | ------------------------------------------------------------------- |
-| Tab domain ≠ group title        | Ungroup, regroup correctly (unless it's an External Group)          |
-| External/Manual group title     | Skip processing (ignore tabs in that group)                         |
-| Single tab accidentally grouped | Ungroup explicitly                                                  |
-| Groups already positioned       | Skip reposition                                                     |
-| Group creation fails            | Create new group                                                    |
-| Active window is not 'normal'   | Target the first available normal window for merging                |
-| Moving tabs across windows      | Search for and reuse existing group by title in target window       |
-| Window limit exceeded           | Merge excess tabs into windows with most matching domains           |
+    - `ChromeTabAdapter` executes the `GroupPlan` (Managed: functional; External: atomic move only).
+7.  **Badge Update**: `ChromeTabAdapter` updates the extension badge based on duplicate tab count.
 
 ## Performance
 
-- **State Fingerprinting**: `lastStateHash` skips redundant executions if tabs/rules haven't changed.
-- **Redundancy Checks**: `applyGroupState` skips Chrome API calls if title and group membership are already correct.
+- **State Fingerprinting**: Skip redundant executions via `lastStateHash`.
+- **Atomic Movement**: Manual groups move as blocks, minimizing API calls.
+- **Redundancy Checks**: `applyGroupState` avoids grouping/ungrouping if the target state matches the current.
 - O(n) tab filtering + deduplication
 - O(g) group operations where g = domains with 2+ tabs
 - O(r) repositions where r ≤ g
-- Single tab query cached in Map

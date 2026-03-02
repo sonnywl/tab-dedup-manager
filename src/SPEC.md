@@ -14,142 +14,59 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **WindowManagementService**:
     - **Responsibility**: Calculates optimal merging strategies for multi-window environments.
     - **Heuristic**: When windows are limited (via `numWindowsToKeep`), it identifies "excess" tabs and maps them to "retained" windows.
-    - **Optimization**: Favors windows that already contain matching domains to minimize fragmentation. Falls back to the largest window if no domain match is found.
+    - **Optimization**: Favors windows that already contain matching domains to minimize fragmentation.
 
 ### 1.2 Infrastructure Layer (`ChromeTabAdapter`)
 - **Responsibility**: Abstraction of the Chrome Extension API.
 - **Key Characteristics**:
-    - **Normal Window Enforcement**: All queries (`getNormalTabs`) and moves (`mergeToActiveWindow`) are restricted to `windowType: "normal"` to prevent API errors with popups or panels.
-    - **Resilience**: Implements a `retry` mechanism with exponential backoff for transient API failures.
-    - **Rate Limiting**: Batches operations (e.g., removing 100+ tabs) and introduces delays to stay within browser performance envelopes.
-    - **State Capture**: Includes logic to capture current state for best-effort rollbacks during complex plan executions.
+    - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
+    - **Resilience**: Implements a `retry` mechanism with exponential backoff.
+    - **Atomic Execution**: `executeGroupPlan` distinguishes between managed and external groups. External groups are moved as single, atomic blocks of tabs to preserve their manual ID and title.
 
 ### 1.3 Application Layer (`TabGroupingController`)
 - **Responsibility**: Orchestration and workflow management.
 - **Key Characteristics**:
-    - **Process Guarding**: Uses an `isProcessing` semaphore to prevent re-entrant execution and race conditions.
-    - **State Fingerprinting**: Employs a `lastStateHash` mechanism. It calculates a hash of the current tabs (IDs, URLs, group IDs, window IDs, indices), rules, and configuration. If the hash hasn't changed since the last successful execution, it skips the entire grouping process to save resources.
-    - **State Integration**: Connects the `SyncStore` (user rules) with the Domain and Infrastructure layers.
-    - **Window Consolidation**: Orchestrates the move of tabs from excess windows into retained windows *before* the grouping process begins.
-    - **Group Persistence**: Ensures existing group IDs are reused by title when tabs cross window boundaries, preventing visual flickering and redundant API calls.
+    - **Process Guarding**: Uses an `isProcessing` semaphore to prevent race conditions.
+    - **State Fingerprinting**: Employs a `lastStateHash` mechanism. It calculates a hash of the current tabs (IDs, URLs, group IDs, window IDs, indices), rules, and configuration. If the hash hasn't changed since the last successful execution, it skips the entire grouping process.
 
 ---
 
 ## 2. Critical Behaviors & Design Patterns
 
-### 2.1 State-Driven Repositioning
-Instead of "blindly" moving tabs, the system performs a **diffing** operation:
-1. The Domain layer calculates the *desired* final state.
-2. It compares this against the *actual* state retrieved from Chrome.
-3. Only tabs that are out of order or in the wrong group are included in the `GroupPlan`.
-This minimizes screen flicker and unnecessary API overhead.
+### 2.1 External Group Protection
+The extension respects organizations created manually by the user.
+- **Internal Title Detection**: `isInternalTitle` recognizes generated patterns:
+  - `domain` or `groupName`
+  - `base - Title` (Collision resolution)
+  - `base - segment` (Split path)
+  - `base/segment` (Legacy split path)
+- **Atomic Protection**: Groups with "external" titles are marked as `isExternal`.
+- **Partitioning**: In `prepareTabs`, tabs in external groups are partitioned into a `protected` set. They bypass deduplication and auto-deletion.
+- **Execution**: During `executeGroupPlan`, external groups skip `ungroup` and `group` stages. They are moved only as a cohesive block.
 
-### 2.2 External Group Management
-The extension respects groups created or named manually by the user.
-- **Internal Title Detection**: `TabGroupingService.isInternalTitle` verifies if a group title matches the generated title (domain, custom name, or split path) or its collision-resolved variant.
-- **Filtering**: During `getRelevantTabs`, any tab that is part of a group with an "external" (non-matching) title is automatically excluded from the extension's grouping, moving, and sorting logic.
-
-### 2.3 Branded Type Safety
-To prevent the common "id mixup" bug (e.g., using a `WindowId` where a `TabId` is expected), the script employs **Branded Types**:
-```typescript
-type TabId = number & { readonly __brand: "TabId" };
-type GroupId = number & { readonly __brand: "GroupId" };
-```
-This ensures compile-time errors if incompatible IDs are passed to specialized functions.
-
-### 2.3 Batching & Concurrency
-Chrome's `tabs.move` and `tabs.remove` can be expensive. The `ChromeTabAdapter` uses a `MAX_BATCH_SIZE` (100) and `RATE_LIMIT_DELAY` (50ms) to ensure the browser remains responsive during massive cleanup operations.
-
-### 2.4 Idempotency
-The execution flow is designed to be idempotent. If interrupted or triggered multiple times, the state-comparison logic ensures that only missing steps are performed in subsequent runs.
+### 2.2 Custom Group Names (`groupName`)
+- `groupName` acts as the base for the group title.
+- If `splitByPath` is active, the title becomes `${groupName} - ${segment}`.
+- The extension adopts existing groups if their title matches the rule's current `groupName`.
 
 ---
 
 ## 3. Data Flow
 
-1.  **Event Trigger**: User clicks the extension icon or a tab is updated.
-2.  **Configuration Fetch**: `SyncStore` provides current user rules (Custom Groups, Auto-delete, etc.).
-3.  **Tab Filtering**: `ChromeTabAdapter` fetches raw tabs; `TabGroupingService` filters out internal pages, PWAs, and "Skip" domains.
-4.  **Transformation**: Logic branches based on `byWindow` configuration.
-5.  **Plan Execution**: The `GroupPlan` is applied transactionally (best-effort) by the Adapter.
-6.  **Badge Update**: A debounced count of duplicates is calculated and displayed on the extension badge.
+1.  **Trigger**: User clicks the extension icon.
+2.  **Fingerprint**: `lastStateHash` check. Skip if state is identical.
+3.  **Partition**: Gather `protectedTabIds` from external groups.
+4.  **Prepare**: Deduplicate and clean up unprotected tabs only.
+5.  **Plan**: Domain layer builds `GroupPlan`. External groups are flagged for atomic movement.
+6.  **Execute**: Infrastructure layer applies the plan.
 
 ---
 
-## 4. Cross-Browser Compatibility
+## 4. Domain Rules & Grouping Logic
 
-The extension is designed to be compatible with both Chromium-based browsers and Firefox.
-- **Manifests**: Separate manifest files are maintained in `public_chrome/` and `public_firefox/` to handle browser-specific requirements (e.g., manifest version differences or specific API permissions).
-- **Polyfill**: A lightweight polyfill in `utils/startSyncStore.js` ensures that `browser` is available as an alias for `chrome` in environments where it is not natively present:
-  ```javascript
-  if (!("browser" in self)) self.browser = self.chrome;
-  ```
-
----
-
-## 5. Error Handling & Resilience
-
-### 5.1 Result Pattern
-The codebase favors explicit error handling over exceptions for critical paths using a `Result<T, E>` type:
-```typescript
-type Result<T, E> = { success: true; value: T } | { success: false; error: E };
-```
-This forces the caller to handle potential failures, especially in the `Infrastructure` layer where API calls are non-deterministic.
-
-### 5.2 Best-Effort Rollback
-During the execution of a `GroupPlan`, the `ChromeTabAdapter` captures a snapshot of the current state. If a sequence of operations fails, it attempts a "best-effort" rollback to restore the previous tab and group configuration, minimizing the risk of leaving the user's browser in a fragmented state.
-
----
-
-## 6. Frontend Architecture (React UI)
-
-The management interface is built using **React 19** and **Tailwind CSS v4**.
-
-### 6.1 Data-Driven UI
-The UI is strictly synchronized with the `SyncStore`. Any change in the rules table triggers an immediate update to the underlying storage, which in turn can be reacted to by the background script.
-
-### 6.2 Component Library
-- **Tailwind CSS v4**: Utilizes the latest utility-first CSS framework for styling, integrated via `@tailwindcss/vite`.
-- **Heroicons**: Provides a consistent iconography for actions like adding/removing domains.
-- **Datalist Integration**: Uses native HTML5 `<datalist>` for group name suggestions, providing an "autocomplete" experience without heavy external libraries.
-
----
-
-## 7. Storage & Synchronization
-
-### 7.1 SyncStore Abstraction
-The `startSyncStore` utility provides a unified interface for interacting with `chrome.storage.local`.
-- **Deep Merge**: Ensures that default settings are preserved and merged with existing user data upon initialization.
-- **Event-Based Updates**: Implements an `onChange` listener to allow different parts of the extension (background vs. options page) to stay in sync without manual polling.
-
----
-
-## 8. Development & Tooling
-
-- **Build System**: Powered by **Vite**, configured with multiple entry points for the background script and the options page.
-- **Type Safety**: Uses branded types for IDs and strict TypeScript configurations to eliminate common extension-related bugs.
-- **Testing**: Employs **Vitest** with `jsdom` for unit and integration testing of both the domain logic and the React components.
-
----
-
-## 9. Domain Rules & Grouping Logic
-
-### 9.1 Rule Configuration
-Rules are defined per-domain and stored in `chrome.storage.local`.
-- **domain**: The hostname (e.g., "google.com").
-- **autoDelete**: If true, tabs matching this domain are automatically closed. **Mutually exclusive with `skipProcess`.**
-- **skipProcess**: If true, tabs are ignored by the grouper. **Mutually exclusive with `autoDelete`.**
-- **groupName**: Custom name for the group (overrides domain name). Cleared and disabled if `autoDelete` or `skipProcess` is enabled.
-- **splitByPath**: If set to a number `n >= 1`, tabs are grouped by domain + the `n`-th path segment (e.g., `n=1` for `google.com/mail` -> "google.com - mail"). If null/undefined, no path splitting occurs. Cleared and disabled if `autoDelete` or `skipProcess` is enabled.
-
-**Behavioral Note**: Toggling `autoDelete` or `skipProcess` to `true` automatically resets the other to `false` and clears both `groupName` and `splitByPath` to ensure logical consistency.
-
-### 9.2 Split by Path Logic
-When `splitByPath` is set to a number `n` for a domain:
-1.  **Path Extraction**: The `n`-th path segment is extracted from the URL (1-based index).
-2.  **Grouping**: Tabs with different values for the selected path segment form separate groups.
-3.  **Naming**:
-    -   Default: Title is the selected path segment (e.g., "images").
-    -   **Intra-Domain Collision**: If the path segment matches the base group name, the title becomes `${Domain}/${PathSegment}` to avoid ambiguity.
-    -   **Batch Collision**: If multiple groups in a batch share the same title, they are renamed to `${Domain} - ${PathSegment}` to prevent merging.
-    -   **Fallback**: If the URL has fewer than `n` segments, it falls back to standard domain grouping.
+### 4.1 Rule Configuration
+- **domain**: The hostname.
+- **autoDelete**: Automatically close tabs (Mutually exclusive with `skipProcess`).
+- **skipProcess**: Ignore domain (Mutually exclusive with `autoDelete`).
+- **groupName**: Custom title override.
+- **splitByPath**: Group by `n`-th path segment. Formats title as `${base} - ${segment}`.

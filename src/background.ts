@@ -39,6 +39,7 @@ interface GroupMapEntry {
   readonly tabs: Tab[];
   readonly displayName: string;
   readonly domains: ReadonlySet<Domain>;
+  readonly isExternal?: boolean;
 }
 
 type GroupMap = Map<string, GroupMapEntry>;
@@ -49,6 +50,7 @@ interface GroupState {
   readonly tabIds: readonly TabId[];
   readonly groupId: GroupId | null;
   readonly needsReposition: boolean;
+  readonly isExternal?: boolean;
 }
 
 interface GroupPlan {
@@ -57,6 +59,7 @@ interface GroupPlan {
     displayName: string;
     targetIndex: number;
     currentlyGrouped: readonly TabId[];
+    isExternal?: boolean;
   }>;
 }
 
@@ -235,9 +238,10 @@ export class TabGroupingService {
 
         if (parts.length >= rule.splitByPath) {
           const seg = parts[rule.splitByPath - 1];
+          // Always include base in title for split path: "domain - segment" or "groupName - segment"
           return {
             key: `${base}::${seg}`,
-            title: seg === base ? `${domain}/${seg}` : seg,
+            title: `${base} - ${seg}`,
           };
         }
       } catch {
@@ -254,25 +258,111 @@ export class TabGroupingService {
     url: string | undefined,
     rulesByDomain: RulesByDomain,
   ): boolean {
+    const rule = rulesByDomain[domain];
+    const base = rule?.groupName || domain;
     const { title: expected } = this.getGroupKey(domain, url, rulesByDomain);
-    return title === expected || title === `${domain} - ${expected}`;
+
+    // 1. Exact match with current rule or default domain
+    if (title === expected || title === domain || title === base) return true;
+
+    // 2. Collision-resolved variants (e.g. "google.com - Search")
+    if (
+      title.endsWith(` - ${expected}`) ||
+      title.endsWith(` - ${domain}`) ||
+      title.endsWith(` - ${base}`)
+    ) {
+      return true;
+    }
+
+    // 3. Split-path variants (e.g. "google.com - search" or "GroupName - search")
+    if (title.includes(" - ")) {
+      if (title.startsWith(`${domain} - `) || title.startsWith(`${base} - `)) {
+        return true;
+      }
+    }
+
+    // 4. Legacy split-path variants (e.g. "google.com/search")
+    if (title.includes("/")) {
+      if (title.startsWith(`${domain}/`) || title.startsWith(`${base}/`)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
-  buildGroupMap(tabs: Tab[], rulesByDomain: RulesByDomain): GroupMap {
-    const map = new Map<string, GroupMapEntry>();
+  identifyProtectedTabs(
+    tabs: Tab[],
+    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+    rulesByDomain: RulesByDomain,
+  ): Set<TabId> {
+    const protectedTabIds = new Set<TabId>();
     for (const tab of tabs) {
       const domain = this.getDomain(tab.url);
-      const { key, title } = this.getGroupKey(domain, tab.url, rulesByDomain);
-      const existing = map.get(key);
+      if (isGrouped(tab)) {
+        const g = groupIdToGroup.get(tab.groupId!);
+        if (
+          g?.title &&
+          !this.isInternalTitle(g.title, domain, tab.url, rulesByDomain)
+        ) {
+          protectedTabIds.add(asTabId(tab.id)!);
+        }
+      }
+    }
+    return protectedTabIds;
+  }
+
+  buildGroupMap(
+    tabs: Tab[],
+    rulesByDomain: RulesByDomain,
+    groupIdToGroup?: Map<number, chrome.tabGroups.TabGroup>,
+    protectedTabIds: Set<TabId> = new Set(),
+  ): GroupMap {
+    const map = new Map<string, GroupMapEntry>();
+    for (const tab of tabs) {
+      const tabId = asTabId(tab.id);
+      const domain = this.getDomain(tab.url);
+
+      let isExternal = false;
+      let groupKey: string;
+      let displayName: string;
+
+      if (
+        tabId &&
+        protectedTabIds.has(tabId) &&
+        isGrouped(tab) &&
+        groupIdToGroup
+      ) {
+        const group = groupIdToGroup.get(tab.groupId!);
+        if (group && group.title) {
+          isExternal = true;
+          groupKey = `external::${tab.groupId}`;
+          displayName = group.title;
+        }
+      }
+
+      if (!isExternal) {
+        const { key, title } = this.getGroupKey(domain, tab.url, rulesByDomain);
+        groupKey = key;
+        displayName = title;
+      }
+
+      const existing = map.get(groupKey!);
       map.set(
-        key,
+        groupKey!,
         existing
           ? {
               tabs: [...existing.tabs, tab],
-              displayName: title,
+              displayName: displayName!,
               domains: new Set([...existing.domains, domain]),
+              isExternal,
             }
-          : { tabs: [tab], displayName: title, domains: new Set([domain]) },
+          : {
+              tabs: [tab],
+              displayName: displayName!,
+              domains: new Set([domain]),
+              isExternal,
+            },
       );
     }
     return map;
@@ -309,7 +399,12 @@ export class TabGroupingService {
   ): GroupState[] {
     const initial: GroupState[] = [];
 
-    for (const { tabs, displayName, domains } of groupMap.values()) {
+    for (const {
+      tabs,
+      displayName,
+      domains,
+      isExternal,
+    } of groupMap.values()) {
       const valid = this.filterValidTabs(tabs, domains, tabCache);
       if (valid.length === 0) continue;
 
@@ -320,6 +415,7 @@ export class TabGroupingService {
         tabIds: extractTabIds(valid),
         groupId: null,
         needsReposition: false,
+        isExternal,
       });
     }
 
@@ -362,7 +458,7 @@ export class TabGroupingService {
       if (!tab) return false;
       const rightIndex = tab.index === expectedIndex + i;
       const rightGroup =
-        state.tabIds.length >= 2
+        state.tabIds.length >= 2 || state.isExternal
           ? tab.groupId === state.groupId
           : tab.groupId === -1;
       return rightIndex && rightGroup;
@@ -377,7 +473,7 @@ export class TabGroupingService {
         return false;
       const ids = tabsInGroupIdMap.get(state.groupId as number);
       if (!ids || !state.tabIds.every((id) => ids.has(id))) return false;
-    } else if (state.tabIds.length === 1) {
+    } else if (state.tabIds.length === 1 && !state.isExternal) {
       const tab = tabCache.get(state.tabIds[0]);
       if (tab && isGrouped(tab)) return false;
     }
@@ -413,8 +509,8 @@ export class TabGroupingService {
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        const ga = a.tabIds.length >= 2,
-          gb = b.tabIds.length >= 2;
+        const ga = a.tabIds.length >= 2 || a.isExternal,
+          gb = b.tabIds.length >= 2 || b.isExternal;
         if (ga !== gb) return ga ? -1 : 1;
         return sortByUrl(a, b);
       });
@@ -479,10 +575,13 @@ export class TabGroupingService {
           tabIds: s.tabIds,
           displayName: s.title,
           targetIndex,
-          currentlyGrouped: s.tabIds.filter((id) => {
-            const tab = tabCache.get(id);
-            return tab && isGrouped(tab);
-          }),
+          currentlyGrouped: s.isExternal
+            ? [] // Never ungroup external tabs
+            : s.tabIds.filter((id) => {
+                const tab = tabCache.get(id);
+                return tab && isGrouped(tab);
+              }),
+          isExternal: s.isExternal,
         });
       }
       targetIndex += s.tabIds.length;
@@ -567,31 +666,6 @@ export class ChromeTabAdapter {
     return result.value;
   }
 
-  async getRelevantTabs(
-    rulesByDomain: RulesByDomain,
-    service: TabGroupingService,
-  ): Promise<Tab[]> {
-    const [tabs, groups] = await Promise.all([
-      this.getNormalTabs(),
-      chrome.tabGroups.query({}),
-    ]);
-    const groupMap = new Map(groups.map((g) => [g.id, g]));
-
-    return tabs.filter((tab) => {
-      const domain = service.getDomain(tab.url);
-      if (rulesByDomain[domain]?.skipProcess === true) return false;
-      if (isGrouped(tab)) {
-        const g = groupMap.get(tab.groupId!);
-        if (
-          g?.title &&
-          !service.isInternalTitle(g.title, domain, tab.url, rulesByDomain)
-        )
-          return false;
-      }
-      return true;
-    });
-  }
-
   async deduplicateAllTabs(tabs: Tab[]): Promise<Tab[]> {
     const seen = new Set<string>();
     const unique: Tab[] = [];
@@ -601,7 +675,9 @@ export class ChromeTabAdapter {
       if (tab.url && !seen.has(tab.url)) {
         seen.add(tab.url);
         unique.push(tab);
-      } else if (tab.id) dupes.push(asTabId(tab.id)!);
+      } else if (tab.id) {
+        dupes.push(asTabId(tab.id)!);
+      }
     }
 
     for (const batch of this.batch(dupes)) {
@@ -613,7 +689,7 @@ export class ChromeTabAdapter {
     return unique;
   }
 
-  async applyAutoDeleteRules(
+  async cleanupTabsByRules(
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
     service: TabGroupingService,
@@ -622,9 +698,14 @@ export class ChromeTabAdapter {
     const remaining: Tab[] = [];
 
     for (const tab of tabs) {
-      const rule = rulesByDomain[service.getDomain(tab.url)];
-      if (rule?.autoDelete && tab.id) toDelete.push(asTabId(tab.id)!);
-      else remaining.push(tab);
+      const domain = service.getDomain(tab.url);
+      const rule = rulesByDomain[domain];
+
+      if (rule?.autoDelete && tab.id) {
+        toDelete.push(asTabId(tab.id)!);
+      } else {
+        remaining.push(tab);
+      }
     }
 
     for (const batch of this.batch(toDelete)) {
@@ -735,6 +816,8 @@ export class ChromeTabAdapter {
     tabCache: ReadonlyMap<TabId, Tab>,
     groupMap?: Map<number, chrome.tabGroups.TabGroup>,
   ): Promise<GroupState> {
+    if (state.isExternal) return state;
+
     if (state.tabIds.length < 2) {
       await this.handleSingleTab(state, tabCache);
       return state;
@@ -747,7 +830,8 @@ export class ChromeTabAdapter {
 
     try {
       for (const state of plan.states) {
-        if (state.currentlyGrouped.length > 0) {
+        // 1. Ungroup ONLY if managed (not external)
+        if (!state.isExternal && state.currentlyGrouped.length > 0) {
           const r = await retry(() =>
             chrome.tabs.ungroup(state.currentlyGrouped as number[]),
           );
@@ -758,6 +842,7 @@ export class ChromeTabAdapter {
           await this.sleep(this.RATE_DELAY);
         }
 
+        // 2. Move tabs (Atomic block)
         const r = await retry(() =>
           chrome.tabs.move(state.tabIds as number[], {
             index: state.targetIndex,
@@ -769,7 +854,8 @@ export class ChromeTabAdapter {
         }
         await this.sleep(this.RATE_DELAY);
 
-        if (state.tabIds.length >= 2) {
+        // 3. Regroup ONLY if managed and multi-tab
+        if (!state.isExternal && state.tabIds.length >= 2) {
           const r = await retry(async () => {
             const gid = await chrome.tabs.group({
               tabIds: state.tabIds as number[],
@@ -795,36 +881,6 @@ export class ChromeTabAdapter {
         success: false,
         error: err instanceof Error ? err : new Error(String(err)),
       };
-    }
-  }
-
-  async ungroupSingleTabs(
-    activeTabs: Tab[],
-    allGroupedTabIds: Set<TabId>,
-    tabCache: ReadonlyMap<TabId, Tab>,
-    service: TabGroupingService,
-  ): Promise<void> {
-    const domainCounts = new Map<Domain, number>();
-
-    for (const tab of activeTabs) {
-      const d = service.getDomain(tab.url);
-      domainCounts.set(d, (domainCounts.get(d) || 0) + 1);
-    }
-
-    const singles: TabId[] = [];
-    for (const tab of activeTabs) {
-      const tabId = asTabId(tab.id);
-      if (!tabId || allGroupedTabIds.has(tabId)) continue;
-      const domain = service.getDomain(tab.url);
-      if (domainCounts.get(domain) !== 1) continue;
-      const fresh = tabCache.get(tabId);
-      if (fresh && isGrouped(fresh)) singles.push(tabId);
-    }
-
-    for (const batch of this.batch(singles)) {
-      const r = await retry(() => chrome.tabs.ungroup(batch as number[]));
-      if (!r.success) console.warn("Failed to ungroup singles:", r.error);
-      await this.sleep(this.RATE_DELAY);
     }
   }
 
@@ -1019,14 +1075,6 @@ export class TabGroupingController {
         : freshTabs;
       await cache.invalidate(freshScoped);
 
-      const grouped = new Set(updatedGroupStates.flatMap((s) => s.tabIds));
-      await this.adapter.ungroupSingleTabs(
-        freshScoped,
-        grouped,
-        cache.snapshot(),
-        this.service,
-      );
-
       const withReposition = this.service.calculateRepositionNeeds(
         updatedGroupStates,
         cache.snapshot(),
@@ -1079,17 +1127,31 @@ export class TabGroupingController {
     };
   }
 
-  private async prepareTabs(rulesByDomain: RulesByDomain): Promise<Tab[]> {
-    const tabs = await this.adapter.getRelevantTabs(
-      rulesByDomain,
-      this.service,
-    );
-    const unique = await this.adapter.deduplicateAllTabs(tabs);
-    return this.adapter.applyAutoDeleteRules(
+  private async prepareTabs(
+    rulesByDomain: RulesByDomain,
+    protectedTabIds: Set<TabId>,
+  ): Promise<Tab[]> {
+    const allTabs = await this.adapter.getNormalTabs();
+    const protectedTabs: Tab[] = [];
+    const toProcess: Tab[] = [];
+
+    for (const tab of allTabs) {
+      const tabId = asTabId(tab.id);
+      if (tabId && protectedTabIds.has(tabId)) {
+        protectedTabs.push(tab);
+      } else {
+        toProcess.push(tab);
+      }
+    }
+
+    const unique = await this.adapter.deduplicateAllTabs(toProcess);
+    const cleaned = await this.adapter.cleanupTabsByRules(
       unique,
       rulesByDomain,
       this.service,
     );
+
+    return [...protectedTabs, ...cleaned];
   }
 
   private async consolidateWindows(
@@ -1140,6 +1202,16 @@ export class TabGroupingController {
       const { rulesByDomain, config: groupingConfig } = config;
 
       const allTabs = await this.adapter.getNormalTabs();
+      const groups = await chrome.tabGroups.query({});
+      const groupIdToGroup = new Map(groups.map((g) => [g.id, g]));
+
+      // Identify external group tabs to protect them
+      const protectedTabIds = this.service.identifyProtectedTabs(
+        allTabs,
+        groupIdToGroup,
+        rulesByDomain,
+      );
+
       const hash = this.stateHash(allTabs, rulesByDomain, groupingConfig);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
@@ -1147,14 +1219,11 @@ export class TabGroupingController {
       }
 
       if (!groupingConfig.byWindow) {
-        const tabs = await this.adapter.getRelevantTabs(
-          rulesByDomain,
-          this.service,
-        );
+        const tabs = await this.adapter.getNormalTabs();
         await this.adapter.mergeToActiveWindow(tabs);
       }
 
-      const processed = await this.prepareTabs(rulesByDomain);
+      const processed = await this.prepareTabs(rulesByDomain, protectedTabIds);
 
       if (groupingConfig.byWindow) {
         const windowMap = isDefined(groupingConfig.numWindowsToKeep)
@@ -1164,13 +1233,23 @@ export class TabGroupingController {
             )
           : await this.groupByWindow(processed);
         for (const [wid, tabs] of windowMap) {
-          const groupMap = this.service.buildGroupMap(tabs, rulesByDomain);
+          const groupMap = this.service.buildGroupMap(
+            tabs,
+            rulesByDomain,
+            groupIdToGroup,
+            protectedTabIds,
+          );
           const r = await this.processGrouping(groupMap, wid);
           if (!r.success)
             console.warn(`Grouping failed for window ${wid}:`, r.error);
         }
       } else {
-        const groupMap = this.service.buildGroupMap(processed, rulesByDomain);
+        const groupMap = this.service.buildGroupMap(
+          processed,
+          rulesByDomain,
+          groupIdToGroup,
+          protectedTabIds,
+        );
         const r = await this.processGrouping(groupMap);
         if (!r.success) console.error("Grouping failed:", r.error);
       }
