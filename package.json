@@ -26,6 +26,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "eslint": "^10.0.2",
     "eslint-plugin-react": "^7.37.5",
+    "fast-check": "^4.5.3",
     "jsdom": "^28.1.0",
     "npm-watch": "^0.13.0",
     "prettier": "^3.8.1",
