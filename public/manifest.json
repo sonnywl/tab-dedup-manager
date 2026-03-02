@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Grouper Manager",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Tab Dedup Manager, groups and dedups tabs based on set of rules that user defines. Supports skipping and auto deleting.",
   "options_page": "index.html",
   "icons": {

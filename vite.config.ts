@@ -22,6 +22,8 @@ export default defineConfig((configEnv) => ({
   },
   build: {
     sourcemap: "inline",
+    // sourcemap: true,
+    // minify: false,
     outDir: "./build",
     emptyOutDir: true,
     rollupOptions: {
