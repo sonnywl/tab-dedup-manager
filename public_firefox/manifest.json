@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Grouper Manager",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "One click - groups and dedups tabs without worry",
   "options_ui": {
     "page": "index.html",

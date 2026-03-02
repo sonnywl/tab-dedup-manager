@@ -7,6 +7,16 @@ export interface Rule {
   splitByPath?: number | null | undefined;
 }
 
+export interface GroupingConfig {
+  byWindow: boolean;
+  numWindowsToKeep?: number | null | undefined;
+}
+
+export interface SyncStoreState {
+  rules: Rule[];
+  grouping: GroupingConfig;
+}
+
 /**
  * Validates a rule object.
  * Standardizes behavior between background and options UI.

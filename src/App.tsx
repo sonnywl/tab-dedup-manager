@@ -3,17 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // @ts-ignore
 import startSyncStore from "./utils/startSyncStore";
-import { Rule, validateRule } from "./utils/rules";
-
-interface GroupingConfig {
-  byWindow: boolean;
-  numWindowsToKeep?: number | null;
-}
-
-interface SyncStoreState {
-  rules: Rule[];
-  grouping: GroupingConfig;
-}
+import { Rule, validateRule, GroupingConfig, SyncStoreState } from "./utils/storage";
 
 // FIX: normalize groupName "" → undefined before persisting to avoid empty string group keys
 function normalizeRule(rule: Rule): Rule {

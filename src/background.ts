@@ -1,5 +1,5 @@
 import startSyncStore from "./utils/startSyncStore.js";
-import { Rule, validateRule } from "./utils/rules.js";
+import { Rule, validateRule, GroupingConfig, SyncStoreState } from "./utils/storage.js";
 
 // ============================================================================
 // TYPES
@@ -14,16 +14,8 @@ interface RulesByDomain {
   [domain: string]: Rule;
 }
 
-interface GroupingConfig {
-  byWindow: boolean;
-  numWindowsToKeep: number | null | undefined;
-}
-
 interface SyncStore {
-  getState: () => Promise<{
-    rules: Rule[];
-    grouping: { byWindow: boolean; numWindowsToKeep?: number | null };
-  }>;
+  getState: () => Promise<SyncStoreState>;
 }
 
 type Tab = chrome.tabs.Tab;
