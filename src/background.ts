@@ -1,4 +1,5 @@
 import startSyncStore from "./utils/startSyncStore.js";
+import { Rule, validateRule } from "./utils/rules.js";
 
 // ============================================================================
 // TYPES
@@ -8,14 +9,6 @@ type Domain = string & { readonly __brand: "Domain" };
 type TabId = number & { readonly __brand: "TabId" };
 type GroupId = number & { readonly __brand: "GroupId" };
 type WindowId = number & { readonly __brand: "WindowId" };
-
-interface Rule {
-  domain: string;
-  autoDelete: boolean | null | undefined;
-  skipProcess: boolean | null | undefined;
-  groupName: string | null | undefined;
-  splitByPath: number | null | undefined;
-}
 
 interface RulesByDomain {
   [domain: string]: Rule;
@@ -133,29 +126,6 @@ async function retry<T>(
     }
   }
   return { success: false, error: new Error("Retry failed") };
-}
-
-function validateRule(rule: any): rule is Rule {
-  if (typeof rule !== "object" || rule === null) return false;
-  if (typeof rule.domain !== "string" || rule.domain.length === 0) return false;
-  if (rule.autoDelete != null && typeof rule.autoDelete !== "boolean")
-    return false;
-  if (rule.skipProcess != null && typeof rule.skipProcess !== "boolean")
-    return false;
-  if (rule.groupName != null && typeof rule.groupName !== "string")
-    return false;
-  if (
-    rule.splitByPath != null &&
-    (typeof rule.splitByPath !== "number" || rule.splitByPath < 1)
-  )
-    return false;
-  if (rule.autoDelete === true && rule.skipProcess === true) {
-    console.warn(
-      `Rule for "${rule.domain}": autoDelete and skipProcess are mutually exclusive — rule rejected`,
-    );
-    return false;
-  }
-  return true;
 }
 
 function validateTab(tab: any): tab is Tab {

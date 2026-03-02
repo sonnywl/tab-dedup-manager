@@ -3,16 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // @ts-ignore
 import startSyncStore from "./utils/startSyncStore";
-
-interface DomainRule {
-  id: string;
-  domain: string;
-  autoDelete: boolean;
-  skipProcess: boolean;
-  splitByPath: number | null;
-  // FIX: undefined (not "") so validateRule never receives an empty string group key
-  groupName: string | undefined;
-}
+import { Rule, validateRule } from "./utils/rules";
 
 interface GroupingConfig {
   byWindow: boolean;
@@ -20,12 +11,12 @@ interface GroupingConfig {
 }
 
 interface SyncStoreState {
-  rules: DomainRule[];
+  rules: Rule[];
   grouping: GroupingConfig;
 }
 
 // FIX: normalize groupName "" → undefined before persisting to avoid empty string group keys
-function normalizeRule(rule: DomainRule): DomainRule {
+function normalizeRule(rule: Rule): Rule {
   return {
     ...rule,
     groupName: rule.groupName?.trim() || undefined,
@@ -54,8 +45,9 @@ function useSyncStore() {
         grouping: { byWindow: false },
       });
       const data = await getState();
+      const validRules = (data.rules || []).filter(validateRule);
       setStateInternal({
-        rules: data.rules || [],
+        rules: validRules,
         grouping: data.grouping || { byWindow: false },
       });
     };
@@ -63,7 +55,7 @@ function useSyncStore() {
   }, []);
 
   const updateRules = useCallback(
-    (newRules: DomainRule[]) => {
+    (newRules: Rule[]) => {
       syncToStore({ ...state, rules: newRules.map(normalizeRule) });
     },
     [state, syncToStore],
@@ -255,8 +247,8 @@ const RuleRow = React.memo(
     onRemove,
     existingGroups,
   }: {
-    rule: DomainRule;
-    onUpdate: (id: string, updates: Partial<DomainRule>) => void;
+    rule: Rule;
+    onUpdate: (id: string, updates: Partial<Rule>) => void;
     onRemove: (id: string) => void;
     existingGroups: string[];
   }) => {
@@ -381,10 +373,17 @@ export default function App() {
     try {
       const normalized = normalizeDomainInput(domainUrl);
       const url = new URL(normalized);
-      const newRule: DomainRule = {
+      const domain = url.hostname;
+
+      if (rules.some((r) => r.domain === domain)) {
+        alert(`Rule for "${domain}" already exists.`);
+        return;
+      }
+
+      const newRule: Rule = {
         // FIX: crypto.randomUUID() replaces Date.now() — no collision risk under fast adds
         id: crypto.randomUUID(),
-        domain: url.hostname,
+        domain: domain,
         autoDelete: false,
         skipProcess: false,
         splitByPath: null,
@@ -400,7 +399,7 @@ export default function App() {
     updateRules(rules.filter((r) => r.id !== id));
   };
 
-  const handleUpdateRule = (id: string, updates: Partial<DomainRule>) => {
+  const handleUpdateRule = (id: string, updates: Partial<Rule>) => {
     updateRules(rules.map((r) => (r.id === id ? { ...r, ...updates } : r)));
   };
 

@@ -105,6 +105,34 @@ describe("App Component", () => {
     expect(mockStore.setState).not.toHaveBeenCalled();
   });
 
+  it("does not add a duplicate domain", async () => {
+    const initialRules = [
+      {
+        id: "1",
+        domain: "google.com",
+        autoDelete: false,
+        skipProcess: false,
+        splitByPath: null,
+        groupName: "",
+      },
+    ];
+    mockStore.getState.mockResolvedValue({
+      rules: initialRules,
+      grouping: { byWindow: false },
+    });
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    const input = screen.getByPlaceholderText("example.com or www.example.com");
+    const addButton = screen.getByRole("button", { name: /add/i });
+
+    await user.type(input, "google.com");
+    await user.click(addButton);
+
+    expect(mockStore.setState).not.toHaveBeenCalled();
+  });
+
   it("removes a domain rule", async () => {
     const initialRules = [
       {
