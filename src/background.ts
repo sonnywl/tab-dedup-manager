@@ -416,14 +416,13 @@ export class TabGroupingService {
   }
 
   countDuplicates(tabs: Tab[]): number {
-    const seen = new Map<Domain, Set<string>>();
+    const seen = new Set<string>();
     let count = 0;
     for (const tab of tabs) {
-      const domain = this.getDomain(tab.url);
-      if (!seen.has(domain)) seen.set(domain, new Set());
-      const urls = seen.get(domain)!;
-      if (tab.url && urls.has(tab.url)) count++;
-      else if (tab.url) urls.add(tab.url);
+      if (tab.url) {
+        if (seen.has(tab.url)) count++;
+        else seen.add(tab.url);
+      }
     }
     return count;
   }
@@ -711,10 +710,7 @@ export class ChromeTabAdapter {
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
       const tabs = await chrome.tabs.query({ windowType: "normal" });
-      return tabs.filter(
-        (t) =>
-          validateTab(t) && t.url && !t.url.startsWith("chrome-extension://"),
-      );
+      return tabs.filter((t) => validateTab(t) && t.url);
     });
     if (!result.success) {
       console.error("Failed to get tabs:", result.error);
@@ -723,26 +719,19 @@ export class ChromeTabAdapter {
     return result.value;
   }
 
-  async deduplicateAllTabs(
-    tabs: Tab[],
-    protectedTabMeta: ProtectedTabMetaMap = new Map(),
-  ): Promise<Tab[]> {
+  async deduplicateAllTabs(tabs: Tab[]): Promise<Tab[]> {
     const seen = new Set<string>();
     const unique: Tab[] = [];
     const dupes: TabId[] = [];
 
     for (const tab of tabs) {
-      const tabId = asTabId(tab.id);
-      if (tabId && protectedTabMeta.has(tabId)) {
-        unique.push(tab);
-        continue;
-      }
-
       if (tab.url && !seen.has(tab.url)) {
         seen.add(tab.url);
         unique.push(tab);
       } else if (tab.id) {
         dupes.push(asTabId(tab.id)!);
+      } else {
+        unique.push(tab);
       }
     }
 
@@ -1091,13 +1080,17 @@ export class ChromeTabAdapter {
   }
 
   async updateBadge(service: TabGroupingService): Promise<void> {
-    const tabs = await this.getNormalTabs();
-    const count = service.countDuplicates(tabs);
-    if (count > 0) {
-      chrome.action.setBadgeText({ text: count.toString() });
-      chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
-    } else {
-      chrome.action.setBadgeText({ text: "" });
+    try {
+      const tabs = await this.getNormalTabs();
+      const count = service.countDuplicates(tabs);
+      if (count > 0) {
+        chrome.action.setBadgeText({ text: count.toString() });
+        chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
+      } else {
+        chrome.action.setBadgeText({ text: "" });
+      }
+    } catch (err) {
+      console.warn("Failed to update badge accurately:", err);
     }
   }
 
@@ -1314,22 +1307,10 @@ export class TabGroupingController {
     rulesByDomain: RulesByDomain,
     protectedTabMeta: ProtectedTabMetaMap,
   ): Promise<Tab[]> {
-    const protectedTabs: Tab[] = [];
-    const toProcess: Tab[] = [];
+    // 1. Unique (on ALL tabs)
+    const unique = await this.adapter.deduplicateAllTabs(tabs);
 
-    for (const tab of tabs) {
-      const tabId = asTabId(tab.id);
-      if (tabId && protectedTabMeta.has(tabId)) {
-        protectedTabs.push(tab);
-      } else {
-        toProcess.push(tab);
-      }
-    }
-
-    const unique = await this.adapter.deduplicateAllTabs(
-      toProcess,
-      protectedTabMeta,
-    );
+    // 2. Cleanup (respects protectedTabMeta internally)
     const cleaned = await this.adapter.cleanupTabsByRules(
       unique,
       rulesByDomain,
@@ -1337,7 +1318,17 @@ export class TabGroupingController {
       protectedTabMeta,
     );
 
-    return [...protectedTabs, ...cleaned];
+    // 3. Sorting (the result)
+    return [...cleaned].sort((a, b) => {
+      const aId = asTabId(a.id);
+      const bId = asTabId(b.id);
+      const aProt = aId && protectedTabMeta.has(aId) ? 1 : 0;
+      const bProt = bId && protectedTabMeta.has(bId) ? 1 : 0;
+
+      if (aProt !== bProt) return bProt - aProt; // Protected first
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1; // Pinned first
+      return (a.id ?? 0) - (b.id ?? 0); // Stability
+    });
   }
 
   private async consolidateWindows(
