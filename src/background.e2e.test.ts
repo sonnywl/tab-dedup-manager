@@ -113,7 +113,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             tabs.push(mkTab(rt.id, `https://${rt.domain}/${rt.path}`, gid, i, rt.windowId));
           });
 
-          const protectedTabMeta = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+          const { protectedMeta: protectedTabMeta } = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
           const groupMap = service.buildGroupMap(tabs, rulesByDomain, groupsMetadata, protectedTabMeta);
           const cache = new Map(tabs.map((t) => [t.id, t]));
           const states = service.buildGroupStates(groupMap, cache as any);
@@ -147,7 +147,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const groupsMetadata = new Map([[101, { id: 101, title: "Manual Order" } as any]]);
 
           // 2. Build States
-          const protectedTabMeta = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+          const { protectedMeta: protectedTabMeta } = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
           const groupMap = service.buildGroupMap(tabs, rulesByDomain, groupsMetadata, protectedTabMeta);
           const cache = new Map(tabs.map(t => [t.id, t]));
           const states = service.buildGroupStates(groupMap, cache as any);
@@ -180,7 +180,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const groupsMetadata = new Map([[101, { id: 101, title: title } as any]]);
 
           // 2. Identification (Before merge)
-          const protectedTabMeta = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+          const { protectedMeta: protectedTabMeta } = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
 
           // 3. Simulate Merge (Move to Window 1, Ungroup)
           const mergedTabs = tabs.map(t => ({ ...t, windowId: 1, groupId: -1 }));
@@ -255,7 +255,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
 
               if (canSplit) {
                 expect(s.title).toContain(" - ");
-                expect(s.title.startsWith(base)).toBe(true);
+                expect(s.title.endsWith(` - ${base}`)).toBe(true);
               } else {
                 expect(s.title).toBe(base);
               }
@@ -285,7 +285,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const groupsMetadata = new Map([[101, { id: 101, title: "Custom Group" } as any]]);
 
           // 2. Identification
-          const protectedTabMeta = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+          const { protectedMeta: protectedTabMeta } = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
           expect(protectedTabMeta.size).toBe(3);
 
           // 3. Mapping

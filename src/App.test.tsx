@@ -1,16 +1,18 @@
+import * as matchers from "@testing-library/jest-dom/matchers";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cleanup,
+  fireEvent,
   render,
   screen,
-  fireEvent,
   waitFor,
-  cleanup,
   within,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import * as matchers from "@testing-library/jest-dom/matchers";
-import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
-expect.extend(matchers);
+
 import App from "./App";
+import userEvent from "@testing-library/user-event";
+expect.extend(matchers);
 
 // Mock chrome API
 const mockChrome = {
@@ -58,7 +60,7 @@ describe("App Component", () => {
   it("renders the app title", async () => {
     render(<App />);
     expect(
-      await screen.findByText("One-click Tab Dedup/Grouper Manager Options"),
+      await screen.findByText("One-click Tab Dedup/Group Manager Options"),
     ).toBeDefined();
   });
 
@@ -347,7 +349,10 @@ describe("App Component", () => {
     await waitFor(() => {
       expect(mockStore.setState).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          grouping: expect.objectContaining({ byWindow: true, numWindowsToKeep: 3 }),
+          grouping: expect.objectContaining({
+            byWindow: true,
+            numWindowsToKeep: 3,
+          }),
         }),
       );
     });
@@ -359,7 +364,10 @@ describe("App Component", () => {
     await waitFor(() => {
       expect(mockStore.setState).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          grouping: expect.objectContaining({ byWindow: true, numWindowsToKeep: null }),
+          grouping: expect.objectContaining({
+            byWindow: true,
+            numWindowsToKeep: null,
+          }),
         }),
       );
     });

@@ -309,6 +309,10 @@ describe("TabGroupingController", () => {
       const processSpy = vi
         .spyOn(controller, "processGrouping")
         .mockResolvedValue({ success: true, value: undefined });
+      vi.spyOn((controller as any).service, "identifyProtectedTabs").mockReturnValue({
+        protectedMeta: new Map(),
+        managedGroupIds: new Set(),
+      });
       vi.spyOn(controller, "groupByWindow").mockResolvedValue(
         new Map([
           [1 as any, [tabs[0], tabs[1]]],
@@ -446,12 +450,21 @@ describe("TabGroupingController", () => {
       ]);
 
       // 1. Identify protected IDs
-      const protectedMeta = realService.identifyProtectedTabs(tabs, groups, rulesByDomain as any);
+      const { protectedMeta } = realService.identifyProtectedTabs(
+        tabs,
+        groups,
+        rulesByDomain as any,
+      );
       expect(protectedMeta.has(2 as any)).toBe(true);
       expect(protectedMeta.has(1 as any)).toBe(false);
 
       // 2. Build map using those protected IDs
-      const groupMap = realService.buildGroupMap(tabs, rulesByDomain as any, groups, protectedMeta);
+      const groupMap = realService.buildGroupMap(
+        tabs,
+        rulesByDomain as any,
+        groups,
+        protectedMeta,
+      );
       
       // 3. Build states
       const states = realService.buildGroupStates(groupMap, new Map([[1, tabs[0]], [2, tabs[1]]]) as any);
@@ -512,6 +525,52 @@ describe("TabGroupingController", () => {
         (s: any) => s.displayName === "" && s.isExternal,
       );
       expect(unnamedStates).toHaveLength(2);
+    });
+
+    it("Integration: ungroups an intruder tab from a managed group", async () => {
+      // Setup: A managed group "google.com" (ID 101)
+      // containing two google.com tabs and a bing.com tab.
+      const tabs = [
+        mkTab(3, "https://google.com", 101, 0, 1),
+        mkTab(1, "https://google.com", 101, 1, 1),
+        mkTab(2, "https://bing.com", 101, 2, 1),
+      ];
+
+      // No rules, so the title "google.com" is internal for tabs 3 and 1 but NOT for tab 2.
+      // Because at least one tab matches, the group is considered MANAGED.
+      mockStore.getState.mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: false },
+      });
+
+      const adapter = (controller as any).adapter;
+      adapter.getNormalTabs.mockResolvedValue(tabs);
+      adapter.deduplicateAllTabs.mockResolvedValue(tabs);
+      adapter.cleanupTabsByRules.mockResolvedValue(tabs);
+
+      mockChrome.windows.getCurrent.mockResolvedValue({
+        id: 1,
+        type: "normal",
+      });
+      mockChrome.tabGroups.query.mockResolvedValue([
+        { id: 101, title: "google.com", windowId: 1 },
+      ]);
+
+      (controller as any).service = new TabGroupingService();
+
+      await controller.execute();
+
+      // Because the group title "google.com" matched at least one tab,
+      // it was correctly identified as MANAGED.
+      // Tab 2 (bing.com) should have been identified as an intruder.
+      const executeCall = adapter.executeGroupPlan.mock.calls[0];
+      expect(executeCall).toBeDefined();
+      const plan = executeCall[0];
+
+      // Verification: Intruder correctly identified for removal from managed group
+      expect(plan.tabsToUngroup).toContain(2);
+      expect(plan.tabsToUngroup).not.toContain(1);
+      expect(plan.tabsToUngroup).not.toContain(3);
     });
   });
 
@@ -712,27 +771,47 @@ describe("ChromeTabAdapter", () => {
       // Setup: Tabs are currently UNGROUPED in the browser (groupId: -1)
       const tab1 = { ...mkTab(1, "a.com"), groupId: -1 };
       const tab2 = { ...mkTab(2, "b.com"), groupId: -1 };
-      
+
       mockChrome.tabs.move.mockResolvedValue([]);
       mockChrome.tabs.query.mockResolvedValue([tab1, tab2]);
       mockChrome.tabGroups.query.mockResolvedValue([]);
 
-      const cache = new Map([[1, tab1], [2, tab2]]);
+      const cache = new Map([
+        [1, tab1],
+        [2, tab2],
+      ]);
 
-      await adapter.executeGroupPlan({
-        states: [
-          {
-            tabIds: [1, 2],
-            displayName: "Test",
-            targetIndex: 0,
-            currentlyGrouped: [], // Arrived ungrouped from another window
-            isExternal: true,
-          },
-        ],
-      } as any, cache as any, new Map());
+      await adapter.executeGroupPlan(
+        {
+          states: [
+            {
+              tabIds: [1, 2],
+              displayName: "Test",
+              targetIndex: 0,
+              currentlyGrouped: [], // Arrived ungrouped from another window
+              isExternal: true,
+            },
+          ],
+          tabsToUngroup: [],
+        } as any,
+        cache as any,
+        new Map(),
+      );
 
       expect(mockChrome.tabs.move).toHaveBeenCalled();
       expect(mockChrome.tabs.group).toHaveBeenCalled();
+    });
+
+    it("ungroups tabs listed in tabsToUngroup", async () => {
+      const plan: any = {
+        states: [],
+        tabsToUngroup: [99],
+      };
+      const cache = new Map([[99, mkTab(99, "intruder.com", 101)]]);
+
+      await adapter.executeGroupPlan(plan, cache as any, new Map());
+
+      expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([99]);
     });
   });
 });
@@ -758,20 +837,23 @@ describe("TabGroupingService", () => {
     it("identifies tabs in external groups", () => {
       const tabs = [mkTab(1, "google.com", 101)];
       const groups = new Map([[101, { id: 101, title: "Manual" } as any]]);
-      const protectedMeta = service.identifyProtectedTabs(tabs, groups, {});
+      const { protectedMeta } = service.identifyProtectedTabs(tabs, groups, {});
       expect(protectedMeta.has(1 as any)).toBe(true);
       expect(protectedMeta.get(1 as any)!.title).toBe("Manual");
     });
 
     it("protects a manual group even if it contains a tab matching a rule", () => {
-      const tabs = [
-        mkTab(1, "google.com", 101),
-        mkTab(2, "other.com", 101),
-      ];
+      const tabs = [mkTab(1, "google.com", 101), mkTab(2, "other.com", 101)];
       const groups = new Map([[101, { id: 101, title: "My Project" } as any]]);
-      const rules = { "google.com": { domain: "google.com", groupName: "Google" } };
+      const rules = {
+        "google.com": { domain: "google.com", groupName: "Google" },
+      };
 
-      const protectedMeta = service.identifyProtectedTabs(tabs, groups, rules as any);
+      const { protectedMeta } = service.identifyProtectedTabs(
+        tabs,
+        groups,
+        rules as any,
+      );
 
       expect(protectedMeta.has(1 as any)).toBe(true);
       expect(protectedMeta.has(2 as any)).toBe(true);
@@ -785,22 +867,22 @@ describe("TabGroupingService", () => {
       "google.com": { domain: "google.com", splitByPath: 1 },
     };
 
-    it("splits by first path segment when splitByPath=1", () => {
+    it("splits by first path segment using new format <path> - <base>", () => {
       const r = service.getGroupKey(
         domain,
         "https://google.com/search?q=1",
         rules,
       );
       expect(r.key).toBe("google.com::search");
-      expect(r.title).toBe("google.com - search");
+      expect(r.title).toBe("search - google.com");
     });
 
-    it("splits by second path segment when splitByPath=2", () => {
+    it("splits by second path segment using new format <path> - <base>", () => {
       const r = service.getGroupKey(domain, "https://google.com/mail/inbox", {
         "google.com": { domain: "google.com", splitByPath: 2 },
       });
       expect(r.key).toBe("google.com::inbox");
-      expect(r.title).toBe("google.com - inbox");
+      expect(r.title).toBe("inbox - google.com");
     });
 
     it("uses custom groupName when provided", () => {
@@ -813,10 +895,14 @@ describe("TabGroupingService", () => {
 
     it("uses custom groupName as base for split-path", () => {
       const r = service.getGroupKey(domain, "https://google.com/search", {
-        "google.com": { domain: "google.com", groupName: "My Search", splitByPath: 1 },
+        "google.com": {
+          domain: "google.com",
+          groupName: "My Search",
+          splitByPath: 1,
+        },
       });
       expect(r.key).toBe("My Search::search");
-      expect(r.title).toBe("My Search - search");
+      expect(r.title).toBe("search - My Search");
     });
   });
 
@@ -844,12 +930,59 @@ describe("TabGroupingService", () => {
       ).toBe(false);
     });
 
-    it("returns true for internal split-path title", () => {
+    it("returns true for internal split-path title (new format)", () => {
       expect(
-        service.isInternalTitle("google.com - search", domain, "https://google.com/search", {
-          "google.com": { domain: "google.com", splitByPath: 1 }
-        }),
+        service.isInternalTitle(
+          "search - google.com",
+          domain,
+          "https://google.com/search",
+          {
+            "google.com": { domain: "google.com", splitByPath: 1 },
+          },
+        ),
       ).toBe(true);
+    });
+
+    it("returns true for internal split-path title (legacy format)", () => {
+      expect(
+        service.isInternalTitle(
+          "google.com - search",
+          domain,
+          "https://google.com/search",
+          {
+            "google.com": { domain: "google.com", splitByPath: 1 },
+          },
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe("createGroupPlan()", () => {
+    it("identifies intruder tabs that should be ungrouped", () => {
+      const groupStates: any[] = [
+        {
+          title: "Managed",
+          tabIds: [1],
+          groupId: 101,
+          needsReposition: true,
+          isExternal: false,
+        },
+      ];
+      const tab1 = mkTab(1, "a.com", 101);
+      const tabIntruder = mkTab(2, "b.com", 101); // In group 101 but not in managed list
+      const tabCache = new Map([
+        [1, tab1],
+        [2, tabIntruder],
+      ]);
+
+      const plan = service.createGroupPlan(
+        groupStates as any,
+        tabCache as any,
+        new Set([101]),
+      );
+
+      expect(plan.tabsToUngroup).toContain(2);
+      expect(plan.tabsToUngroup).not.toContain(1);
     });
   });
 
