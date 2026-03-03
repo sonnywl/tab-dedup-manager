@@ -1,9 +1,14 @@
+import {
+  GroupingConfig,
+  Rule,
+  SyncStoreState,
+  validateRule,
+} from "./utils/storage";
 import { PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // @ts-ignore
 import startSyncStore from "./utils/startSyncStore";
-import { Rule, validateRule, GroupingConfig, SyncStoreState } from "./utils/storage";
 
 // FIX: normalize groupName "" → undefined before persisting to avoid empty string group keys
 function normalizeRule(rule: Rule): Rule {
@@ -398,7 +403,7 @@ export default function App() {
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-extrabold text-gray-900">
-            One-click Tab Dedup/Grouper Manager Options
+            One-click Tab Dedup/Group Manager Options
           </h1>
           <p className="text-gray-600 mt-2">
             Configure how your tabs are automatically organized and cleaned up.
