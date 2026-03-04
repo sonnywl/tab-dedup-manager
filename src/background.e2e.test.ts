@@ -114,7 +114,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             if (rt.isGrouped) {
               gid = rt.isManualTitle ? manualGroupId++ : 100;
               if (rt.isManualTitle) {
-                groupsMetadata.set(gid, { id: gid, title: "USER_CUSTOM_NAME" });
+                groupsMetadata.set(gid, {
+                  id: gid,
+                  title: "USER_CUSTOM_NAME",
+                  color: "blue",
+                });
               } else {
                 groupsMetadata.set(gid, { id: gid, title: rt.domain });
               }
@@ -197,7 +201,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             mkTab(i + 1, `https://${rt.domain}/${rt.path}`, 101, i, 1),
           );
           const groupsMetadata = new Map([
-            [101, { id: 101, title: "Manual Order" } as any],
+            [101, { id: 101, title: "Manual Order", color: "red" } as any],
           ]);
 
           // 2. Build States
@@ -251,7 +255,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             mkTab(i + 1, `https://${rt.domain}/${rt.path}`, 101, i, 2),
           );
           const groupsMetadata = new Map([
-            [101, { id: 101, title: title } as any],
+            [101, { id: 101, title: title, color: "green" } as any],
           ]);
 
           // 2. Identification (Before merge)
@@ -394,7 +398,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             mkTab(3, "https://google.com/3", 101, 2, windowId),
           ];
           const groupsMetadata = new Map([
-            [101, { id: 101, title: "Custom Group" } as any],
+            [101, { id: 101, title: "Custom Group", color: "pink" } as any],
           ]);
 
           // 2. Identification

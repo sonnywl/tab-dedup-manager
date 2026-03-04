@@ -149,6 +149,8 @@ export class ChromeTabAdapter {
     const dupes: TabId[] = [];
 
     for (const tab of tabs) {
+      const tid = asTabId(tab.id);
+
       if (tab.url && !seen.has(tab.url)) {
         seen.add(tab.url);
         unique.push(tab);
@@ -193,7 +195,7 @@ export class ChromeTabAdapter {
         remaining.push(tab);
       }
     }
-
+    gr;
     for (const batch of this.batch(toDelete)) {
       const r = await retry(() => chrome.tabs.remove(batch as number[]));
       if (!r.success) console.warn("Failed to auto-delete:", r.error);
@@ -277,7 +279,10 @@ export class ChromeTabAdapter {
     }
 
     // 4. Re-bundle manual groups (only those not moved as whole groups)
-    const groupsToRebuild = new Map<number, { title: string; ids: TabId[] }>();
+    const groupsToRebuild = new Map<
+      number,
+      { title: string; color?: chrome.tabGroups.Color; ids: TabId[] }
+    >();
     const movedGroupIds = new Set(groupsToMove);
 
     for (const id of tabIds) {
@@ -286,6 +291,7 @@ export class ChromeTabAdapter {
         if (!groupsToRebuild.has(meta.originalGroupId)) {
           groupsToRebuild.set(meta.originalGroupId, {
             title: meta.title,
+            color: meta.color,
             ids: [],
           });
         }
@@ -293,10 +299,14 @@ export class ChromeTabAdapter {
       }
     }
 
-    for (const [_, { title, ids }] of groupsToRebuild) {
+    for (const [_, { title, color, ids }] of groupsToRebuild) {
       await retry(async () => {
         const gid = await chrome.tabs.group({ tabIds: ids as number[] });
-        await chrome.tabGroups.update(gid, { collapsed: false, title });
+        await chrome.tabGroups.update(gid, {
+          collapsed: false,
+          title,
+          color,
+        });
         return gid;
       });
       await sleep(this.RATE_DELAY);
@@ -312,7 +322,10 @@ export class ChromeTabAdapter {
 
     // Mandate: Manual groups are always preserved (even 1 tab). Managed groups need 2.
     if (!state.isExternal && state.tabIds.length < 2) {
-      if (state.groupId !== null) await this.handleSingleTab(state, tabCache);
+      if (state.groupId !== null) {
+        await this.handleSingleTab(state, tabCache);
+        return { ...state, groupId: null };
+      }
       return state;
     }
 
@@ -326,9 +339,20 @@ export class ChromeTabAdapter {
     if (state.groupId === null || state.tabIds.length === 0) return;
     const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
     if (tabs.every((t) => !isGrouped(t))) return;
-    const r = await retry(() => chrome.tabs.ungroup(state.tabIds as number[]));
-    if (!r.success)
-      console.warn(`Failed to ungroup single tab ${state.title}:`, r.error);
+
+    // Explicitly check if the tab is in the group we think it is
+    const idsToUngroup = state.tabIds.filter((id) => {
+      const t = tabCache.get(id);
+      return t && t.groupId === state.groupId;
+    });
+
+    if (idsToUngroup.length > 0) {
+      const r = await retry(() =>
+        chrome.tabs.ungroup(idsToUngroup as number[]),
+      );
+      if (!r.success)
+        console.warn(`Failed to ungroup single tab ${state.title}:`, r.error);
+    }
   }
 
   private async handleMultiTabGroup(
@@ -350,17 +374,20 @@ export class ChromeTabAdapter {
         chrome.tabGroups.update(r.value, {
           collapsed: false,
           title: state.title,
+          color: state.color,
         }),
       );
       return { ...state, groupId: asGroupId(r.value) };
     }
 
     const group = groupMap?.get(state.groupId as number);
-    if (
-      tabs.every((t) => t.groupId === state.groupId) &&
-      group?.title === state.title
-    )
+    const allInCorrectGroup = tabs.every((t) => t.groupId === state.groupId);
+    const titleMatch = group?.title === state.title;
+    const colorMatch = !state.color || group?.color === state.color;
+
+    if (allInCorrectGroup && titleMatch && colorMatch) {
       return state;
+    }
 
     const wrongGroup = state.tabIds.filter((id) => {
       const t = tabCache.get(id);
@@ -382,13 +409,15 @@ export class ChromeTabAdapter {
       return state;
     }
 
-    if (!group || group.title !== state.title)
+    if (!titleMatch || !colorMatch) {
       await retry(() =>
         chrome.tabGroups.update(state.groupId as number, {
           collapsed: false,
           title: state.title,
+          color: state.color,
         }),
       );
+    }
 
     return state;
   }
@@ -492,17 +521,14 @@ export class ChromeTabAdapter {
 
               // Update title/color if:
               // 1. It's a new group (currentGroup might be undefined or just created)
-              // 2. The title mismatch (and it's not external/manual where we preserve titles?
-              //    Actually, if isExternal is true, we WANT to restore the title "state.displayName")
-              // 3. Managed group title update.
+              // 2. Title or Color mismatch
 
-              // Note: For external groups, state.displayName is the restored title.
-              // For managed groups, state.displayName is the generated title.
+              const needsUpdate =
+                !currentGroup ||
+                currentGroup.title !== state.displayName ||
+                (state.color && currentGroup.color !== state.color);
 
-              const titleMismatch =
-                !currentGroup || currentGroup.title !== state.displayName;
-
-              if (titleMismatch) {
+              if (needsUpdate) {
                 await chrome.tabGroups.update(gid, {
                   collapsed: false,
                   title: state.displayName,
@@ -741,7 +767,7 @@ export class TabGroupingController {
     rulesByDomain: RulesByDomain,
     protectedTabMeta: ProtectedTabMetaMap,
   ): Promise<Tab[]> {
-    // 1. Unique (on ALL tabs)
+    // 1. Unique (on ALL tabs, but respect protection)
     const unique = await this.adapter.deduplicateAllTabs(tabs);
 
     // 2. Cleanup (respects protectedTabMeta internally)

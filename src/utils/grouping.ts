@@ -20,6 +20,7 @@ export interface GroupMapEntry {
   readonly displayName: string;
   readonly domains: ReadonlySet<Domain>;
   readonly isExternal?: boolean;
+  readonly color?: chrome.tabGroups.Color;
 }
 
 export type GroupMap = Map<string, GroupMapEntry>;
@@ -50,6 +51,7 @@ export interface GroupPlan {
 export interface ProtectedTabMeta {
   readonly title: string;
   readonly originalGroupId: number;
+  readonly color?: chrome.tabGroups.Color;
 }
 
 export type ProtectedTabMetaMap = Map<TabId, ProtectedTabMeta>;
@@ -224,26 +226,34 @@ export class TabGroupingService {
     const base = rule?.groupName || domain;
     const { title: expected } = this.getGroupKey(domain, url, rulesByDomain);
 
-    if (title === expected || title === domain || title === base) return true;
+    const t = title.toLowerCase();
+    const e = expected.toLowerCase();
+    const d = domain.toLowerCase();
+    const b = base.toLowerCase();
 
+    // 1. Exact match with current rule, default domain, or base name (case-insensitive)
+    if (t === e || t === d || t === b) return true;
+
+    // 2. Exact match with domain including www. prefix
+    if (t === `www.${d}`) return true;
+
+    // 3. Collision-resolved variants (e.g. "google.com - Search")
     if (
-      title.endsWith(` - ${expected}`) ||
-      title.endsWith(` - ${domain}`) ||
-      title.endsWith(` - ${base}`)
+      t.endsWith(` - ${e}`) ||
+      t.endsWith(` - ${d}`) ||
+      t.endsWith(` - ${b}`)
     ) {
       return true;
     }
 
-    if (title.includes(" - ")) {
-      if (title.endsWith(` - ${domain}`) || title.endsWith(` - ${base}`))
-        return true;
-      if (title.startsWith(`${domain} - `) || title.startsWith(`${base} - `))
-        return true;
+    // 4. Split-path variants
+    if (t.includes(" - ")) {
+      if (t.endsWith(` - ${d}`) || t.endsWith(` - ${b}`)) return true;
+      if (t.startsWith(`${d} - `) || t.startsWith(`${b} - `)) return true;
     }
 
-    if (title.includes("/")) {
-      if (title.startsWith(`${domain}/`) || title.startsWith(`${base}/`))
-        return true;
+    if (t.includes("/")) {
+      if (t.startsWith(`${d}/`) || t.startsWith(`${b}/`)) return true;
     }
 
     return false;
@@ -281,6 +291,7 @@ export class TabGroupingService {
           protectedMeta.set(asTabId(t.id)!, {
             title: title,
             originalGroupId: g.id,
+            color: g.color,
           });
         }
       } else {
@@ -304,12 +315,14 @@ export class TabGroupingService {
       let isExternal = false;
       let groupKey: string = "";
       let displayName: string = "";
+      let color: chrome.tabGroups.Color | undefined;
 
       const meta = tabId ? protectedTabMeta.get(tabId) : undefined;
       if (meta) {
         isExternal = true;
         groupKey = `external::${meta.originalGroupId}`;
         displayName = meta.title;
+        color = meta.color;
       } else if (tabId && isGrouped(tab) && groupIdToGroup) {
         const group = groupIdToGroup.get(tab.groupId!);
         const groupTitle = group?.title || "";
@@ -335,12 +348,14 @@ export class TabGroupingService {
               displayName,
               domains: new Set([...existing.domains, domain]),
               isExternal,
+              color: color || existing.color,
             }
           : {
               tabs: [tab],
               displayName,
               domains: new Set([domain]),
               isExternal,
+              color,
             },
       );
     }
@@ -367,7 +382,13 @@ export class TabGroupingService {
   ): GroupState[] {
     const initial: GroupState[] = [];
 
-    for (const { tabs, displayName, domains, isExternal } of groupMap.values()) {
+    for (const {
+      tabs,
+      displayName,
+      domains,
+      isExternal,
+      color,
+    } of groupMap.values()) {
       const valid = extractTabIds(tabs)
         .map((id) => tabCache.get(id))
         .filter(isDefined)
@@ -394,7 +415,7 @@ export class TabGroupingService {
         groupId: null,
         needsReposition: false,
         isExternal,
-        color: isExternal ? undefined : this.getDeterministicColor(sourceDomain),
+        color: isExternal ? color : this.getDeterministicColor(sourceDomain),
       });
     }
 
