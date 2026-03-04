@@ -45,5 +45,10 @@ The application is structured into three distinct layers to promote separation o
 - **Atomic Movement**: Manual groups move as blocks, minimizing API calls.
 - **Redundancy Checks**: `applyGroupState` avoids grouping/ungrouping if the target state matches the current.
 - O(n) tab filtering + deduplication
-- O(g) group operations where g = domains with 2+ tabs
-- O(r) repositions where r ≤ g
+## Learnings
+- **Code Duplication:** Successfully consolidated duplicated types and classes from `src/background.ts` into `src/utils/grouping.ts`. This reduces the risk of divergence.
+- **Testing:** `fast-check` (in `src/background.e2e.test.ts`) is critical for verifying invariants like "atomic manual group moves" and "re-bundling". Always run these property-based tests when modifying grouping logic.
+- **Chrome API:** `chrome.tabs.group` effectively handles merging and moving tabs into groups, reducing the need for explicit `ungroup` calls. `chrome.tabGroups.move` is the most efficient way to move existing groups.
+- **Vitest Imports:** When moving local classes to an external utility, they must be both imported (for local class members like `TabGroupingController.service`) and exported (if the test suite imports them from the original file).
+- **Behavior Consistency:** Aesthetic changes (like domain capitalization) should be applied globally or disabled if they conflict with invariant expectations in existing tests.
+- **Cumulative Index Offsets:** Absolute tab indices in Chrome are sensitive to the total count of preceding tabs. When calculating target positions for groups, always sum the `tabIds.length` of preceding groups rather than the number of group objects. Failure to do so leads to "drifting" target indices and redundant move operations.

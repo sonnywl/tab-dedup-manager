@@ -984,6 +984,70 @@ describe("TabGroupingService", () => {
       expect(plan.tabsToUngroup).toContain(2);
       expect(plan.tabsToUngroup).not.toContain(1);
     });
+
+    it("identifies path-segment intruders (different paths in same path-group)", () => {
+      // Scenario: Group 101 is named "search - google.com"
+      // It contains:
+      // 1. google.com/search (belongs here)
+      // 2. google.com/images (intruder, should be in "images - google.com")
+      const groupStates: any[] = [
+        {
+          title: "search - google.com",
+          tabIds: [1],
+          groupId: 101,
+          needsReposition: false,
+          isExternal: false,
+        },
+      ];
+      const tab1 = mkTab(1, "https://google.com/search", 101);
+      const tab2 = mkTab(2, "https://google.com/images", 101);
+      const tabCache = new Map([
+        [1, tab1],
+        [2, tab2],
+      ]);
+
+      const plan = service.createGroupPlan(
+        groupStates as any,
+        tabCache as any,
+        new Map([[101, "search - google.com"]]),
+      );
+
+      expect(plan.tabsToUngroup).toContain(2);
+      expect(plan.tabsToUngroup).not.toContain(1);
+    });
+
+    it("identifies cross-domain intruders in a path-based group", () => {
+      // Scenario: Managed group "search - bing.com" (ID 101)
+      // Contains two bing.com/search tabs and one google.com intruder.
+      const groupStates: any[] = [
+        {
+          title: "search - bing.com",
+          tabIds: [1, 3],
+          groupId: 101,
+          needsReposition: false,
+          isExternal: false,
+        },
+      ];
+      const tab1 = mkTab(1, "https://www.bing.com/search", 101);
+      const tab2 = mkTab(2, "https://www.google.com", 101); // INTRUDER
+      const tab3 = mkTab(3, "https://www.bing.com/search?q=test", 101);
+
+      const tabCache = new Map([
+        [1, tab1],
+        [2, tab2],
+        [3, tab3],
+      ]);
+
+      const plan = service.createGroupPlan(
+        groupStates as any,
+        tabCache as any,
+        new Map([[101, "search - bing.com"]]),
+      );
+
+      expect(plan.tabsToUngroup).toContain(2);
+      expect(plan.tabsToUngroup).not.toContain(1);
+      expect(plan.tabsToUngroup).not.toContain(3);
+    });
   });
 
   describe("calculateRepositionNeeds()", () => {
