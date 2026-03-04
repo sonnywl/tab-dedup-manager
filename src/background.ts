@@ -183,20 +183,13 @@ export class ChromeTabAdapter {
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
     service: TabGroupingService,
-    protectedTabMeta: ProtectedTabMetaMap = new Map(),
   ): Promise<Tab[]> {
     const toDelete: TabId[] = [];
     const remaining: Tab[] = [];
 
     for (const tab of tabs) {
-      const tabId = asTabId(tab.id);
       const domain = service.getDomain(tab.url);
       const rule = rulesByDomain[domain];
-
-      if (tabId && protectedTabMeta.has(tabId)) {
-        remaining.push(tab);
-        continue;
-      }
 
       if (rule?.autoDelete && tab.id) {
         toDelete.push(asTabId(tab.id)!);
