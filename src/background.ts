@@ -26,7 +26,18 @@ import {
 
 import startSyncStore from "./utils/startSyncStore.js";
 
-export { CacheManager, TabGroupingService, WindowManagementService };
+export {
+  CacheManager,
+  TabGroupingService,
+  WindowManagementService,
+  asTabId,
+  asGroupId,
+  asWindowId,
+  asDomain,
+  extractTabIds,
+  isDefined,
+  isGrouped,
+};
 
 // ============================================================================
 // TYPES
@@ -149,8 +160,6 @@ export class ChromeTabAdapter {
     const dupes: TabId[] = [];
 
     for (const tab of tabs) {
-      const tid = asTabId(tab.id);
-
       if (tab.url && !seen.has(tab.url)) {
         seen.add(tab.url);
         unique.push(tab);
@@ -195,7 +204,7 @@ export class ChromeTabAdapter {
         remaining.push(tab);
       }
     }
-    gr;
+
     for (const batch of this.batch(toDelete)) {
       const r = await retry(() => chrome.tabs.remove(batch as number[]));
       if (!r.success) console.warn("Failed to auto-delete:", r.error);
@@ -767,18 +776,12 @@ export class TabGroupingController {
     rulesByDomain: RulesByDomain,
     protectedTabMeta: ProtectedTabMetaMap,
   ): Promise<Tab[]> {
-    // 1. Unique (on ALL tabs, but respect protection)
     const unique = await this.adapter.deduplicateAllTabs(tabs);
-
-    // 2. Cleanup (respects protectedTabMeta internally)
     const cleaned = await this.adapter.cleanupTabsByRules(
       unique,
       rulesByDomain,
       this.service,
-      protectedTabMeta,
     );
-
-    // 3. Sorting (the result)
     return [...cleaned].sort((a, b) => {
       const aId = asTabId(a.id);
       const bId = asTabId(b.id);

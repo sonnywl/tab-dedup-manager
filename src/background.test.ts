@@ -4,6 +4,7 @@ import {
   TabGroupingController,
   TabGroupingService,
   WindowManagementService,
+  asTabId,
 } from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -698,7 +699,10 @@ describe("ChromeTabAdapter", () => {
   describe("cleanupTabsByRules()", () => {
     it("removes tabs matching autoDelete rule", async () => {
       const service = new TabGroupingService();
-      const tabs = [mkTab(1, "delete.me"), mkTab(2, "keep.me")];
+      const tabs = [
+        mkTab(1, "https://delete.me"),
+        mkTab(2, "https://keep.me"),
+      ];
       const rulesByDomain = {
         "delete.me": { domain: "delete.me", autoDelete: true } as any,
       };
@@ -716,12 +720,12 @@ describe("ChromeTabAdapter", () => {
 
     it("respects protected tabs even if matching autoDelete rule", async () => {
       const service = new TabGroupingService();
-      const tabs = [mkTab(1, "delete.me")];
+      const tabs = [mkTab(1, "https://delete.me")];
       const rulesByDomain = {
         "delete.me": { domain: "delete.me", autoDelete: true } as any,
       };
       const protectedMeta = new Map([
-        [1 as any, { title: "Protected", originalGroupId: 101 }],
+        [asTabId(1)!, { title: "Protected", originalGroupId: 101 }],
       ]);
 
       const result = await adapter.cleanupTabsByRules(
