@@ -188,10 +188,15 @@ describe("TabGroupingController", () => {
   const makeServiceMock = () => ({
     getDomain: vi.fn((url: string) => {
       try {
-        return new URL(url).hostname;
+        const host = new URL(url).hostname;
+        return host.startsWith("www.") ? host.slice(4) : host;
       } catch {
         return "other";
       }
+    }),
+    normalizeDomain: vi.fn((domain: string) => {
+      const d = domain.toLowerCase();
+      return d.startsWith("www.") ? d.slice(4) : d;
     }),
     getGroupKey: vi.fn(),
     buildGroupMap: vi.fn().mockReturnValue(new Map()),

@@ -114,13 +114,15 @@ export class CacheManager {
 
   async refresh(
     ids: TabId[],
-    retryFn: <T>(fn: () => Promise<T>) => Promise<{ success: boolean; value?: T; error?: any }> = async (fn) => {
+    retryFn: <T>(
+      fn: () => Promise<T>,
+    ) => Promise<{ success: boolean; value?: T; error?: any }> = async (fn) => {
       try {
         return { success: true, value: await fn() };
       } catch (err) {
         return { success: false, error: err };
       }
-    }
+    },
   ): Promise<{ recovered: TabId[]; missing: TabId[] }> {
     const results = await Promise.allSettled(
       ids.map((id) => retryFn(() => chrome.tabs.get(id as number))),
@@ -149,11 +151,16 @@ export class CacheManager {
 // ============================================================================
 
 export class TabGroupingService {
+  normalizeDomain(domain: string): Domain {
+    const d = domain.toLowerCase();
+    return asDomain(d.startsWith("www.") ? d.slice(4) : d);
+  }
+
   getDomain(url: string | undefined): Domain {
     if (!url) return asDomain("other");
     try {
-      const host = new URL(url).hostname.toLowerCase();
-      return asDomain(host.startsWith("www.") ? host.slice(4) : host);
+      const host = new URL(url).hostname;
+      return this.normalizeDomain(host);
     } catch {
       return asDomain("other");
     }
@@ -263,7 +270,10 @@ export class TabGroupingService {
     tabs: Tab[],
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
     rulesByDomain: RulesByDomain,
-  ): { protectedMeta: ProtectedTabMetaMap; managedGroupIds: Map<number, string> } {
+  ): {
+    protectedMeta: ProtectedTabMetaMap;
+    managedGroupIds: Map<number, string>;
+  } {
     const protectedMeta = new Map<TabId, ProtectedTabMeta>();
     const managedGroupIds = new Map<number, string>();
 
@@ -283,7 +293,8 @@ export class TabGroupingService {
       const title = g.title || "";
       const isManaged = gTabs.some((t) => {
         const domain = this.getDomain(t.url);
-        return this.isInternalTitle(title, domain, t.url, rulesByDomain);
+        const normalizedDomain = this.normalizeDomain(domain);
+        return this.isInternalTitle(title, normalizedDomain, t.url, rulesByDomain);
       });
 
       if (!isManaged) {
@@ -327,7 +338,11 @@ export class TabGroupingService {
         const group = groupIdToGroup.get(tab.groupId!);
         const groupTitle = group?.title || "";
         if (this.isInternalTitle(groupTitle, domain, tab.url, rulesByDomain)) {
-          const { key, title } = this.getGroupKey(domain, tab.url, rulesByDomain);
+          const { key, title } = this.getGroupKey(
+            domain,
+            tab.url,
+            rulesByDomain,
+          );
           groupKey = key;
           displayName = title;
         }
@@ -430,7 +445,9 @@ export class TabGroupingService {
     );
 
     return resolved.map((s) => {
-      const validTabs = s.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
+      const validTabs = s.tabIds
+        .map((id) => tabCache.get(id))
+        .filter(isDefined);
 
       const existing = validTabs.find((t) => {
         if (!isGrouped(t)) return false;
@@ -468,7 +485,8 @@ export class TabGroupingService {
 
     if (state.groupId !== null) {
       if (
-        (tabsInGroupCount.get(state.groupId as number) || 0) !== state.tabIds.length
+        (tabsInGroupCount.get(state.groupId as number) || 0) !==
+        state.tabIds.length
       )
         return false;
       const ids = tabsInGroupIdMap.get(state.groupId as number);
@@ -688,7 +706,8 @@ export class WindowManagementService {
 
       if (bestWid) {
         if (!plan.has(bestWid)) plan.set(bestWid, []);
-        for (const t of gTabs) if (t.id) plan.get(bestWid)!.push(asTabId(t.id)!);
+        for (const t of gTabs)
+          if (t.id) plan.get(bestWid)!.push(asTabId(t.id)!);
       }
     }
 

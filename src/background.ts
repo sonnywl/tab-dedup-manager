@@ -765,7 +765,12 @@ export class TabGroupingController {
       );
 
     const rulesByDomain: RulesByDomain = {};
-    for (const r of valid) if (r.domain.length > 0) rulesByDomain[r.domain] = r;
+    for (const r of valid) {
+      if (r.domain.length > 0) {
+        const normalized = this.service.normalizeDomain(r.domain);
+        rulesByDomain[normalized] = r;
+      }
+    }
 
     return {
       rulesByDomain,
