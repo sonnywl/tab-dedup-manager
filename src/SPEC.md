@@ -1,6 +1,6 @@
 # Background Script Specification (`background.ts`)
 
-This document outlines the architecture, critical behaviors, and design principles of the `background.ts` entry point for the Tab Grouper extension.
+This document outlines the architecture, critical behaviors, and design principles of the `background.ts` entry point for the One-click Tab Dedup/Group Manager extension.
 
 ## 1. Architectural Overview
 

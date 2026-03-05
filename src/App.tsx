@@ -451,7 +451,7 @@ export default function App() {
         </section>
 
         <footer className="mt-8 text-center text-gray-400 text-xs">
-          One-click Tab Dedup/Grouper Manager &copy; {new Date().getFullYear()}
+          One-click Tab Dedup/Group Manager &copy; {new Date().getFullYear()}
         </footer>
       </div>
     </div>

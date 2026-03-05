@@ -1,8 +1,8 @@
 {
-  "name": "tab_grouper",
+  "name": "one-click-tab-dedup-group-manager",
   "version": "1.0.0",
   "type": "module",
-  "description": "Sorts and reduces tabs in active browser session",
+  "description": "One-click Tab Dedup/Group Manager",
   "main": "index.js",
   "scripts": {
     "watch": "npm-watch",

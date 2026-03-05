@@ -1,4 +1,4 @@
-# Tab Grouping Rules
+# One-click Tab Dedup/Group Manager Rules
 
 ## Development Mandates
 
