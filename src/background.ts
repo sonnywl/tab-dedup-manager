@@ -793,13 +793,7 @@ export class TabGroupingController {
       this.service,
     );
 
-    // Filter out skipped domains (completely ignore them)
-    const processed = cleaned.filter((tab) => {
-      const domain = this.service.getDomain(tab.url);
-      return !rulesByDomain[domain]?.skipProcess;
-    });
-
-    return [...processed].sort((a, b) => {
+    return [...cleaned].sort((a, b) => {
       const aId = asTabId(a.id);
       const bId = asTabId(b.id);
       const aProt = aId && protectedTabMeta.has(aId) ? 1 : 0;

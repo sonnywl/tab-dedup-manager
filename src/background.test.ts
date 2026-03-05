@@ -335,35 +335,6 @@ describe("TabGroupingController", () => {
       expect((controller as any).adapter.moveTabsAtomic).toHaveBeenCalled();
     });
 
-    it("skips processing for domains with skipProcess=true", async () => {
-      const tabs = [
-        mkTab(1, "https://skip.me"),
-        mkTab(2, "https://process.me"),
-      ];
-      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
-
-      mockStore.getState.mockResolvedValue({
-        rules: [
-          { domain: "skip.me", skipProcess: true },
-        ],
-        grouping: { byWindow: false },
-      });
-
-      const buildMapSpy = vi.spyOn((controller as any).service, "buildGroupMap");
-
-      await controller.execute();
-
-      // Verify buildGroupMap was called ONLY with the non-skipped tab
-      const buildMapCall = buildMapSpy.mock.calls[0];
-      expect(buildMapCall).toBeDefined();
-      
-      const callTabs = buildMapCall[0];
-      expect(callTabs).toHaveLength(1);
-      expect(callTabs[0].id).toBe(2);
-    });
-
     it("Integration: preserves manual 'Test' group through full execute loop", async () => {
       // 1. Setup Mock State: Group 101 has a manual title "Test"
       const testTabs = [
@@ -374,7 +345,7 @@ describe("TabGroupingController", () => {
 
       // Rule for bing.com would normally trigger split-path grouping
       const rules = [
-        { domain: "www.bing.com", splitByPath: 1, autoDelete: false, skipProcess: false }
+        { domain: "www.bing.com", splitByPath: 1, autoDelete: false }
       ];
 
       mockStore.getState.mockResolvedValue({
@@ -1168,22 +1139,15 @@ describe("validateRule", () => {
     if (typeof r !== "object" || r === null) return false;
     if (typeof r.domain !== "string" || r.domain.length === 0) return false;
     if (r.autoDelete != null && typeof r.autoDelete !== "boolean") return false;
-    if (r.skipProcess != null && typeof r.skipProcess !== "boolean")
-      return false;
     if (r.groupName != null && typeof r.groupName !== "string") return false;
     if (
       r.splitByPath != null &&
       (typeof r.splitByPath !== "number" || r.splitByPath < 1)
     )
       return false;
-    if (r.autoDelete === true && r.skipProcess === true) return false;
     return true;
   };
 
   it("accepts minimal valid rule", () =>
     expect(valid({ domain: "a.com" })).toBe(true));
-  it("rejects autoDelete=true AND skipProcess=true", () =>
-    expect(
-      valid({ domain: "a.com", autoDelete: true, skipProcess: true }),
-    ).toBe(false));
 });

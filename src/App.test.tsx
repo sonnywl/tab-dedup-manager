@@ -70,7 +70,7 @@ describe("App Component", () => {
       await screen.findByText("No domain rules configured yet."),
     ).toBeDefined();
     const noDomainsCell = screen.getByText("No domain rules configured yet.");
-    expect(noDomainsCell).toHaveAttribute("colspan", "6");
+    expect(noDomainsCell).toHaveAttribute("colspan", "5");
   });
 
   it("adds a new domain rule", async () => {
@@ -113,7 +113,6 @@ describe("App Component", () => {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: false,
         splitByPath: null,
         groupName: "",
       },
@@ -141,7 +140,6 @@ describe("App Component", () => {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: false,
         splitByPath: null,
         groupName: "",
       },
@@ -168,53 +166,12 @@ describe("App Component", () => {
     });
   });
 
-  it("toggles skipProcess checkbox and clears other fields", async () => {
-    const initialRules = [
-      {
-        id: "1",
-        domain: "google.com",
-        autoDelete: true,
-        skipProcess: false,
-        splitByPath: 1,
-        groupName: "Test Group",
-      },
-    ];
-    mockStore.getState.mockResolvedValue({
-      rules: initialRules,
-      grouping: { byWindow: false },
-    });
-
-    render(<App />);
-
-    const skipCheckbox = await screen.findByLabelText(
-      /skip processing for google.com/i,
-    );
-
-    fireEvent.click(skipCheckbox);
-
-    await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          rules: [
-            expect.objectContaining({
-              id: "1",
-              skipProcess: true,
-              autoDelete: false,
-              splitByPath: null,
-            }),
-          ],
-        }),
-      );
-    });
-  });
-
   it("toggles autoDelete checkbox and clears other fields", async () => {
     const initialRules = [
       {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: true,
         splitByPath: 1,
         groupName: "Test Group",
       },
@@ -239,7 +196,6 @@ describe("App Component", () => {
             expect.objectContaining({
               id: "1",
               autoDelete: true,
-              skipProcess: false,
               splitByPath: null,
             }),
           ],
@@ -254,7 +210,6 @@ describe("App Component", () => {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: false,
         splitByPath: null,
         groupName: "",
       },
@@ -297,7 +252,6 @@ describe("App Component", () => {
         id: "1",
         domain: "google.com",
         autoDelete: false,
-        skipProcess: false,
         splitByPath: null,
         groupName: undefined,
       },
@@ -373,21 +327,12 @@ describe("App Component", () => {
     });
   });
 
-  it("disables inputs when skip or autoDelete is enabled", async () => {
+  it("disables inputs when autoDelete is enabled", async () => {
     const initialRules = [
       {
         id: "1",
         domain: "google.com",
-        autoDelete: false,
-        skipProcess: true,
-        splitByPath: null,
-        groupName: "Test Group",
-      },
-      {
-        id: "2",
-        domain: "bing.com",
         autoDelete: true,
-        skipProcess: false,
         splitByPath: null,
         groupName: "Search",
       },
@@ -402,12 +347,7 @@ describe("App Component", () => {
     const groupInputs = await screen.findAllByLabelText(/group name/i);
     const splitInputs = await screen.findAllByLabelText(/split by path/i);
 
-    // Row 1 (Skip enabled)
     expect(groupInputs[0]).toBeDisabled();
     expect(splitInputs[0]).toBeDisabled();
-
-    // Row 2 (AutoDelete enabled)
-    expect(groupInputs[1]).toBeDisabled();
-    expect(splitInputs[1]).toBeDisabled();
   });
 });

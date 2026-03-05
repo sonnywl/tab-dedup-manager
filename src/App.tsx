@@ -247,9 +247,9 @@ const RuleRow = React.memo(
     onRemove: (id: string) => void;
     existingGroups: string[];
   }) => {
-    // FIX: splitByPath and groupName are disabled by Skip OR Delete (spec: both clear these fields)
-    const isSplitDisabled = rule.skipProcess || rule.autoDelete;
-    const isGroupNameDisabled = rule.skipProcess || rule.autoDelete;
+    // FIX: splitByPath and groupName are disabled by Delete (spec: clears these fields)
+    const isSplitDisabled = rule.autoDelete;
+    const isGroupNameDisabled = rule.autoDelete;
 
     return (
       <tr>
@@ -259,35 +259,12 @@ const RuleRow = React.memo(
         <td className="px-6 py-4">
           <input
             type="checkbox"
-            checked={rule.skipProcess}
-            onChange={(e) => {
-              if (e.target.checked) {
-                // FIX: Skip clears splitByPath and groupName per spec
-                onUpdate(rule.id, {
-                  skipProcess: true,
-                  autoDelete: false,
-                  splitByPath: null,
-                  groupName: undefined,
-                });
-              } else {
-                onUpdate(rule.id, { skipProcess: false });
-              }
-            }}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-            aria-label={`Skip processing for ${rule.domain}`}
-          />
-        </td>
-        <td className="px-6 py-4">
-          <input
-            type="checkbox"
             checked={rule.autoDelete}
-            disabled={rule.skipProcess}
             onChange={(e) => {
               if (e.target.checked) {
                 // FIX: Delete clears splitByPath and groupName per spec
                 onUpdate(rule.id, {
                   autoDelete: true,
-                  skipProcess: false,
                   splitByPath: null,
                   groupName: undefined,
                 });
@@ -295,7 +272,7 @@ const RuleRow = React.memo(
                 onUpdate(rule.id, { autoDelete: false });
               }
             }}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 disabled:opacity-50 cursor-pointer"
+            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
             aria-label={`Auto-delete tabs for ${rule.domain}`}
           />
         </td>
@@ -380,7 +357,6 @@ export default function App() {
         id: crypto.randomUUID(),
         domain: domain,
         autoDelete: false,
-        skipProcess: false,
         splitByPath: null,
         groupName: undefined,
       };
@@ -418,7 +394,6 @@ export default function App() {
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold tracking-wider">
               <tr>
                 <th className="px-6 py-4 text-left">Domain</th>
-                <th className="px-6 py-4 text-left">Skip</th>
                 <th className="px-6 py-4 text-left">Auto Delete</th>
                 <th className="px-6 py-4 text-left">Split Path</th>
                 <th className="px-6 py-4 text-left">Group Name</th>
@@ -429,7 +404,7 @@ export default function App() {
               {rules.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={5}
                     className="px-6 py-12 text-center text-gray-400 italic"
                   >
                     No domain rules configured yet.

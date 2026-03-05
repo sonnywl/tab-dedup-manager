@@ -78,7 +78,6 @@ const ruleArb = fc.record({
   groupName: fc.option(fc.constantFrom(...customGroupNames), { nil: null }),
   splitByPath: fc.option(fc.integer({ min: 1, max: 2 }), { nil: null }),
   autoDelete: fc.constant(false),
-  skipProcess: fc.constant(false),
 });
 
 // ============================================================================
@@ -477,7 +476,7 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
   it("E2E: splitByPath correctly groups tabs by path segment", async () => {
     // Setup: Tabs from the same domain but different paths, and a rule to split by path
     const rules = [
-      { domain: "github.com", splitByPath: 1, autoDelete: false, skipProcess: false }
+      { domain: "github.com", splitByPath: 1, autoDelete: false }
     ];
     mockChrome.storage.local.get.mockResolvedValue({ rules: rules, grouping: { byWindow: false } });
 
@@ -549,7 +548,7 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
   it("E2E: splitByPath correctly groups tabs by root domain and path segments", async () => {
     // Setup: Tabs from bing.com with root, images, and search paths
     const rules = [
-      { domain: "bing.com", splitByPath: 1, autoDelete: false, skipProcess: false }
+      { domain: "bing.com", splitByPath: 1, autoDelete: false }
     ];
     mockChrome.storage.local.get.mockResolvedValue({ rules: rules, grouping: { byWindow: false } });
 
