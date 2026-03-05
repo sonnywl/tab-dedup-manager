@@ -62,11 +62,43 @@ The extension respects organizations created manually by the user for grouping a
 
 ---
 
-## 4. Domain Rules & Grouping Logic
+## 4. Cleanup Logic
 
-### 4.1 Rule Configuration
-- **domain**: The hostname.
-- **autoDelete**: Automatically close tabs (Mutually exclusive with `skipProcess`).
-- **skipProcess**: Ignore domain (Mutually exclusive with `autoDelete`).
-- **groupName**: Custom title override.
-- **splitByPath**: Group by `n`-th path segment. Formats title as `${base} - ${segment}`.
+Cleanup operations are destructive and are applied **globally** to ensure a lean browser state. These operations intentionally bypass "External Group Protection" to honor user-defined rules and maintain performance.
+
+### 4.1 Global Deduplication
+- **Behavior**: Scans all open normal tabs for duplicate URLs.
+- **Enforcement**: Keeps the first occurrence (lowest index) and closes all subsequent matches.
+- **Global Nature**: If a manual group contains a tab that is a duplicate of a tab elsewhere (or another tab within the same manual group), the duplicate will be removed.
+
+### 4.2 Global Auto-Deletion
+- **Behavior**: Closes any tab whose domain matches a rule where `autoDelete: true`.
+- **Enforcement**: Happens immediately during the `prepareTabs` phase.
+- **Global Nature**: Tabs in manual groups are deleted if they match an auto-delete rule. This ensures that "Blacklisted" domains cannot persist simply by being grouped.
+
+---
+
+## 5. Test Coverage
+
+The following table summarizes the scenarios verified by unit tests (`background.test.ts`) and property-based E2E tests (`background.e2e.test.ts`).
+
+| Category | Test Case | Description | Source |
+| :--- | :--- | :--- | :--- |
+| **Window** | Global Merging | Verifies all tabs move to active window when `byWindow` is false. | `background.test.ts` |
+| | Per-Window Grouping | Verifies grouping logic is isolated per window when `byWindow` is true. | `background.test.ts` |
+| | Window Consolidation | Verifies excess windows are merged into retained windows based on domain affinity. | `background.test.ts` |
+| | Cross-Window Merge | Verifies manual groups are re-bundled after being scattered across windows. | `background.e2e.test.ts` |
+| **Group** | External Protection | Verifies manual groups are treated as atomic blocks and not functionally altered. | `background.test.ts` |
+| | Internal vs External | Distinguishes between automated (`internal`) and manual (`external`) groups. | `background.test.ts` |
+| | Split-Path Grouping | Verifies groups are created based on URL path segments (new and legacy formats). | `background.test.ts` |
+| | Custom Naming | Verifies `groupName` rules override domain-default titles. | `background.test.ts` |
+| | Metadata Persistence | Verifies Title and Color are restored during manual group reconstruction. | `background.e2e.test.ts` |
+| | Atomic Movement | Verifies entire groups move together without dissolving (using `tabGroups.move`). | `background.e2e.test.ts` |
+| | Order Preservation | Verifies internal tab order within manual groups is preserved during moves. | `background.e2e.test.ts` |
+| | Intruder Detection | Verifies tabs that don't belong in a managed group (wrong domain/path) are ejected. | `background.test.ts` |
+| **Tabs** | Global Deduplication | Verifies duplicate URLs are removed globally, even within manual groups. | `background.test.ts` |
+| | Global Auto-Delete | Verifies tabs matching `autoDelete` rules are removed globally. | `background.test.ts` |
+| | Sorting Stability | Verifies deterministic sort order: Protected → Pinned → ID Stability. | `background.test.ts` |
+| | Domain Extraction | Verifies correct hostname extraction and "www." stripping. | `background.test.ts` |
+| | State Fingerprinting | Verifies early-exit logic when browser state (hash) is unchanged. | `background.test.ts` |
+| | PWA Exclusion | Verifies non-normal windows/tabs (popups, panels) are ignored. | `background.test.ts` |
