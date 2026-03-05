@@ -696,6 +696,16 @@ describe("ChromeTabAdapter", () => {
     expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
   });
 
+  it("deduplicates protected tabs by URL (global enforcement)", async () => {
+    // Both tabs have same URL. Tab 1 is protected. Tab 2 is protected.
+    // Deduplication should still happen (keep first, remove second).
+    const tabs = [mkTab(1, "https://u1.com"), mkTab(2, "https://u1.com")];
+    const unique = await adapter.deduplicateAllTabs(tabs);
+    expect(unique.length).toBe(1);
+    expect(unique[0].id).toBe(1);
+    expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
+  });
+
   describe("cleanupTabsByRules()", () => {
     it("removes tabs matching autoDelete rule", async () => {
       const service = new TabGroupingService();
@@ -718,12 +728,13 @@ describe("ChromeTabAdapter", () => {
       expect(mockChrome.tabs.remove).toHaveBeenCalledWith([1]);
     });
 
-    it("respects protected tabs even if matching autoDelete rule", async () => {
+    it("deletes protected tabs if matching autoDelete rule", async () => {
       const service = new TabGroupingService();
       const tabs = [mkTab(1, "https://delete.me")];
       const rulesByDomain = {
         "delete.me": { domain: "delete.me", autoDelete: true } as any,
       };
+      // Even if protected (manual group), autoDelete should prevail
       const protectedMeta = new Map([
         [asTabId(1)!, { title: "Protected", originalGroupId: 101 }],
       ]);
@@ -732,12 +743,10 @@ describe("ChromeTabAdapter", () => {
         tabs,
         rulesByDomain,
         service,
-        protectedMeta as any,
       );
 
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(1);
-      expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+      expect(result).toHaveLength(0);
+      expect(mockChrome.tabs.remove).toHaveBeenCalledWith([1]);
     });
   });
 

@@ -19,7 +19,7 @@ The application is structured into three distinct layers to promote separation o
 | Group title     | Domain name by default, or user-defined custom group name                                            |
 | Custom Groups   | Multiple domains can be mapped to a single group name to merge them together                         |
 | Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)                                   |
-| External Groups | **Mandate**: Treat manual groups as immutable, atomic blocks. No functional changes (ungroup/group).  |
+| External Groups | **Mandate**: Treat manual groups as immutable, atomic blocks for grouping/moving only.               |
 | Performance     | **Mandate**: Use state-hashing to skip redundant operations. Skip API calls if state already correct.|
 | Rule: Skip      | Completely ignore domain; mutually exclusive with Delete; clears/disables split path and group name  |
 | Rule: Delete    | Automatically close tabs matching domain; mutually exclusive with Skip; clears/disables split path   |
@@ -29,14 +29,14 @@ The application is structured into three distinct layers to promote separation o
 
 1.  **Trigger**: User clicks the extension icon.
 2.  **Fingerprint**: Calculate `lastStateHash`. If identical to previous successful run, return early.
-3.  **Protection**: Identify manual groups via `isInternalTitle`. Gather `protectedTabIds`.
-4.  **Cleaning**: Partition tabs. Deduplicate and auto-delete **only** unprotected tabs.
+3.  **Cleaning**: Global deduplication and auto-deletion (applies to ALL tabs).
+4.  **Protection**: Identify remaining manual groups via `isInternalTitle`. Gather `protectedTabIds`.
 5.  **State Retrieval**: Fetches user-defined rules and grouping configuration from the synchronized store.
 6.  **Grouping Process**:
     - `TabGroupingService` builds `GroupState` objects. Manual groups are marked `isExternal`.
     - `ChromeTabAdapter` applies states (Managed: ungroup/group; External: skip).
     - `TabGroupingService` creates a `GroupPlan`.
-    - `ChromeTabAdapter` executes the `GroupPlan` (Managed: functional; External: atomic move only).
+    - `ChromeTabAdapter` executes the `GroupPlan` (Managed: functional; External: atomic move only, metadata restore).
 7.  **Badge Update**: `ChromeTabAdapter` updates the extension badge based on duplicate tab count.
 
 ## Performance

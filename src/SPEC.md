@@ -34,15 +34,15 @@ The code follows a strict layered architecture to ensure testability, maintainab
 ## 2. Critical Behaviors & Design Patterns
 
 ### 2.1 External Group Protection
-The extension respects organizations created manually by the user.
-- **Internal Title Detection**: `isInternalTitle` recognizes generated patterns:
+The extension respects organizations created manually by the user for grouping and sorting, but applies destructive cleanup rules globally.
+- **Internal Title Detection**: `isInternalTitle` recognizes generated patterns (case-insensitive):
   - `domain` or `groupName`
   - `base - Title` (Collision resolution)
   - `base - segment` (Split path)
   - `base/segment` (Legacy split path)
 - **Atomic Protection**: Groups with "external" titles are marked as `isExternal`.
-- **Partitioning**: In `prepareTabs`, tabs in external groups are partitioned into a `protected` set. They bypass deduplication and auto-deletion.
-- **Execution**: During `executeGroupPlan`, external groups skip `ungroup` and `group` stages. They are moved only as a cohesive block.
+- **Destructive Cleanup (Global)**: Deduplication and `autoDelete` rules are applied to **all** tabs, including those in external groups. Protection only applies to grouping/ungrouping logic.
+- **Execution**: During `executeGroupPlan`, external groups skip `ungroup` and `group` stages. They are moved only as a cohesive block, and their visual metadata (Title and Color) is restored if the group had to be re-created.
 
 ### 2.2 Custom Group Names (`groupName`)
 - `groupName` acts as the base for the group title.
@@ -55,10 +55,10 @@ The extension respects organizations created manually by the user.
 
 1.  **Trigger**: User clicks the extension icon.
 2.  **Fingerprint**: `lastStateHash` check. Skip if state is identical.
-3.  **Partition**: Gather `protectedTabIds` from external groups.
-4.  **Prepare**: Deduplicate and clean up unprotected tabs only.
+3.  **Clean**: Global deduplication and auto-deletion based on domain rules.
+4.  **Partition**: Gather `protectedTabIds` from remaining external groups.
 5.  **Plan**: Domain layer builds `GroupPlan`. External groups are flagged for atomic movement.
-6.  **Execute**: Infrastructure layer applies the plan.
+6.  **Execute**: Infrastructure layer applies the plan, restoring manual group metadata (Title/Color) where necessary.
 
 ---
 
