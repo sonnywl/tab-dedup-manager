@@ -96,9 +96,13 @@ The following table summarizes the scenarios verified by unit tests (`background
 | | Atomic Movement | Verifies entire groups move together without dissolving (using `tabGroups.move`). | `background.e2e.test.ts` |
 | | Order Preservation | Verifies internal tab order within manual groups is preserved during moves. | `background.e2e.test.ts` |
 | | Intruder Detection | Verifies tabs that don't belong in a managed group (wrong domain/path) are ejected. | `background.test.ts` |
+| | Dissolution | Verifies that managed groups are dissolved when reduced to a single tab. | `background.test.ts` |
+| | Multi-Domain Merge | Verifies two domains mapping to the same `groupName` merge into one group. | `background.test.ts` |
 | **Tabs** | Global Deduplication | Verifies duplicate URLs are removed globally, even within manual groups. | `background.test.ts` |
 | | Global Auto-Delete | Verifies tabs matching `autoDelete` rules are removed globally. | `background.test.ts` |
+| | Skip Rule | Verifies domains with `skipProcess: true` are ignored by the extension. | `background.test.ts` |
 | | Sorting Stability | Verifies deterministic sort order: Protected → Pinned → ID Stability. | `background.test.ts` |
 | | Domain Extraction | Verifies correct hostname extraction and "www." stripping. | `background.test.ts` |
 | | State Fingerprinting | Verifies early-exit logic when browser state (hash) is unchanged. | `background.test.ts` |
+| | Internal Exclusion | Verifies `chrome://`, `about:`, etc. are excluded from processing. | `background.test.ts` |
 | | PWA Exclusion | Verifies non-normal windows/tabs (popups, panels) are ignored. | `background.test.ts` |

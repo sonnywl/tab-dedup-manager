@@ -145,7 +145,19 @@ export class ChromeTabAdapter {
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
       const tabs = await chrome.tabs.query({ windowType: "normal" });
-      return tabs.filter((t) => validateTab(t) && t.url);
+      return tabs.filter((t) => {
+        if (!validateTab(t) || !t.url) return false;
+        
+        // Exclude internal browser pages and extension pages
+        const internalProtocols = [
+          "chrome:",
+          "about:",
+          "edge:",
+          "brave:",
+          "chrome-extension:",
+        ];
+        return !internalProtocols.some((p) => t.url!.startsWith(p));
+      });
     });
     if (!result.success) {
       console.error("Failed to get tabs:", result.error);
@@ -775,7 +787,14 @@ export class TabGroupingController {
       rulesByDomain,
       this.service,
     );
-    return [...cleaned].sort((a, b) => {
+
+    // Filter out skipped domains (completely ignore them)
+    const processed = cleaned.filter((tab) => {
+      const domain = this.service.getDomain(tab.url);
+      return !rulesByDomain[domain]?.skipProcess;
+    });
+
+    return [...processed].sort((a, b) => {
       const aId = asTabId(a.id);
       const bId = asTabId(b.id);
       const aProt = aId && protectedTabMeta.has(aId) ? 1 : 0;

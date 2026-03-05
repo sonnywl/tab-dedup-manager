@@ -6,7 +6,7 @@
 - **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
 - **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
-- **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns perfectly with the established rules, invariants, and specifications.
+- **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns perfectly with the established rules, invariants, and specifications. Do not process to long (< 1min is ideal)
 
 ## Architecture
 
@@ -63,6 +63,7 @@ Destructive operations are applied **globally** to the entire browser session be
 - **Atomic Movement**: Manual groups move as blocks, minimizing API calls.
 - **Redundancy Checks**: `applyGroupState` avoids grouping/ungrouping if the target state matches the current.
 - O(n) tab filtering + deduplication
+
 ## Learnings
 
 - **Code Duplication:** Successfully consolidated duplicated types and classes from `src/background.ts` into `src/utils/grouping.ts`. This reduces the risk of divergence.
