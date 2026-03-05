@@ -8,6 +8,14 @@
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
 - **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns with the established rules, invariants, and specifications. Do not process to long run assumptions on the tests to verify instead of thinking (< 1min is ideal)
 
+## Development Mandates
+
+- **Role**: During coding, planning, and discussions, work as a **professional architect**. Ensure that code readability and architectural quality are retained or improved in every change.
+- **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
+- **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
+- **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
+- **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns perfectly with the established rules, invariants, and specifications.
+
 ## Architecture
 
 The application is structured into three distinct layers to promote separation of concerns, testability, and maintainability:
