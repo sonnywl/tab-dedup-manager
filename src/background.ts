@@ -449,7 +449,7 @@ export class ChromeTabAdapter {
           }
         }
 
-        // 4. Ensure Grouping & Title
+        // 4. Ensure Grouping & Title update only if needed
         const shouldGroup =
           state.groupId !== null ||
           state.isExternal ||
@@ -466,18 +466,13 @@ export class ChromeTabAdapter {
               }
 
               const gid = await chrome.tabs.group(options);
-
               const currentGroup =
                 freshGroups.get(gid) || existingGroups.get(gid);
 
-              const titleMatch = currentGroup?.title === state.displayName;
-
-              if (!titleMatch) {
+              // Update title ONLY if requested or if current title is empty
+              if (state.needsTitleUpdate || (currentGroup && !currentGroup.title)) {
                 let targetTitle = state.displayName;
                 if (!targetTitle && !state.isExternal) {
-                  console.warn(
-                    `[G5] Warning: Managed Move Group has NO TITLE, fallback`,
-                  );
                   targetTitle = "Managed Group";
                 }
                 await chrome.tabGroups.update(gid, {
@@ -670,12 +665,14 @@ export class TabGroupingController {
         updatedGroupStates,
         cache.snapshot(),
         windowId,
+        managedGroupIds,
       );
 
       const plan = this.service.createGroupPlan(
         withReposition,
         cache.snapshot(),
         managedGroupIds,
+        windowId,
       );
 
       if (plan.states.length === 0 && plan.tabsToUngroup.length === 0) {

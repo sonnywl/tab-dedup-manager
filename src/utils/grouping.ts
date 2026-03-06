@@ -31,6 +31,7 @@ export interface GroupState {
   readonly tabIds: readonly TabId[];
   readonly groupId: GroupId | null;
   readonly needsReposition: boolean;
+  readonly needsTitleUpdate?: boolean;
   readonly isExternal?: boolean;
   targetIndex?: number;
 }
@@ -42,6 +43,7 @@ export interface GroupPlan {
     targetIndex: number;
     isExternal?: boolean;
     groupId?: GroupId | null;
+    needsTitleUpdate?: boolean;
   }>;
   readonly tabsToUngroup: readonly TabId[];
 }
@@ -289,7 +291,12 @@ export class TabGroupingService {
       const isManaged = gTabs.some((t) => {
         const domain = this.getDomain(t.url);
         const normalizedDomain = this.normalizeDomain(domain);
-        return this.isInternalTitle(title, normalizedDomain, t.url, rulesByDomain);
+        return this.isInternalTitle(
+          title,
+          normalizedDomain,
+          t.url,
+          rulesByDomain,
+        );
       });
 
       if (!isManaged) {
@@ -394,6 +401,7 @@ export class TabGroupingService {
     tabCache: ReadonlyMap<TabId, Tab>,
     groupsByTitle?: Map<string, GroupId>,
     managedGroupIds: Map<number, string> = new Map(),
+    windowId?: WindowId,
   ): GroupState[] {
     const initial: GroupState[] = [];
 
@@ -511,6 +519,7 @@ export class TabGroupingService {
     groupStates: GroupState[],
     tabCache: ReadonlyMap<TabId, Tab>,
     windowId?: WindowId,
+    managedGroupIds: Map<number, string> = new Map(),
   ): GroupState[] {
     let allTabs = Array.from(tabCache.values());
     if (windowId !== undefined) {
@@ -571,9 +580,16 @@ export class TabGroupingService {
         idx,
         windowId,
       );
+      // Mandate: Check if title also needs update
+      const currentTitle =
+        s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
+      const needsTitleUpdate =
+        s.groupId !== null && currentTitle !== null && currentTitle !== s.title;
+
       results.push({
         ...s,
         needsReposition,
+        needsTitleUpdate,
         targetIndex: idx,
       });
       idx += s.tabIds.length;
@@ -594,9 +610,15 @@ export class TabGroupingService {
         idx,
         windowId,
       );
+      const currentTitle =
+        s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
+      const needsTitleUpdate =
+        s.groupId !== null && currentTitle !== null && currentTitle !== s.title;
+
       results.push({
         ...s,
         needsReposition,
+        needsTitleUpdate,
         targetIndex: idx,
       });
       idx += s.tabIds.length;
@@ -609,6 +631,7 @@ export class TabGroupingService {
     groupStates: GroupState[],
     tabCache: ReadonlyMap<TabId, Tab>,
     managedGroupIds: Map<number, string> = new Map(),
+    windowId?: WindowId,
   ): GroupPlan {
     const states: GroupPlan["states"][number][] = [];
 
@@ -621,19 +644,24 @@ export class TabGroupingService {
       }
 
       if (s.tabIds.length === 0) continue;
-      if (s.needsReposition) {
+      if (s.needsReposition || s.needsTitleUpdate) {
         states.push({
           tabIds: s.tabIds,
           displayName: s.title,
           targetIndex: s.targetIndex ?? 0,
           isExternal: s.isExternal,
           groupId: s.groupId,
+          needsTitleUpdate: s.needsTitleUpdate,
         });
       }
     }
 
     const tabsToUngroup: TabId[] = [];
     for (const tab of tabCache.values()) {
+      // Mandate: If windowId is specified, only ungroup tabs that are CURRENTLY in this window.
+      // This prevents "byWindow" grouping from ungrouping everything in other windows.
+      if (windowId !== undefined && tab.windowId !== windowId) continue;
+
       const tid = asTabId(tab.id);
       const gid = tab.groupId;
       if (tid && gid !== -1 && isDefined(gid)) {

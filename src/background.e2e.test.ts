@@ -13,6 +13,9 @@ import fc from "fast-check";
 // ============================================================================
 
 const mockChrome = {
+  runtime: {
+    getURL: vi.fn().mockReturnValue("chrome-extension://self-id/"),
+  },
   storage: {
     local: { get: vi.fn(), set: vi.fn() },
     onChanged: { addListener: vi.fn(), removeListener: vi.fn() },

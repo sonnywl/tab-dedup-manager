@@ -1247,6 +1247,46 @@ describe("TabGroupingService", () => {
       expect(plan.tabsToUngroup).not.toContain(1);
       expect(plan.tabsToUngroup).not.toContain(3);
     });
+
+    it("filters tabsToUngroup by windowId when provided", () => {
+      const tabA = mkTab(1, "google.com", 10, 0, 1); // Group 10, Window 1
+      const tabB = mkTab(2, "bing.com", 20, 0, 2); // Group 20, Window 2
+
+      const cache = new CacheManager([tabA, tabB]);
+      const managedGroupIds = new Map([
+        [10, "google.com"],
+        [20, "bing.com"],
+      ]);
+
+      // State: only includes tabA in Window 1.
+      // If we don't filter by windowId, tabB (Window 2) would be ungrouped
+      // because it's not in the expected state.
+      const states: any[] = [
+        {
+          title: "google.com",
+          sourceDomain: "google.com",
+          tabIds: [asTabId(1)],
+          groupId: 10,
+          needsReposition: false,
+        },
+      ];
+
+      const planWindow1 = service.createGroupPlan(
+        states,
+        cache.snapshot(),
+        managedGroupIds,
+        1 as any,
+      );
+      expect(planWindow1.tabsToUngroup).not.toContain(asTabId(2));
+
+      const planGlobal = service.createGroupPlan(
+        states,
+        cache.snapshot(),
+        managedGroupIds,
+        undefined,
+      );
+      expect(planGlobal.tabsToUngroup).toContain(asTabId(2));
+    });
   });
 
   describe("calculateRepositionNeeds()", () => {
