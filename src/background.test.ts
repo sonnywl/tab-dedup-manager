@@ -13,6 +13,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // ============================================================================
 
 const mockChrome = {
+  runtime: {
+    getURL: vi.fn().mockReturnValue("chrome-extension://self-id/"),
+  },
   storage: {
     local: { get: vi.fn(), set: vi.fn() },
     onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
@@ -759,17 +762,19 @@ describe("ChromeTabAdapter", () => {
     });
   });
 
-  it("excludes internal pages in getNormalTabs", async () => {
+  it("excludes internal pages in getNormalTabs but allows other extensions", async () => {
     const tabs = [
       mkTab(1, "https://google.com"),
       mkTab(2, "chrome://settings"),
       mkTab(3, "about:blank"),
-      mkTab(4, "chrome-extension://abc/options.html"),
+      mkTab(4, "chrome-extension://self-id/options.html"),
+      mkTab(5, "chrome-extension://other-id/some-page.html"),
     ];
     mockChrome.tabs.query.mockResolvedValue(tabs);
     const result = await adapter.getNormalTabs();
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe(1);
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toContain(1);
+    expect(result.map((t) => t.id)).toContain(5);
   });
 
   it("merges tabs to active normal window and reconstructs manual groups", async () => {

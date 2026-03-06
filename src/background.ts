@@ -146,17 +146,16 @@ export class ChromeTabAdapter {
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
       const tabs = await chrome.tabs.query({ windowType: "normal" });
+      const selfBase = chrome.runtime.getURL(""); // e.g. chrome-extension://[id]/
+
       return tabs.filter((t) => {
         if (!validateTab(t) || !t.url) return false;
 
-        // Exclude internal browser pages and extension pages
-        const internalProtocols = [
-          "chrome:",
-          "about:",
-          "edge:",
-          "brave:",
-          "chrome-extension:",
-        ];
+        // Exclude the extension's OWN internal pages (options/popup)
+        if (t.url.startsWith(selfBase)) return false;
+
+        // Exclude system/browser internal pages
+        const internalProtocols = ["chrome:", "about:", "edge:", "brave:"];
         return !internalProtocols.some((p) => t.url!.startsWith(p));
       });
     });
