@@ -57,5 +57,4 @@ Destructive operations are applied **globally** before any grouping logic.
 - **Window-Scoped Coordinates:** Chrome indices are per-window. Repositioning logic must be `targetWindowId` aware to prevent index conflicts during global merges.
 - **Atomic Manual Groups:** Move external groups as cohesive blocks using `chrome.tabGroups.move` to preserve their internal order and metadata.
 - **Snapshot Re-use:** Pass browser snapshots (`tabs` and `groups` arrays) between methods to avoid redundant `chrome.tabs.query` calls.
-- **Metadata Restoration:** Restore `title` and `color` immediately upon manual group reconstruction to maintain session continuity.
 - **Stability sorting**: Always include `(a.id ?? 0) - (b.id ?? 0)` as a fallback in sorts to prevent "jitter" when URLs are identical.
