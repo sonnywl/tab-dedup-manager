@@ -331,16 +331,16 @@ export class ChromeTabAdapter {
     state: GroupState,
     tabCache: ReadonlyMap<TabId, Tab>,
     groupMap?: Map<number, chrome.tabGroups.TabGroup>,
-  ): Promise<GroupState> {
-    if (state.tabIds.length === 0) return state;
+  ): Promise<{ state: GroupState; group?: chrome.tabGroups.TabGroup }> {
+    if (state.tabIds.length === 0) return { state };
 
     // Mandate: Manual groups are always preserved (even 1 tab). Managed groups need 2.
     if (!state.isExternal && state.tabIds.length < 2) {
       if (state.groupId !== null) {
         await this.handleSingleTab(state, tabCache);
-        return { ...state, groupId: null };
+        return { state: { ...state, groupId: null } };
       }
-      return state;
+      return { state };
     }
 
     return this.handleMultiTabGroup(state, tabCache, groupMap);
@@ -373,7 +373,7 @@ export class ChromeTabAdapter {
     state: GroupState,
     tabCache: ReadonlyMap<TabId, Tab>,
     groupMap?: Map<number, chrome.tabGroups.TabGroup>,
-  ): Promise<GroupState> {
+  ): Promise<{ state: GroupState; group?: chrome.tabGroups.TabGroup }> {
     const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
 
     if (state.groupId === null) {
@@ -382,25 +382,28 @@ export class ChromeTabAdapter {
       );
       if (!r.success) {
         console.error(`[G4] Failed to create group "${state.title}":`, r.error);
-        return state;
+        return { state };
       }
-      await retry(() =>
+      const updated = await retry(() =>
         chrome.tabGroups.update(r.value, {
           collapsed: false,
           title: state.title,
           color: state.color,
         }),
       );
-      return { ...state, groupId: asGroupId(r.value) };
+      return {
+        state: { ...state, groupId: asGroupId(r.value) },
+        group: updated.value,
+      };
     }
 
-    const group = groupMap?.get(state.groupId as number);
+    let group = groupMap?.get(state.groupId as number);
     const allInCorrectGroup = tabs.every((t) => t.groupId === state.groupId);
     const titleMatch = group?.title === state.title;
     const colorMatch = !state.color || group?.color === state.color;
 
     if (allInCorrectGroup && titleMatch && colorMatch) {
-      return state;
+      return { state, group };
     }
 
     const wrongGroup = state.tabIds.filter((id) => {
@@ -420,20 +423,26 @@ export class ChromeTabAdapter {
       console.warn(
         `[G4] Stale groupId ${state.groupId} for "${state.title}" — aborting, will regroup next cycle`,
       );
-      return state;
+      return { state };
     }
 
     if (!titleMatch || !colorMatch) {
-      await retry(() =>
+      let targetTitle = state.title;
+      if (!targetTitle && !state.isExternal) {
+        console.warn(`[G4] Warning: Managed Group "${state.sourceDomain}" has NO TITLE, fallback to domain`);
+        targetTitle = state.sourceDomain;
+      }
+      const updated = await retry(() =>
         chrome.tabGroups.update(state.groupId as number, {
           collapsed: false,
-          title: state.title,
+          title: targetTitle,
           color: state.color,
         }),
       );
+      group = updated.value;
     }
 
-    return state;
+    return { state, group };
   }
 
   async executeGroupPlan(
@@ -533,19 +542,19 @@ export class ChromeTabAdapter {
               const currentGroup =
                 freshGroups.get(gid) || existingGroups.get(gid);
 
-              // Update title/color if:
-              // 1. It's a new group (currentGroup might be undefined or just created)
-              // 2. Title or Color mismatch
+              const titleMatch = currentGroup?.title === state.displayName;
+              const colorMatch =
+                !state.color || currentGroup?.color === state.color;
 
-              const needsUpdate =
-                !currentGroup ||
-                currentGroup.title !== state.displayName ||
-                (state.color && currentGroup.color !== state.color);
-
-              if (needsUpdate) {
+              if (!titleMatch || !colorMatch) {
+                let targetTitle = state.displayName;
+                if (!targetTitle && !state.isExternal) {
+                  console.warn(`[G5] Warning: Managed Move Group has NO TITLE, fallback`);
+                  targetTitle = "Managed Group";
+                }
                 await chrome.tabGroups.update(gid, {
                   collapsed: false,
-                  title: state.displayName,
+                  title: targetTitle,
                   color: state.color,
                 });
               }
@@ -703,20 +712,23 @@ export class TabGroupingController {
       );
 
       const applyResults = await Promise.allSettled(
-        groupStates.map((s) =>
-          this.adapter.applyGroupState(s, cache.snapshot(), groupIdToGroup),
-        ),
+       groupStates.map((s) =>
+         this.adapter.applyGroupState(s, cache.snapshot(), groupIdToGroup),
+       ),
       );
 
       const updatedGroupStates: GroupState[] = [];
       for (let i = 0; i < applyResults.length; i++) {
         const r = applyResults[i];
-        updatedGroupStates.push(
-          r.status === "fulfilled" ? r.value : groupStates[i],
-        );
-      }
-
-      const withReposition = this.service.calculateRepositionNeeds(
+        if (r.status === "fulfilled" && r.value) {
+          updatedGroupStates.push(r.value.state);
+          if (r.value.group && r.value.state.groupId) {
+            groupIdToGroup.set(r.value.state.groupId as number, r.value.group);
+          }
+        } else {
+          updatedGroupStates.push(groupStates[i]);
+        }
+      }      const withReposition = this.service.calculateRepositionNeeds(
         updatedGroupStates,
         cache.snapshot(),
       );
@@ -750,7 +762,7 @@ export class TabGroupingController {
   } | null> {
     const store: SyncStore = await startSyncStore({
       rules: [],
-      grouping: { byWindow: false },
+      grouping: { byWindow: false, numWindowsToKeep: 2 },
     });
     const state = await store.getState();
     if (!state?.rules || !state?.grouping) {

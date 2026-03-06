@@ -424,7 +424,7 @@ export class TabGroupingService {
 
       const sourceDomain = Array.from(domains)[0] || "other";
       initial.push({
-        title: isExternal ? displayName : this.formatTitle(displayName),
+        title: isExternal ? displayName : (this.formatTitle(displayName) || sourceDomain),
         sourceDomain,
         tabIds: extractTabIds(valid),
         groupId: null,

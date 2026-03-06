@@ -175,7 +175,9 @@ describe("TabGroupingController", () => {
     mergeToActiveWindow: vi.fn().mockResolvedValue(undefined),
     moveTabsAtomic: vi.fn().mockResolvedValue(undefined),
     // Returns the passed state — matches new Promise<GroupState> signature
-    applyGroupState: vi.fn().mockImplementation((s) => Promise.resolve(s)),
+    applyGroupState: vi
+      .fn()
+      .mockImplementation((s) => Promise.resolve({ state: s })),
     executeGroupPlan: vi
       .fn()
       .mockResolvedValue({ success: true, value: undefined }),
@@ -622,9 +624,9 @@ describe("TabGroupingController", () => {
       (controller as any).service.buildGroupStates.mockReturnValue([
         initialState,
       ]);
-      (controller as any).adapter.applyGroupState.mockResolvedValue(
-        updatedState,
-      );
+      (controller as any).adapter.applyGroupState.mockResolvedValue({
+        state: updatedState,
+      });
       (controller as any).service.calculateRepositionNeeds.mockImplementation(
         (states: any[]) => {
           expect(states[0].groupId).toBe(42);
@@ -809,7 +811,7 @@ describe("ChromeTabAdapter", () => {
       mockChrome.tabGroups.update.mockResolvedValue({});
 
       const result = await adapter.applyGroupState(state, cache as any);
-      expect(result.groupId).toBe(55);
+      expect(result.state.groupId).toBe(55);
     });
 
     it("handles external groups (restores them if necessary)", async () => {
