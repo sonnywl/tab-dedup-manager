@@ -2,89 +2,59 @@
 
 ## Development Mandates
 
-- ALWAYS SHOW THE FULL PLAN BEFORE EXECUTING
-- **Role**: During coding, planning, and discussions, work as a **professional architect**. Ensure that code readability and architectural quality are retained or improved in every change.
-- **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
-- **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
-- **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
-- **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns with the established rules, invariants, and specifications. Do not process to long run assumptions on the tests to verify instead of thinking (< 1min is ideal)
-
-## Development Mandates
-
 - **Role**: During coding, planning, and discussions, work as a **professional architect**. Ensure that code readability and architectural quality are retained or improved in every change.
 - **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
 - **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
 - **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) to verify that any proposed plan or implemented change aligns perfectly with the established rules, invariants, and specifications.
+- **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal).
+- **Clean Code Mandate**: Remove dead code and redundant parameters immediately. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and parameters are strictly used.
 
 ## Architecture
 
-The application is structured into three distinct layers to promote separation of concerns, testability, and maintainability:
+The application is structured into three distinct layers:
 
-1.  **Domain Layer (`TabGroupingService`):** Contains pure business logic functions that operate on data without direct knowledge of the Chrome API. This layer is responsible for tasks such as domain extraction, building group maps, counting duplicates, filtering tabs, building group states, calculating repositioning needs, and creating group plans.
-2.  **Infrastructure Layer (`ChromeTabAdapter`):** Encapsulates all interactions with the Chrome API. It provides an abstraction over browser-specific functionalities (e.g., `chrome.tabs`, `chrome.tabGroups`, `chrome.windows`) and handles concerns like batching operations, rate limiting, and error handling (with retry mechanisms).
-3.  **Application Layer (`TabGroupingController`):** Orchestrates the overall tab grouping process. It coordinates between the Domain Layer (using `TabGroupingService`) and the Infrastructure Layer (using `ChromeTabAdapter`) to execute the grouping logic based on user settings and tab states. The `init()` function serves as the entry point for setting up event listeners that trigger the controller's main execution flow.
+1.  **Domain Layer (`TabGroupingService` & `WindowManagementService`):** Pure business logic. side-effect free. Responsible for domain extraction, group mapping, repositioning needs (window-aware), and window merging heuristics.
+2.  **Infrastructure Layer (`ChromeTabAdapter`):** Encapsulates all Chrome API interactions. Implements resilient retry mechanisms, atomic movements, and surgical window-aware execution.
+3.  **Application Layer (`TabGroupingController`):** Unified orchestration. Treats global and per-window grouping as a single mapping flow. Manages state fingerprinting and process guarding.
 
-## Requirements
+## Requirements & Invariants
 
-| Rule            | Behavior                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------- |
-| Group threshold | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end                         |
-| Grouping Scope  | Global (merge all to active window) OR per-window grouping ("check to keep all windows or a limit")   |
-| Window Limit    | Optional `numWindowsToKeep`. Excess windows are merged into retained windows.                         |
-| Merge Strategy  | Excess tabs merge into windows with matching domains (frequency-based heuristic)                      |
-| Group title     | Domain name by default, or user-defined custom group name                                             |
-| Custom Groups   | Multiple domains can be mapped to a single group name to merge them together                          |
-| Sort order      | Groups sorted by URL → ungrouped tabs sorted by URL (after groups)                                    |
-| Performance     | **Mandate**: Use state-hashing to skip redundant operations. Skip API calls if state already correct. |
-| Rule: Skip      | Completely ignore domain; mutually exclusive with Delete; clears/disables split path and group name   |
-| Rule: Delete    | Automatically close tabs matching domain; mutually exclusive with Skip; clears/disables split path    |
-| Exclusions      | Always skip non-normal windows (popups, panels), internal pages, and PWAs                             |
+| Rule             | Behavior                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Group threshold  | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end                  |
+| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                    |
+| Window Limit     | Optional `numWindowsToKeep` (min 2). Excess windows merge into high-affinity retained windows. |
+| Sort order       | Protected (Manual) → Pinned → Stable ID. Groups sorted by URL → Ungrouped sorted by URL.       |
+| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.    |
+| Visual Stability | **Lazy Moves**: Check `windowId` and `index` 1ms before moving. Skip if already correct.       |
+| Exclusions       | Always skip non-normal windows (popups), internal pages, and PWAs.                             |
 
-## Cleanup Logic
+## Cleanup Logic (Global Priority)
 
-Destructive operations are applied **globally** to the entire browser session before any grouping logic occurs. This ensures that the workspace is clean regardless of how tabs were organized previously.
+Destructive operations are applied **globally** before any grouping logic.
 
-- **Global Deduplication**: Closes all tabs with duplicate URLs, keeping only the earliest instance. This applies to tabs inside manual groups as well.
-- **Global Auto-Delete**: Immediately closes any tab matching a domain rule with `autoDelete: true`. Manual groups are not exempt from this rule to prevent blacklisted content from persisting.
+- **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest instance.
+- **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
+- **Note**: Manual groups are NOT exempt from global cleanup (Deduplication/Delete).
 
-## Flow (Orchestrated by `TabGroupingController.execute()`)
+## Execution Flow (Unified Orchestration)
 
-1.  **Trigger**: User clicks the extension icon or debounced tab event.
-2.  **Fingerprint**: Calculate `lastStateHash`. If identical to previous successful run, return early.
-3.  **Cleaning**: Global deduplication and auto-deletion (applies to ALL tabs).
-4.  **Protection**: Identify remaining manual groups via `isInternalTitle`. Gather `protectedTabIds`.
-5.  **State Retrieval**: Fetches user-defined rules and grouping configuration from the synchronized store.
-6.  **Grouping Process (`processGrouping`)**:
-    - **Stage 1 (Membership)**: `TabGroupingService.buildGroupStates` maps tabs to logical bundles. `ChromeTabAdapter.applyGroupState` performs functional grouping/ungrouping to establish group IDs.
-    - **Stage 2 (Positioning)**: `TabGroupingService.calculateRepositionNeeds` calculates absolute `targetIndex` for every group, accounting for ignored tabs (PWAs, popups).
-    - **Stage 3 (Planning)**: `TabGroupingService.createGroupPlan` identifies precisely which groups are out of position and which "intruder" tabs must be ejected from managed groups.
-    - **Stage 4 (Execution)**: `ChromeTabAdapter.executeGroupPlan` applies the plan via Chrome API:
-      - **Optimization**: Uses `chrome.tabGroups.move` for whole-group atomic repositions.
-      - **Isolation**: Ungroups intruders from managed groups before moving blocks.
-      - **Movement**: Uses `chrome.tabs.move` for atomic block-level tab shifts.
-      - **Visual Sync**: Final update of Title and Color for managed and restored external groups.
-7.  **Badge Update**: `ChromeTabAdapter` updates the extension badge based on duplicate tab count.
+1.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
+2.  **Cleaning**: Session-wide deduplication and auto-deletion.
+3.  **Protection**: Identify manual groups via `isInternalTitle`. Gather `protectedTabIds`.
+4.  **Unified Mapping**:
+    - `byWindow: true` -> Map groups to current/consolidated windows.
+    - `byWindow: false` -> Map ALL groups to the `activeWindowId`.
+5.  **Membership Phase**: `applyGroupState` creates/merges groups to establish final IDs.
+6.  **Planning Phase**: Capture **Exactly One** fresh snapshot. Calculate window-scoped `targetIndex` for all groups.
+7.  **Surgical Execution**: `executeGroupPlan` applies moves using **Lazy Checks**. Cross-window moves happen in **one** API call (window + index).
 
-## Performance
+## Learnings & Best Practices
 
-- **State Fingerprinting**: Skip redundant executions via `lastStateHash`.
-- **Atomic Movement**: Manual groups move as blocks, minimizing API calls.
-- **Redundancy Checks**: `applyGroupState` avoids grouping/ungrouping if the target state matches the current.
-- O(n) tab filtering + deduplication
-
-## Learnings
-
-- **Code Duplication:** Successfully consolidated duplicated types and classes from `src/background.ts` into `src/utils/grouping.ts`. This reduces the risk of divergence.
-- **Testing:** `fast-check` (in `src/background.e2e.test.ts`) is critical for verifying invariants like "atomic manual group moves" and "re-bundling". Always run these property-based tests when modifying grouping logic.
-- **Chrome API:** `chrome.tabs.group` effectively handles merging and moving tabs into groups, reducing the need for explicit `ungroup` calls. `chrome.tabGroups.move` is the most efficient way to move existing groups.
-- **Vitest Imports:** When moving local classes to an external utility, they must be both imported (for local class members like `TabGroupingController.service`) and exported (if the test suite imports them from the original file).
-- **Behavior Consistency:** Aesthetic changes (like domain capitalization) should be applied globally or disabled if they conflict with invariant expectations in existing tests.
-- **Cumulative Index Offsets:** Absolute tab indices in Chrome are sensitive to the total count of preceding tabs. When calculating target positions for groups, always sum the `tabIds.length` of preceding groups rather than the number of group objects. Failure to do so leads to "drifting" target indices and redundant move operations.
-- **Global Cleanup Priority:** Destructive operations (Deduplication and Auto-Deletion) are applied globally to **all** tabs before protection logic begins. This ensures that user-defined cleanup rules are session-wide and take precedence over group preservation.
-- **Session Continuity (Metadata Restoration):** Manual group continuity across windows or re-bundling cycles is achieved by capturing visual metadata (`title`, `color`) before movement and restoring it immediately upon group reconstruction.
-- **Execution Efficiency (Fingerprinting):** The `lastStateHash` mechanism ensures the extension only performs expensive API operations when the browser state (tabs, rules, or config) has actually changed. This in-memory "memory" persists throughout the extension's active lifecycle.
-- **Rule Persistence:** Integration with `chrome.storage.local` via a synchronized store allows user-defined domain rules and grouping configurations to persist across browser restarts and extension updates.
-- **Group Metadata Sync:** `ChromeTabAdapter.applyGroupState` must return updated group objects (including the `id`) to ensure downstream steps like `calculateRepositionNeeds` and `executeGroupPlan` operate on fresh data. Stale group IDs cause redundant operations and metadata loss.
-- **Managed vs Manual Titles:** `TabGroupingService` must strictly differentiate between "managed" (automatic) and "manual" (user-created) groups. Managed groups should always have a fallback title (e.g., the domain name) if `displayName` is empty, while manual groups must be allowed to remain titleless (empty string) to respect user intent.
-- **Window Consolidation Defaults:** `numWindowsToKeep` now defaults to `2` to prevent aggressive merging of all windows by default. The UI handles `null` as "All", and the input increments from `2` rather than `1` for better usability.
+- **Zero-Flicker Merging:** Never move tabs pre-emptively. Wait for the final plan and use `chrome.tabs.move` to perform window transitions and index placement simultaneously.
+- **Window-Scoped Coordinates:** Chrome indices are per-window. Repositioning logic must be `targetWindowId` aware to prevent index conflicts during global merges.
+- **Atomic Manual Groups:** Move external groups as cohesive blocks using `chrome.tabGroups.move` to preserve their internal order and metadata.
+- **Snapshot Re-use:** Pass browser snapshots (`tabs` and `groups` arrays) between methods to avoid redundant `chrome.tabs.query` calls.
+- **Metadata Restoration:** Restore `title` and `color` immediately upon manual group reconstruction to maintain session continuity.
+- **Stability sorting**: Always include `(a.id ?? 0) - (b.id ?? 0)` as a fallback in sorts to prevent "jitter" when URLs are identical.
