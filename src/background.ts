@@ -295,7 +295,7 @@ export class ChromeTabAdapter {
     // 4. Re-bundle manual groups (only those not moved as whole groups)
     const groupsToRebuild = new Map<
       number,
-      { title: string; color?: chrome.tabGroups.Color; ids: TabId[] }
+      { title: string; ids: TabId[] }
     >();
     const movedGroupIds = new Set(groupsToMove);
 
@@ -305,7 +305,6 @@ export class ChromeTabAdapter {
         if (!groupsToRebuild.has(meta.originalGroupId)) {
           groupsToRebuild.set(meta.originalGroupId, {
             title: meta.title,
-            color: meta.color,
             ids: [],
           });
         }
@@ -313,13 +312,12 @@ export class ChromeTabAdapter {
       }
     }
 
-    for (const [_, { title, color, ids }] of groupsToRebuild) {
+    for (const [_, { title, ids }] of groupsToRebuild) {
       await retry(async () => {
         const gid = await chrome.tabs.group({ tabIds: ids as number[] });
         await chrome.tabGroups.update(gid, {
           collapsed: false,
           title,
-          color,
         });
         return gid;
       });
@@ -388,7 +386,6 @@ export class ChromeTabAdapter {
         chrome.tabGroups.update(r.value, {
           collapsed: false,
           title: state.title,
-          color: state.color,
         }),
       );
       return {
@@ -400,9 +397,8 @@ export class ChromeTabAdapter {
     let group = groupMap?.get(state.groupId as number);
     const allInCorrectGroup = tabs.every((t) => t.groupId === state.groupId);
     const titleMatch = group?.title === state.title;
-    const colorMatch = !state.color || group?.color === state.color;
 
-    if (allInCorrectGroup && titleMatch && colorMatch) {
+    if (allInCorrectGroup && titleMatch) {
       return { state, group };
     }
 
@@ -426,7 +422,7 @@ export class ChromeTabAdapter {
       return { state };
     }
 
-    if (!titleMatch || !colorMatch) {
+    if (!titleMatch) {
       let targetTitle = state.title;
       if (!targetTitle && !state.isExternal) {
         console.warn(`[G4] Warning: Managed Group "${state.sourceDomain}" has NO TITLE, fallback to domain`);
@@ -436,7 +432,6 @@ export class ChromeTabAdapter {
         chrome.tabGroups.update(state.groupId as number, {
           collapsed: false,
           title: targetTitle,
-          color: state.color,
         }),
       );
       group = updated.value;
@@ -455,11 +450,18 @@ export class ChromeTabAdapter {
     try {
       // 0. Ungroup tabs explicitly requested
       if (plan.tabsToUngroup.length > 0) {
-        await runAtomicOperation(
-          () => chrome.tabs.ungroup(plan.tabsToUngroup as number[]),
-          snapshot.tabs,
-          this.RATE_DELAY,
+        const freshTabIds = new Set(snapshot.tabs.map((t) => asTabId(t.id)));
+        const validUngroup = plan.tabsToUngroup.filter((id) =>
+          freshTabIds.has(id),
         );
+
+        if (validUngroup.length > 0) {
+          await runAtomicOperation(
+            () => chrome.tabs.ungroup(validUngroup as number[]),
+            snapshot.tabs,
+            this.RATE_DELAY,
+          );
+        }
       }
 
       const freshTabs = new Map(snapshot.tabs.map((t) => [asTabId(t.id)!, t]));
@@ -508,14 +510,24 @@ export class ChromeTabAdapter {
 
         // 3. Move Tabs (Atomic block)
         if (state.tabIds.length > 0) {
-          await runAtomicOperation(
-            () =>
-              chrome.tabs.move(state.tabIds as number[], {
-                index: state.targetIndex,
-              }),
-            snapshot.tabs,
-            this.RATE_DELAY,
-          );
+          // Optimization: Check if the first tab is already at the target index.
+          // Since we move as a block, if the first tab is correct, the rest usually are.
+          // We fetch fresh state to be sure.
+          const currentTabs = await chrome.tabs.query({});
+          const firstTab = currentTabs.find((t) => t.id === state.tabIds[0]);
+
+          if (firstTab && firstTab.index === state.targetIndex) {
+            // Already correct, skip this move
+          } else {
+            await runAtomicOperation(
+              () =>
+                chrome.tabs.move(state.tabIds as number[], {
+                  index: state.targetIndex,
+                }),
+              snapshot.tabs,
+              this.RATE_DELAY,
+            );
+          }
         }
 
         // 4. Ensure Grouping & Title
@@ -543,10 +555,8 @@ export class ChromeTabAdapter {
                 freshGroups.get(gid) || existingGroups.get(gid);
 
               const titleMatch = currentGroup?.title === state.displayName;
-              const colorMatch =
-                !state.color || currentGroup?.color === state.color;
 
-              if (!titleMatch || !colorMatch) {
+              if (!titleMatch) {
                 let targetTitle = state.displayName;
                 if (!targetTitle && !state.isExternal) {
                   console.warn(`[G5] Warning: Managed Move Group has NO TITLE, fallback`);
@@ -555,7 +565,6 @@ export class ChromeTabAdapter {
                 await chrome.tabGroups.update(gid, {
                   collapsed: false,
                   title: targetTitle,
-                  color: state.color,
                 });
               }
               return gid;

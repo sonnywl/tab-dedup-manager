@@ -20,7 +20,6 @@ export interface GroupMapEntry {
   readonly displayName: string;
   readonly domains: ReadonlySet<Domain>;
   readonly isExternal?: boolean;
-  readonly color?: chrome.tabGroups.Color;
 }
 
 export type GroupMap = Map<string, GroupMapEntry>;
@@ -32,7 +31,6 @@ export interface GroupState {
   readonly groupId: GroupId | null;
   readonly needsReposition: boolean;
   readonly isExternal?: boolean;
-  readonly color?: chrome.tabGroups.Color;
   targetIndex?: number;
 }
 
@@ -43,7 +41,6 @@ export interface GroupPlan {
     targetIndex: number;
     isExternal?: boolean;
     groupId?: GroupId | null;
-    color?: chrome.tabGroups.Color;
   }>;
   readonly tabsToUngroup: readonly TabId[];
 }
@@ -51,7 +48,6 @@ export interface GroupPlan {
 export interface ProtectedTabMeta {
   readonly title: string;
   readonly originalGroupId: number;
-  readonly color?: chrome.tabGroups.Color;
 }
 
 export type ProtectedTabMetaMap = Map<TabId, ProtectedTabMeta>;
@@ -170,26 +166,6 @@ export class TabGroupingService {
     return s;
   }
 
-  private CHROME_COLORS: chrome.tabGroups.Color[] = [
-    "blue",
-    "red",
-    "yellow",
-    "green",
-    "pink",
-    "purple",
-    "cyan",
-    "orange",
-  ];
-
-  private getDeterministicColor(input: string): chrome.tabGroups.Color {
-    let hash = 0;
-    for (let i = 0; i < input.length; i++) {
-      hash = (hash << 5) - hash + input.charCodeAt(i);
-      hash |= 0;
-    }
-    return this.CHROME_COLORS[Math.abs(hash) % this.CHROME_COLORS.length];
-  }
-
   getGroupKey(
     domain: Domain,
     url: string | undefined,
@@ -255,12 +231,30 @@ export class TabGroupingService {
 
     // 4. Split-path variants
     if (t.includes(" - ")) {
-      if (t.endsWith(` - ${d}`) || t.endsWith(` - ${b}`)) return true;
-      if (t.startsWith(`${d} - `) || t.startsWith(`${b} - `)) return true;
+      if (
+        t.endsWith(` - ${d}`) ||
+        t.endsWith(` - ${b}`) ||
+        t.endsWith(` - www.${d}`) ||
+        t.endsWith(` - www.${b}`)
+      )
+        return true;
+      if (
+        t.startsWith(`${d} - `) ||
+        t.startsWith(`${b} - `) ||
+        t.startsWith(`www.${d} - `) ||
+        t.startsWith(`www.${b} - `)
+      )
+        return true;
     }
 
     if (t.includes("/")) {
-      if (t.startsWith(`${d}/`) || t.startsWith(`${b}/`)) return true;
+      if (
+        t.startsWith(`${d}/`) ||
+        t.startsWith(`${b}/`) ||
+        t.startsWith(`www.${d}/`) ||
+        t.startsWith(`www.${b}/`)
+      )
+        return true;
     }
 
     return false;
@@ -302,7 +296,6 @@ export class TabGroupingService {
           protectedMeta.set(asTabId(t.id)!, {
             title: title,
             originalGroupId: g.id,
-            color: g.color,
           });
         }
       } else {
@@ -326,14 +319,12 @@ export class TabGroupingService {
       let isExternal = false;
       let groupKey: string = "";
       let displayName: string = "";
-      let color: chrome.tabGroups.Color | undefined;
 
       const meta = tabId ? protectedTabMeta.get(tabId) : undefined;
       if (meta) {
         isExternal = true;
         groupKey = `external::${meta.originalGroupId}`;
         displayName = meta.title;
-        color = meta.color;
       } else if (tabId && isGrouped(tab) && groupIdToGroup) {
         const group = groupIdToGroup.get(tab.groupId!);
         const groupTitle = group?.title || "";
@@ -363,14 +354,12 @@ export class TabGroupingService {
               displayName,
               domains: new Set([...existing.domains, domain]),
               isExternal,
-              color: color || existing.color,
             }
           : {
               tabs: [tab],
               displayName,
               domains: new Set([domain]),
               isExternal,
-              color,
             },
       );
     }
@@ -402,7 +391,6 @@ export class TabGroupingService {
       displayName,
       domains,
       isExternal,
-      color,
     } of groupMap.values()) {
       const valid = extractTabIds(tabs)
         .map((id) => tabCache.get(id))
@@ -430,7 +418,6 @@ export class TabGroupingService {
         groupId: null,
         needsReposition: false,
         isExternal,
-        color: isExternal ? color : this.getDeterministicColor(sourceDomain),
       });
     }
 
@@ -614,7 +601,6 @@ export class TabGroupingService {
           targetIndex: s.targetIndex ?? 0,
           isExternal: s.isExternal,
           groupId: s.groupId,
-          color: s.color,
         });
       }
     }

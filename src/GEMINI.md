@@ -2,6 +2,7 @@
 
 ## Development Mandates
 
+- ALWAYS SHOW THE FULL PLAN BEFORE EXECUTING
 - **Role**: During coding, planning, and discussions, work as a **professional architect**. Ensure that code readability and architectural quality are retained or improved in every change.
 - **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
 - **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
@@ -84,3 +85,6 @@ Destructive operations are applied **globally** to the entire browser session be
 - **Session Continuity (Metadata Restoration):** Manual group continuity across windows or re-bundling cycles is achieved by capturing visual metadata (`title`, `color`) before movement and restoring it immediately upon group reconstruction.
 - **Execution Efficiency (Fingerprinting):** The `lastStateHash` mechanism ensures the extension only performs expensive API operations when the browser state (tabs, rules, or config) has actually changed. This in-memory "memory" persists throughout the extension's active lifecycle.
 - **Rule Persistence:** Integration with `chrome.storage.local` via a synchronized store allows user-defined domain rules and grouping configurations to persist across browser restarts and extension updates.
+- **Group Metadata Sync:** `ChromeTabAdapter.applyGroupState` must return updated group objects (including the `id`) to ensure downstream steps like `calculateRepositionNeeds` and `executeGroupPlan` operate on fresh data. Stale group IDs cause redundant operations and metadata loss.
+- **Managed vs Manual Titles:** `TabGroupingService` must strictly differentiate between "managed" (automatic) and "manual" (user-created) groups. Managed groups should always have a fallback title (e.g., the domain name) if `displayName` is empty, while manual groups must be allowed to remain titleless (empty string) to respect user intent.
+- **Window Consolidation Defaults:** `numWindowsToKeep` now defaults to `2` to prevent aggressive merging of all windows by default. The UI handles `null` as "All", and the input increments from `2` rather than `1` for better usability.

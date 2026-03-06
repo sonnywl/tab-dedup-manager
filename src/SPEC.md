@@ -15,7 +15,8 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **WindowManagementService**:
   - **Responsibility**: Calculates optimal merging strategies for multi-window environments.
   - **Heuristic**: When windows are limited (via `numWindowsToKeep`), it identifies "excess" tabs and maps them to "retained" windows.
-  - **Optimization**: Favors windows that already contain matching domains to minimize fragmentation.
+  - **Optimization**: Favors windows that already contain matching domains (frequency-based scoring) to minimize fragmentation.
+  - **Defaults**: `numWindowsToKeep` defaults to **2** (minimum 2) to prevent aggressive window merging. A value of `null` or `undefined` signifies "Keep All".
 
 ### 1.2 Infrastructure Layer (`ChromeTabAdapter`)
 
@@ -24,6 +25,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
   - **Resilience**: Implements a `retry` mechanism with exponential backoff.
   - **Atomic Execution**: `executeGroupPlan` distinguishes between managed and external groups. External groups are moved as single, atomic blocks of tabs to preserve their manual ID and title.
+  - **Metadata Sync**: `applyGroupState` returns fresh group metadata to the controller to prevent downstream operations (positioning/planning) from using stale IDs or titles.
 
 ### 1.3 Application Layer (`TabGroupingController`)
 
@@ -36,7 +38,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 
 ## 2. Critical Behaviors & Design Patterns
 
-### 2.1 External Group Protection
+### 2.1 External Group Protection & Title Management
 
 The extension respects organizations created manually by the user for grouping and sorting, but applies destructive cleanup rules globally.
 
@@ -45,6 +47,9 @@ The extension respects organizations created manually by the user for grouping a
   - `base - Title` (Collision resolution)
   - `base - segment` (Split path)
   - `base/segment` (Legacy split path)
+- **Title Fallbacks**: 
+  - **Managed Groups**: Must always have a title. If the generated `displayName` is empty, it falls back to the `sourceDomain`.
+  - **Manual (External) Groups**: Allowed to remain unnamed (empty string) to respect explicit user organization.
 - **Atomic Protection**: Groups with "external" titles are marked as `isExternal`.
 - **Destructive Cleanup (Global)**: Deduplication and `autoDelete` rules are applied to **all** tabs, including those in external groups. Protection only applies to grouping/ungrouping logic.
 - **Execution**: During `executeGroupPlan`, external groups skip `ungroup` and `group` stages. They are moved only as a cohesive block, and their visual metadata (Title and Color) is restored if the group had to be re-created.
@@ -64,7 +69,7 @@ The extension respects organizations created manually by the user for grouping a
 3.  **Clean**: Global deduplication and auto-deletion based on domain rules.
 4.  **Partition**: Gather `protectedTabIds` from remaining external groups.
 5.  **Plan**: Domain layer builds `GroupPlan`. External groups are flagged for atomic movement.
-6.  **Execute**: Infrastructure layer applies the plan, restoring manual group metadata (Title/Color) where necessary.
+6.  **Execute**: Infrastructure layer applies the plan, restoring manual group metadata (Title/Color) where necessary and ensuring title fallbacks for managed groups.
 
 ---
 
@@ -101,6 +106,8 @@ The following table summarizes the scenarios verified by unit tests (`background
 |            | Split-Path Grouping  | Verifies groups are created based on URL path segments (new and legacy formats).    | `background.test.ts`     |
 |            | Custom Naming        | Verifies `groupName` rules override domain-default titles.                          | `background.test.ts`     |
 |            | Metadata Persistence | Verifies Title and Color are restored during manual group reconstruction.           | `background.e2e.test.ts` |
+|            | Metadata Sync        | Verifies controller uses fresh Group IDs/Metadata after API-driven state changes.   | `background.test.ts`     |
+|            | Title Fallbacks      | Managed groups fall back to domain; Manual groups can remain titleless.            | `background.e2e.test.ts` |
 |            | Atomic Movement      | Verifies entire groups move together without dissolving (using `tabGroups.move`).   | `background.e2e.test.ts` |
 |            | Order Preservation   | Verifies internal tab order within manual groups is preserved during moves.         | `background.e2e.test.ts` |
 |            | Intruder Detection   | Verifies tabs that don't belong in a managed group (wrong domain/path) are ejected. | `background.test.ts`     |

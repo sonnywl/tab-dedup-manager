@@ -604,6 +604,44 @@ describe("TabGroupingController", () => {
       expect(plan.tabsToUngroup).not.toContain(1);
       expect(plan.tabsToUngroup).not.toContain(3);
     });
+
+    it("Integration: ungroups path-segment intruder from split-path group", async () => {
+      // Scenario: Group 101 is "search - google.com"
+      // Contains:
+      // 1. google.com/search (correct)
+      // 2. google.com/mail (intruder)
+      const tabs = [
+        mkTab(1, "https://google.com/search", 101, 0, 1),
+        mkTab(2, "https://google.com/mail", 101, 1, 1),
+      ];
+
+      mockStore.getState.mockResolvedValue({
+        rules: [{ domain: "google.com", splitByPath: 1 }],
+        grouping: { byWindow: false },
+      });
+
+      const adapter = (controller as any).adapter;
+      adapter.getNormalTabs.mockResolvedValue(tabs);
+      adapter.deduplicateAllTabs.mockResolvedValue(tabs);
+      adapter.cleanupTabsByRules.mockResolvedValue(tabs);
+
+      mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+      mockChrome.tabGroups.query.mockResolvedValue([
+        { id: 101, title: "search - google.com", windowId: 1 },
+      ]);
+
+      (controller as any).service = new TabGroupingService();
+
+      await controller.execute();
+
+      const executeCall = adapter.executeGroupPlan.mock.calls[0];
+      expect(executeCall).toBeDefined();
+      const plan = executeCall[0];
+
+      // Tab 2 (mail) should be an intruder in "search - google.com"
+      expect(plan.tabsToUngroup).toContain(2);
+      expect(plan.tabsToUngroup).not.toContain(1);
+    });
   });
 
   describe("processGrouping() — applyGroupState return value propagation", () => {
@@ -826,10 +864,11 @@ describe("ChromeTabAdapter", () => {
   describe("executeGroupPlan()", () => {
     it("performs grouping for external states if they lost their group ID", async () => {
       // Setup: Tabs are currently UNGROUPED in the browser (groupId: -1)
-      const tab1 = { ...mkTab(1, "a.com"), groupId: -1 };
-      const tab2 = { ...mkTab(2, "b.com"), groupId: -1 };
+      const tab1 = { ...mkTab(1, "a.com"), groupId: -1, index: 10 };
+      const tab2 = { ...mkTab(2, "b.com"), groupId: -1, index: 11 };
 
       mockChrome.tabs.move.mockResolvedValue([]);
+      // Mock fresh state to show tabs are at index 10/11, so move to 0 is needed
       mockChrome.tabs.query.mockResolvedValue([tab1, tab2]);
       mockChrome.tabGroups.query.mockResolvedValue([]);
 
@@ -859,12 +898,37 @@ describe("ChromeTabAdapter", () => {
       expect(mockChrome.tabs.group).toHaveBeenCalled();
     });
 
+    it("skips chrome.tabs.move if the tab block is already at the targetIndex", async () => {
+      const tab1 = { ...mkTab(1, "a.com"), index: 0 };
+      const plan: any = {
+        states: [
+          {
+            tabIds: [1],
+            displayName: "Test",
+            targetIndex: 0,
+            isExternal: false,
+          },
+        ],
+        tabsToUngroup: [],
+      };
+      
+      mockChrome.tabs.query.mockResolvedValue([tab1]);
+      
+      await adapter.executeGroupPlan(plan, new Map([[1, tab1]]) as any, new Map());
+
+      expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+    });
+
     it("ungroups tabs listed in tabsToUngroup", async () => {
       const plan: any = {
         states: [],
         tabsToUngroup: [99],
       };
-      const cache = new Map([[99, mkTab(99, "intruder.com", 101)]]);
+      const tab99 = mkTab(99, "intruder.com", 101);
+      const cache = new Map([[99, tab99]]);
+      
+      // Mock fresh state to show tab 99 still exists
+      mockChrome.tabs.query.mockResolvedValue([tab99]);
 
       await adapter.executeGroupPlan(plan, cache as any, new Map());
 
@@ -928,6 +992,14 @@ describe("TabGroupingService", () => {
       expect(protectedMeta.has(1 as any)).toBe(true);
       expect(protectedMeta.has(2 as any)).toBe(true);
       expect(protectedMeta.get(1 as any)!.title).toBe("My Project");
+    });
+
+    it("identifies a split-path group as managed", () => {
+      const tabs = [mkTab(1, "https://google.com/search", 101)];
+      const groups = new Map([[101, { id: 101, title: "search - google.com" } as any]]);
+      const rules = { "google.com": { domain: "google.com", splitByPath: 1 } };
+      const { managedGroupIds } = service.identifyProtectedTabs(tabs, groups, rules as any);
+      expect(managedGroupIds.has(101)).toBe(true);
     });
   });
 
@@ -1059,7 +1131,7 @@ describe("TabGroupingService", () => {
       // Scenario: Group 101 is named "search - google.com"
       // It contains:
       // 1. google.com/search (belongs here)
-      // 2. google.com/images (intruder, should be in "images - google.com")
+      // 2. google.com/mail (intruder, should be in "mail - google.com")
       const groupStates: any[] = [
         {
           title: "search - google.com",
@@ -1068,9 +1140,16 @@ describe("TabGroupingService", () => {
           needsReposition: false,
           isExternal: false,
         },
+        {
+          title: "mail - google.com",
+          tabIds: [2],
+          groupId: null,
+          needsReposition: false,
+          isExternal: false,
+        }
       ];
       const tab1 = mkTab(1, "https://google.com/search", 101);
-      const tab2 = mkTab(2, "https://google.com/images", 101);
+      const tab2 = mkTab(2, "https://google.com/mail", 101);
       const tabCache = new Map([
         [1, tab1],
         [2, tab2],
@@ -1087,8 +1166,8 @@ describe("TabGroupingService", () => {
     });
 
     it("identifies cross-domain intruders in a path-based group", () => {
-      // Scenario: Managed group "search - bing.com" (ID 101)
       // Contains two bing.com/search tabs and one google.com intruder.
+      // Group title is "search - bing.com"
       const groupStates: any[] = [
         {
           title: "search - bing.com",
@@ -1100,8 +1179,7 @@ describe("TabGroupingService", () => {
       ];
       const tab1 = mkTab(1, "https://www.bing.com/search", 101);
       const tab2 = mkTab(2, "https://www.google.com", 101); // INTRUDER
-      const tab3 = mkTab(3, "https://www.bing.com/search?q=test", 101);
-
+      const tab3 = mkTab(3, "https://www.bing.com/search", 101);
       const tabCache = new Map([
         [1, tab1],
         [2, tab2],
