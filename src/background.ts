@@ -373,12 +373,12 @@ export class ChromeTabAdapter {
             const groupTabs = snapshot.tabs.filter(
               (t) => t.groupId === state.groupId,
             );
+            const currentIds = new Set(groupTabs.map(t => asTabId(t.id)));
             const isMatch =
               groupTabs.length === state.tabIds.length &&
-              groupTabs.every((t, i) => asTabId(t.id) === state.tabIds[i]);
+              state.tabIds.every(id => currentIds.has(id));
 
-            if (isMatch) {
-              // Lazy Check: Is the group already at its target index and window?
+            if (isMatch) {              // Lazy Check: Is the group already at its target index and window?
               const firstTabInGroup = snapshot.tabs.find(
                 (t) => t.id === state.tabIds[0],
               );
@@ -771,6 +771,7 @@ export class TabGroupingController {
     tabs: Tab[],
     numWindowsToKeep: number,
     protectedTabMeta: ProtectedTabMetaMap,
+    managedGroupIds: Map<number, string>,
   ): Promise<Map<WindowId, Tab[]>> {
     const windowGroups = await this.groupByWindow(tabs);
     const entries = Array.from(windowGroups.entries()).sort(
@@ -785,6 +786,7 @@ export class TabGroupingController {
       excess,
       this.service,
       protectedTabMeta,
+      managedGroupIds,
     );
 
     // Build the final map by adding excess tabs to their target windows
@@ -792,15 +794,17 @@ export class TabGroupingController {
     const tabsById = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
 
     for (const [wid, tabIds] of mergePlan) {
-      const targetWindowTabs = result.get(asWindowId(wid as number)) || [];
+      const targetWid = asWindowId(wid as number);
+      const targetWindowTabs = result.get(targetWid) || [];
       const incomingTabs = tabIds
-        .map((id) => tabsById.get(id))
+        .map((id) => {
+          const t = tabsById.get(id);
+          // Clone and update windowId to reflect its intended destination
+          return t ? { ...t, windowId: targetWid } : undefined;
+        })
         .filter(isDefined);
 
-      result.set(asWindowId(wid as number), [
-        ...targetWindowTabs,
-        ...incomingTabs,
-      ]);
+      result.set(targetWid, [...targetWindowTabs, ...incomingTabs]);
     }
 
     return result;
@@ -868,6 +872,7 @@ export class TabGroupingController {
               processed,
               groupingConfig.numWindowsToKeep,
               protectedMeta,
+              managedGroupIds,
             )
           : await this.groupByWindow(processed)
         : new Map([[asWindowId(activeWindowId), processed]]);

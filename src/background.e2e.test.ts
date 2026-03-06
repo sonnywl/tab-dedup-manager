@@ -29,7 +29,7 @@ const mockChrome = {
     query: vi.fn(),
     remove: vi.fn(),
   },
-  tabGroups: { update: vi.fn(), query: vi.fn() },
+  tabGroups: { update: vi.fn(), query: vi.fn(), move: vi.fn() },
   windows: { getAll: vi.fn(), getCurrent: vi.fn() },
 };
 
@@ -798,6 +798,52 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     expect([1, 2]).toContain(movedTab5[1].windowId);
     expect([1, 2]).toContain(movedTab6[1].windowId);
   });
+
+  it("E2E: numWindowsToKeep correctly moves managed groups as a block via tabGroups.move", async () => {
+    // Setup: 2 windows, numWindowsToKeep: 1
+    // Window 1 is retained, Window 2 is excess.
+    // Window 2 has a managed group "google.com" with 2 tabs.
+    const rules = [{ domain: "google.com", autoDelete: false }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: true, numWindowsToKeep: 1 },
+    });
+
+    const tabs = [
+      mkTab(1, "https://a.com/1", -1, 0, 1),
+      mkTab(4, "https://a.com/2", -1, 1, 1),
+      mkTab(5, "https://a.com/3", -1, 2, 1),
+      mkTab(2, "https://google.com/1", 101, 0, 2), // Group 101 in excess window
+      mkTab(3, "https://google.com/2", 101, 1, 2),
+    ];
+
+    mockChrome.tabs.query.mockResolvedValue(tabs);
+    mockChrome.tabGroups.query.mockResolvedValue([
+      { id: 101, title: "google.com", windowId: 2 } as any,
+    ]);
+    mockChrome.windows.getAll.mockResolvedValue([
+      { id: 1, type: "normal" },
+      { id: 2, type: "normal" },
+    ]);
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+
+    await controller.execute();
+
+    // Verification:
+    // 1. chrome.tabGroups.move should be called for group 101 to window 1.
+    expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
+      101,
+      expect.objectContaining({ windowId: 1 }),
+    );
+
+    // 2. Individual tabs 2 and 3 should NOT be moved via chrome.tabs.move (moved via group)
+    const moveCalls = mockChrome.tabs.move.mock.calls;
+    const individualMove2 = moveCalls.find(call => call[0] === 2 || (Array.isArray(call[0]) && call[0].includes(2)));
+    const individualMove3 = moveCalls.find(call => call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)));
+    
+    expect(individualMove2).toBeUndefined();
+    expect(individualMove3).toBeUndefined();
+  });
 });
 
 describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
@@ -853,5 +899,79 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
 
     // Grouping should only happen for the remaining tab (but since it's only 1 tab, no group call)
     expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+  });
+});
+
+describe("TabGrouping E2E Deduplication Integration Tests", () => {
+  let service: TabGroupingService;
+  let adapter: ChromeTabAdapter;
+  let controller: TabGroupingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new TabGroupingService();
+    adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController();
+    (controller as any).service = service;
+    (controller as any).adapter = adapter;
+    (controller as any).windowService = new WindowManagementService();
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    mockChrome.tabs.query.mockResolvedValue([]);
+    mockChrome.tabGroups.query.mockResolvedValue([]);
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: global deduplication closes duplicate URLs session-wide, including inside manual groups", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://shared.com/page", 101, 0, 1), // In Manual Group 101, Window 1
+      mkTab(2, "https://unique.com/page", -1, 1, 1),
+      mkTab(3, "https://shared.com/page", -1, 0, 2), // Duplicate in Window 2
+    ];
+
+    mockChrome.tabs.query.mockResolvedValue(tabs);
+    mockChrome.tabGroups.query.mockResolvedValue([
+      { id: 101, title: "My Manual Group", windowId: 1 },
+    ]);
+
+    await controller.execute();
+
+    // Verification:
+    // 1. Tab 3 (the later instance of shared.com) should be removed.
+    // 2. Tab 1 (earlier instance) remains.
+    const removeCalls = mockChrome.tabs.remove.mock.calls;
+    const removedIds = removeCalls.flatMap((call) => call[0]);
+
+    expect(removedIds).toContain(3);
+    expect(removedIds).not.toContain(1);
+    expect(removedIds).not.toContain(2);
+  });
+
+  it("E2E: deduplication prefers the earliest instance (lowest ID/index) regardless of window", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(10, "https://dup.com", -1, 0, 2), // Window 2
+      mkTab(20, "https://dup.com", -1, 0, 1), // Window 1 (Active)
+    ];
+
+    mockChrome.tabs.query.mockResolvedValue(tabs);
+
+    await controller.execute();
+
+    const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
+    // Should remove 20 because 10 was "first" in the array/session
+    expect(removedIds).toContain(20);
+    expect(removedIds).not.toContain(10);
   });
 });

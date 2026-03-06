@@ -688,6 +688,7 @@ export class WindowManagementService {
     excessTabs: Tab[],
     service: TabGroupingService,
     protectedTabMeta: ProtectedTabMetaMap = new Map(),
+    managedGroupIds: Map<number, string> = new Map(),
   ): Map<WindowId, TabId[]> {
     const plan = new Map<WindowId, TabId[]>();
     const domainCounts = new Map<WindowId, Map<Domain, number>>();
@@ -715,11 +716,18 @@ export class WindowManagementService {
 
     for (const tab of excessTabs) {
       const tid = asTabId(tab.id);
-      const meta = tid ? protectedTabMeta.get(tid) : undefined;
-      if (meta) {
-        if (!groupToTabs.has(meta.originalGroupId))
-          groupToTabs.set(meta.originalGroupId, []);
-        groupToTabs.get(meta.originalGroupId)!.push(tab);
+      const gid = tab.groupId;
+      const isProtected = tid ? protectedTabMeta.has(tid) : false;
+      const isManaged = gid !== undefined && gid !== -1 && managedGroupIds.has(gid);
+
+      if (isProtected || isManaged) {
+        const effectiveGid = isProtected 
+          ? protectedTabMeta.get(tid!)!.originalGroupId 
+          : gid!;
+        
+        if (!groupToTabs.has(effectiveGid))
+          groupToTabs.set(effectiveGid, []);
+        groupToTabs.get(effectiveGid)!.push(tab);
       } else {
         individualTabs.push(tab);
       }

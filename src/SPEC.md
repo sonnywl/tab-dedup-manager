@@ -92,15 +92,27 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 ---
 
-## 5. Test Coverage
+## 5. Testing Strategy
 
-| Category   | Test Case            | Description                                                                         |
-| :--------- | :------------------- | :---------------------------------------------------------------------------------- |
-| **Window** | Global Merging       | Verifies surgical, window-aware moves when `byWindow` is false.                     |
-|            | Per-Window Grouping  | Verifies grouping logic is isolated per window when `byWindow` is true.             |
-|            | Cross-Window Merge   | Verifies manual groups are re-bundled correctly when moving windows.                |
-| **Group**  | External Protection  | Verifies manual groups are treated as atomic blocks.                                |
-|            | Intruder Detection   | Verifies tabs that don't belong in a managed group are ejected.                     |
-| **Perf**   | State Fingerprinting | Verifies early-exit logic when state hash is unchanged.                             |
-|            | Lazy Movement        | Verifies `chrome.tabs.move` is skipped if tab/window is already correct.            |
-|            | API Consolidation    | Verifies minimum number of `getNormalTabs` and `query` calls per run.               |
+The system is verified through a tiered testing approach:
+
+1.  **Unit Tests (`background.test.ts`)**: Verify isolated logic in `CacheManager`, `TabGroupingService`, and `ChromeTabAdapter` edge cases.
+2.  **E2E Integration Tests (`background.e2e.test.ts`)**: Verify the unified orchestration of the `TabGroupingController`.
+3.  **Property-Based Tests (`background.e2e.test.ts` via `fast-check`)**: Exhaustively verify structural invariants and manual group persistence across 100+ random tab/window configurations.
+
+### Requirements & Invariants Traceability Matrix
+
+| Requirement | Test(s) | Status |
+| :--- | :--- | :--- |
+| **Group threshold (2+ tabs)** | `Invariant: Managed group titles follow rules...` | **Verified** |
+| **1 tab -> ungroup, move to end** | `E2E: splitByPath correctly groups tabs by root...` | **Verified** |
+| **Global Grouping (byWindow: false)** | `Invariant: When byWindow is false...` | **Verified** |
+| **Per-window Grouping (byWindow: true)** | `Invariant: When byWindow is true...` | **Verified** |
+| **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...` | **Verified** |
+| **Manual Group Protection** | `Invariant: Manual groups are moved atomically` | **Verified** |
+| **Manual Group Order Persistence** | `Invariant: Manual groups preserve their internal tab order` | **Verified** |
+| **State Fingerprinting** | `TabGroupingController > execute() > skips when state hash unchanged` | **Verified** |
+| **Lazy Moves (Visual Stability)** | `ChromeTabAdapter > executeGroupPlan() > skips move if already at targetIndex` | **Verified** |
+| **Global Deduplication** | `E2E: global deduplication closes duplicate URLs session-wide...` | **Verified** |
+| **Global Auto-Delete** | `E2E: autoDelete rule correctly closes tabs session-wide...` | **Verified** |
+| **Exclusions (Popups, PWAs, Internal)** | `ChromeTabAdapter > excludes internal pages in getNormalTabs...` | **Verified** |

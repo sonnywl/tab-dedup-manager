@@ -3,7 +3,6 @@ import {
   ChromeTabAdapter,
   TabGroupingController,
   TabGroupingService,
-  WindowManagementService,
   asTabId,
 } from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -186,30 +185,6 @@ describe("TabGroupingController", () => {
     ...overrides,
   });
 
-  const makeServiceMock = () => ({
-    getDomain: vi.fn((url: string) => {
-      try {
-        const host = new URL(url).hostname;
-        return host.startsWith("www.") ? host.slice(4) : host;
-      } catch {
-        return "other";
-      }
-    }),
-    normalizeDomain: vi.fn((domain: string) => {
-      const d = domain.toLowerCase();
-      return d.startsWith("www.") ? d.slice(4) : d;
-    }),
-    getGroupKey: vi.fn(),
-    buildGroupMap: vi.fn().mockReturnValue(new Map()),
-    countDuplicates: vi.fn(),
-    filterValidTabs: vi.fn().mockReturnValue([]),
-    buildGroupStates: vi.fn().mockReturnValue([]),
-    calculateRepositionNeeds: vi.fn().mockReturnValue([]),
-    createGroupPlan: vi.fn().mockReturnValue({ states: [], tabsToUngroup: [] }),
-    isInternalTitle: vi.fn().mockReturnValue(true),
-    identifyProtectedTabs: vi.fn().mockReturnValue(new Map()),
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new TabGroupingController();
@@ -309,7 +284,9 @@ describe("TabGroupingController", () => {
 
       await controller.execute();
 
-      expect((controller as any).adapter.executeGroupPlan).not.toHaveBeenCalled();
+      expect(
+        (controller as any).adapter.executeGroupPlan,
+      ).not.toHaveBeenCalled();
     });
 
     it("consolidates windows when numWindowsToKeep set", async () => {
@@ -379,9 +356,9 @@ describe("TabGroupingController", () => {
       const updatedState = { ...initialState, groupId: 42 };
 
       (controller as any).adapter.getNormalTabs.mockResolvedValue([tab1, tab2]);
-      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue([
-        initialState,
-      ]);
+      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue(
+        [initialState],
+      );
       (controller as any).adapter.applyGroupState.mockResolvedValue({
         state: updatedState,
       });
@@ -682,6 +659,42 @@ describe("ChromeTabAdapter", () => {
 
       await adapter.applyGroupState(state, cache as any);
       expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
+    });
+
+    it("BUG REPRO: moves a managed group across windows using tabGroups.move even if internal order differs from URL order", async () => {
+      // Setup: Group 101 in Window 3. Tabs are [2, 1] in browser (reverse URL order)
+      const tab1 = mkTab(1, "https://a.com", 101, 1, 3);
+      const tab2 = mkTab(2, "https://b.com", 101, 0, 3);
+      const tabs = [tab2, tab1]; // Current browser order in Window 3
+      const groups = [{ id: 101, title: "Managed", windowId: 3 } as any];
+
+      // Plan: Move them to Window 1, sorted by URL: [1, 2]
+      const plan: any = {
+        states: [
+          {
+            groupId: 101,
+            tabIds: [1, 2],
+            displayName: "Managed",
+            targetIndex: 0,
+            isExternal: false,
+          },
+        ],
+        tabsToUngroup: [],
+      };
+
+      await adapter.executeGroupPlan(
+        plan,
+        new Map([[1, tab1], [2, tab2]]) as any,
+        new Map([[101, groups[0]]]),
+        1, // targetWindowId
+        { tabs, groups },
+      );
+
+      // EXPECTATION: tabGroups.move is called to preserve the group during window transition
+      expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
+        101,
+        expect.objectContaining({ windowId: 1 }),
+      );
     });
   });
 });
