@@ -298,6 +298,7 @@ describe("App Component", () => {
 
     // Limit input should now be visible
     const limitInput = screen.getByLabelText(/Number of windows to keep/i);
+    await user.clear(limitInput);
     await user.type(limitInput, "3");
 
     await waitFor(() => {

@@ -27,7 +27,7 @@ function useSyncStore() {
   const syncToStore = useCallback(async (newState: SyncStoreState) => {
     const { setState } = await startSyncStore({
       rules: [],
-      grouping: { byWindow: false },
+      grouping: { byWindow: false, numWindowsToKeep: 2 },
     });
     setStateInternal(newState);
     await setState(newState);
@@ -37,7 +37,7 @@ function useSyncStore() {
     const init = async () => {
       const { getState } = await startSyncStore({
         rules: [],
-        grouping: { byWindow: false },
+        grouping: { byWindow: false, numWindowsToKeep: 2 },
       });
       const data = await getState();
       const validRules = (data.rules || []).filter(validateRule);
@@ -180,7 +180,7 @@ const GroupingSettings = ({
                 ...config,
                 byWindow: e.target.checked,
                 numWindowsToKeep: e.target.checked
-                  ? config.numWindowsToKeep
+                  ? (config.numWindowsToKeep ?? 2)
                   : null,
               })
             }
@@ -199,7 +199,7 @@ const GroupingSettings = ({
           <div className="flex items-center gap-1">
             <input
               type="number"
-              min="1"
+              min="2"
               placeholder="All"
               value={
                 typeof config.numWindowsToKeep === "number"
@@ -208,9 +208,15 @@ const GroupingSettings = ({
               }
               onChange={(e) => {
                 const val = parseInt(e.target.value);
+                // If it was null and they click up, the browser might give "1".
+                // If they specifically wanted 2, we can intercept.
+                const finalVal =
+                  isNaN(val) || (val === 1 && config.numWindowsToKeep === null)
+                    ? (isNaN(val) ? null : 2)
+                    : val;
                 onChange({
                   ...config,
-                  numWindowsToKeep: isNaN(val) ? null : val,
+                  numWindowsToKeep: finalVal,
                 });
               }}
               className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
