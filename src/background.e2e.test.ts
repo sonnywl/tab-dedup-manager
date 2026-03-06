@@ -1,4 +1,9 @@
-import { ChromeTabAdapter, TabGroupingService, TabGroupingController, WindowManagementService } from "./background";
+import {
+  ChromeTabAdapter,
+  TabGroupingController,
+  TabGroupingService,
+  WindowManagementService,
+} from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import fc from "fast-check";
@@ -29,7 +34,9 @@ vi.stubGlobal("browser", mockChrome);
 // Mock the sync store utility
 vi.mock("./utils/startSyncStore.js", () => ({
   default: vi.fn().mockResolvedValue({
-    getState: vi.fn().mockImplementation(() => mockChrome.storage.local.get("rules")),
+    getState: vi
+      .fn()
+      .mockImplementation(() => mockChrome.storage.local.get("rules")),
   }),
 }));
 
@@ -123,13 +130,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
               }
             }
             tabs.push(
-              mkTab(
-                id,
-                `https://${rt.domain}/${rt.path}`,
-                gid,
-                i,
-                rt.windowId,
-              ),
+              mkTab(id, `https://${rt.domain}/${rt.path}`, gid, i, rt.windowId),
             );
           });
 
@@ -258,10 +259,8 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           ]);
 
           // 2. Identification (Before merge)
-          const {
-            protectedMeta: protectedTabMeta,
-            managedGroupIds,
-          } = service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+          const { protectedMeta: protectedTabMeta, managedGroupIds } =
+            service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
 
           // 3. Simulate Merge (Move to Window 1, Ungroup)
           const mergedTabs = tabs.map((t) => ({
@@ -475,10 +474,11 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
 
   it("E2E: splitByPath correctly groups tabs by path segment", async () => {
     // Setup: Tabs from the same domain but different paths, and a rule to split by path
-    const rules = [
-      { domain: "github.com", splitByPath: 1, autoDelete: false }
-    ];
-    mockChrome.storage.local.get.mockResolvedValue({ rules: rules, grouping: { byWindow: false } });
+    const rules = [{ domain: "github.com", splitByPath: 1, autoDelete: false }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
 
     const tabs = [
       mkTab(1, "https://github.com/project-a/file1"),
@@ -490,7 +490,7 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     mockChrome.tabs.query.mockResolvedValue(tabs); // Initial tabs query
     mockChrome.tabs.group.mockImplementation((options) => {
       // Simulate Chrome creating a new group ID
-      return Promise.resolve(Math.floor(Math.random() * 1000) + 1); 
+      return Promise.resolve(Math.floor(Math.random() * 1000) + 1);
     });
     mockChrome.tabGroups.update.mockResolvedValue({}); // Group update calls
 
@@ -502,23 +502,25 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     const groupCalls = mockChrome.tabs.group.mock.calls;
     // Each group is created in applyGroupState, and potentially moved/re-grouped in executeGroupPlan.
     // So we expect 2 calls per group (2*2 = 4)
-    expect(groupCalls.length).toBeGreaterThanOrEqual(2); 
+    expect(groupCalls.length).toBeGreaterThanOrEqual(2);
 
-    const projectAGroup = groupCalls.find(call => call[0].tabIds.includes(1));
+    const projectAGroup = groupCalls.find((call) => call[0].tabIds.includes(1));
     expect(projectAGroup).toBeDefined();
 
-    const projectBGroup = groupCalls.find(call => call[0].tabIds.includes(3) && call[0].tabIds.includes(4));
+    const projectBGroup = groupCalls.find(
+      (call) => call[0].tabIds.includes(3) && call[0].tabIds.includes(4),
+    );
     expect(projectBGroup).toBeDefined();
 
     // Verify group titles were updated correctly for the created groups
     const updateCalls = mockChrome.tabGroups.update.mock.calls;
     expect(updateCalls).toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "project-a - github.com" })
+      expect.objectContaining({ title: "project-a - github.com" }),
     ]);
     expect(updateCalls).toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "project-b - github.com" })
+      expect.objectContaining({ title: "project-b - github.com" }),
     ]);
   });
 });
@@ -547,10 +549,11 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
 
   it("E2E: splitByPath correctly groups tabs by root domain and path segments", async () => {
     // Setup: Tabs from bing.com with root, images, and search paths
-    const rules = [
-      { domain: "bing.com", splitByPath: 1, autoDelete: false }
-    ];
-    mockChrome.storage.local.get.mockResolvedValue({ rules: rules, grouping: { byWindow: false } });
+    const rules = [{ domain: "bing.com", splitByPath: 1, autoDelete: false }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
 
     const tabs = [
       mkTab(1, "https://bing.com"),
@@ -574,30 +577,30 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     expect(groupCalls.length).toBeGreaterThanOrEqual(1);
 
     // Verify "bing.com" group (root path) should not be created
-    const rootGroup = groupCalls.find(call => {
+    const rootGroup = groupCalls.find((call) => {
       const tabIds = call[0].tabIds;
       return tabIds.includes(1);
     });
     expect(rootGroup).toBeUndefined();
     expect(mockChrome.tabGroups.update).not.toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "bing.com" })
+      expect.objectContaining({ title: "bing.com" }),
     ]);
 
     // Verify "images - bing.com" group
-    const imagesGroup = groupCalls.find(call => call[0].tabIds.includes(2));
+    const imagesGroup = groupCalls.find((call) => call[0].tabIds.includes(2));
     expect(imagesGroup).toBeDefined();
     expect(mockChrome.tabGroups.update.mock.calls).toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "images - bing.com" })
+      expect.objectContaining({ title: "images - bing.com" }),
     ]);
 
     // Verify "search - bing.com" group should not be created
-    const searchGroup = groupCalls.find(call => call[0].tabIds.includes(3));
+    const searchGroup = groupCalls.find((call) => call[0].tabIds.includes(3));
     expect(searchGroup).toBeUndefined();
     expect(mockChrome.tabGroups.update).not.toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "search - bing.com" })
+      expect.objectContaining({ title: "search - bing.com" }),
     ]);
   });
 });

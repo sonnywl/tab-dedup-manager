@@ -20,6 +20,7 @@ export interface GroupMapEntry {
   readonly displayName: string;
   readonly domains: ReadonlySet<Domain>;
   readonly isExternal?: boolean;
+  readonly groupId?: GroupId | null;
 }
 
 export type GroupMap = Map<string, GroupMapEntry>;
@@ -319,12 +320,14 @@ export class TabGroupingService {
       let isExternal = false;
       let groupKey: string = "";
       let displayName: string = "";
+      let groupId: GroupId | null = null;
 
       const meta = tabId ? protectedTabMeta.get(tabId) : undefined;
       if (meta) {
         isExternal = true;
         groupKey = `external::${meta.originalGroupId}`;
         displayName = meta.title;
+        groupId = asGroupId(meta.originalGroupId);
       } else if (tabId && isGrouped(tab) && groupIdToGroup) {
         const group = groupIdToGroup.get(tab.groupId!);
         const groupTitle = group?.title || "";
@@ -336,6 +339,12 @@ export class TabGroupingService {
           );
           groupKey = key;
           displayName = title;
+
+          // Mandate: Only inherit groupId if the title specifically matches what we expect for this tab
+          // This ensures that path-segment intruders are seen as needing to move to their OWN group
+          if (groupTitle.toLowerCase() === title.toLowerCase()) {
+            groupId = asGroupId(tab.groupId!);
+          }
         }
       }
 
@@ -354,12 +363,14 @@ export class TabGroupingService {
               displayName,
               domains: new Set([...existing.domains, domain]),
               isExternal,
+              groupId: groupId || existing.groupId,
             }
           : {
               tabs: [tab],
               displayName,
               domains: new Set([domain]),
               isExternal,
+              groupId,
             },
       );
     }
@@ -391,6 +402,7 @@ export class TabGroupingService {
       displayName,
       domains,
       isExternal,
+      groupId: entryGroupId,
     } of groupMap.values()) {
       const valid = extractTabIds(tabs)
         .map((id) => tabCache.get(id))
@@ -412,10 +424,12 @@ export class TabGroupingService {
 
       const sourceDomain = Array.from(domains)[0] || "other";
       initial.push({
-        title: isExternal ? displayName : (this.formatTitle(displayName) || sourceDomain),
+        title: isExternal
+          ? displayName
+          : this.formatTitle(displayName) || sourceDomain,
         sourceDomain,
         tabIds: extractTabIds(valid),
-        groupId: null,
+        groupId: entryGroupId || null,
         needsReposition: false,
         isExternal,
       });
@@ -443,9 +457,11 @@ export class TabGroupingService {
       });
 
       const groupId =
-        existing?.groupId != null
-          ? asGroupId(existing.groupId)
-          : (s.title && groupsByTitle?.get(s.title)) || null;
+        s.groupId != null
+          ? s.groupId
+          : existing?.groupId != null
+            ? asGroupId(existing.groupId)
+            : (s.title && groupsByTitle?.get(s.title)) || null;
 
       return { ...s, groupId };
     });
@@ -457,16 +473,21 @@ export class TabGroupingService {
     tabsInGroupCount: Map<number, number>,
     tabsInGroupIdMap: Map<number, Set<TabId>>,
     expectedIndex: number,
+    windowId?: WindowId,
   ): boolean {
     const consistent = state.tabIds.every((id, i) => {
       const tab = tabCache.get(id);
       if (!tab) return false;
+
+      // Mandate: Must be in the correct window if specified
+      const rightWindow = windowId === undefined || tab.windowId === windowId;
+
       const rightIndex = tab.index === expectedIndex + i;
       const rightGroup =
         state.tabIds.length >= 2 || state.isExternal
           ? tab.groupId === state.groupId
           : tab.groupId === -1;
-      return rightIndex && rightGroup;
+      return rightWindow && rightIndex && rightGroup;
     });
     if (!consistent) return false;
 
@@ -489,10 +510,14 @@ export class TabGroupingService {
   calculateRepositionNeeds(
     groupStates: GroupState[],
     tabCache: ReadonlyMap<TabId, Tab>,
+    windowId?: WindowId,
   ): GroupState[] {
-    const allTabs = Array.from(tabCache.values()).sort(
-      (a, b) => a.index - b.index,
-    );
+    let allTabs = Array.from(tabCache.values());
+    if (windowId !== undefined) {
+      allTabs = allTabs.filter((t) => t.windowId === windowId);
+    }
+    allTabs.sort((a, b) => a.index - b.index);
+
     const managed = new Set(groupStates.flatMap((s) => s.tabIds));
 
     const ignoredPinned = allTabs.filter(
@@ -525,7 +550,7 @@ export class TabGroupingService {
 
     const tabsInGroupCount = new Map<number, number>();
     const tabsInGroupIdMap = new Map<number, Set<TabId>>();
-    for (const tab of tabCache.values()) {
+    for (const tab of allTabs) {
       if (isGrouped(tab)) {
         const gid = tab.groupId!;
         tabsInGroupCount.set(gid, (tabsInGroupCount.get(gid) || 0) + 1);
@@ -544,6 +569,7 @@ export class TabGroupingService {
         tabsInGroupCount,
         tabsInGroupIdMap,
         idx,
+        windowId,
       );
       results.push({
         ...s,
@@ -566,6 +592,7 @@ export class TabGroupingService {
         tabsInGroupCount,
         tabsInGroupIdMap,
         idx,
+        windowId,
       );
       results.push({
         ...s,
