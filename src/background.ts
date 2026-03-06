@@ -276,10 +276,19 @@ export class ChromeTabAdapter {
         console.error(`[G4] Failed to create group "${state.title}":`, r.error);
         return { state };
       }
+
+      // Wait for Chrome to register the group creation before updating
+      await sleep(100);
+
+      let targetTitle = state.title;
+      if (!targetTitle && !state.isExternal) {
+        targetTitle = state.sourceDomain || "Group";
+      }
+
       const updated = await retry(() =>
         chrome.tabGroups.update(r.value, {
           collapsed: false,
-          title: state.title,
+          title: targetTitle,
         }),
       );
       return {
@@ -468,6 +477,9 @@ export class ChromeTabAdapter {
               const gid = await chrome.tabs.group(options);
               const currentGroup =
                 freshGroups.get(gid) || existingGroups.get(gid);
+
+              // Wait for Chrome to register the group creation before updating
+              await sleep(100);
 
               // Update title ONLY if requested or if current title is empty
               if (state.needsTitleUpdate || (currentGroup && !currentGroup.title)) {
