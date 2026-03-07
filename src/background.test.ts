@@ -262,10 +262,9 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        new Map(),
-        new Map(),
-        1,
-        snapshot,
+        new Map(), // existingGroups
+        1,         // targetWindowId
+        snapshot,  // snapshotOverride
       );
 
       expect(mockChrome.tabs.move).not.toHaveBeenCalled();
@@ -292,10 +291,9 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        new Map(),
-        new Map(),
-        1,
-        snapshot,
+        new Map(), // existingGroups
+        1,         // targetWindowId
+        snapshot,  // snapshotOverride
       );
 
       expect(mockChrome.tabs.move).toHaveBeenCalled();
@@ -320,7 +318,7 @@ describe("TabGroupingController", () => {
       mockChrome.tabs.group.mockResolvedValue(1000);
       const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
 
-      await adapter.executeGroupPlan(plan, new Map(), new Map(), 1, snapshot);
+      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
 
       expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
         1000,
@@ -348,7 +346,7 @@ describe("TabGroupingController", () => {
       const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
 
       const startTime = Date.now();
-      await adapter.executeGroupPlan(plan, new Map(), new Map(), 1, snapshot);
+      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
       const endTime = Date.now();
 
       // We expect a delay of AT LEAST 50ms per the TAB_UPDATE_DELAY constant

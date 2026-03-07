@@ -207,7 +207,6 @@ export class ChromeTabAdapter {
 
   async executeGroupPlan(
     plan: GroupPlan,
-    _initialCache: ReadonlyMap<TabId, Tab>,
     existingGroups: Map<number, chrome.tabGroups.TabGroup>,
     targetWindowId?: number,
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
@@ -519,19 +518,11 @@ export class TabGroupingController {
         return { success: true, value: undefined };
       }
 
-      // 4. Surgical Execution: Execute the plan atomically
-      const [freshTabs, freshGroups] = await Promise.all([
-        this.adapter.getNormalTabs(),
-        chrome.tabGroups.query({}),
-      ]);
-
-      return this.adapter.executeGroupPlan(
-        plan,
-        cache.snapshot(),
-        groupIdToGroup,
-        windowId,
-        { tabs: freshTabs, groups: freshGroups },
-      );
+      // 4. Surgical Execution: Execute the plan atomically using the tabs we just query-snapshotting
+      return this.adapter.executeGroupPlan(plan, groupIdToGroup, windowId, {
+        tabs: allTabs,
+        groups: Array.from(groupIdToGroup.values()),
+      });
     } catch (err) {
       return {
         success: false,
@@ -580,37 +571,13 @@ export class TabGroupingController {
   private async prepareTabs(
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
-    protectedTabMeta: ProtectedTabMetaMap = new Map(),
-  ): Promise<Tab[]> {
+  ): Promise<void> {
     const unique = await this.adapter.deduplicateAllTabs(tabs);
-    const cleaned = await this.adapter.cleanupTabsByRules(
+    await this.adapter.cleanupTabsByRules(
       unique,
       rulesByDomain,
       this.service,
     );
-
-    return [...cleaned].sort((a, b) => {
-      const aId = asTabId(a.id);
-      const bId = asTabId(b.id);
-      const aProt =
-        aId &&
-        protectedTabMeta &&
-        typeof protectedTabMeta.has === "function" &&
-        protectedTabMeta.has(aId)
-          ? 1
-          : 0;
-      const bProt =
-        bId &&
-        protectedTabMeta &&
-        typeof protectedTabMeta.has === "function" &&
-        protectedTabMeta.has(bId)
-          ? 1
-          : 0;
-
-      if (aProt !== bProt) return bProt - aProt; // Protected first
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1; // Pinned first
-      return (a.id ?? 0) - (b.id ?? 0); // Stability
-    });
   }
 
   private async consolidateWindows(
@@ -685,14 +652,6 @@ export class TabGroupingController {
         return;
       }
 
-      // 1. Identify Protected Tabs (External groups)
-      const { protectedMeta, managedGroupIds } =
-        this.service.identifyProtectedTabs(
-          state.allTabs,
-          state.groupIdToGroup,
-          rulesByDomain,
-        );
-
       const hash = this.stateHash(
         state.allTabs,
         rulesByDomain,
@@ -704,14 +663,36 @@ export class TabGroupingController {
         return;
       }
 
-      // 2. Prepare Tabs (Deduplication, Auto-Delete, and Sort Stability)
-      const processed = await this.prepareTabs(
-        state.allTabs,
-        rulesByDomain,
-        protectedMeta,
-      );
+      // 1. Cleanup Phase (Destructive)
+      // Removes duplicates and auto-delete targets.
+      await this.prepareTabs(state.allTabs, rulesByDomain);
 
-      // 3. Window Consolidation & Mapping (Unified)
+      // 2. Refresh Phase
+      // IMPORTANT: Re-capture state after cleanup to get accurate indices and surviving tabs.
+      state = await this.captureBrowserState();
+
+      // 3. Identification Phase
+      // Identify Protected Tabs (External groups) using fresh state.
+      const { protectedMeta, managedGroupIds } =
+        this.service.identifyProtectedTabs(
+          state.allTabs,
+          state.groupIdToGroup,
+          rulesByDomain,
+        );
+
+      // 4. Stable Sort survivors before window mapping
+      const processed = [...state.allTabs].sort((a, b) => {
+        const aId = asTabId(a.id);
+        const bId = asTabId(b.id);
+        const aProt = protectedMeta.has(aId!) ? 1 : 0;
+        const bProt = protectedMeta.has(bId!) ? 1 : 0;
+
+        if (aProt !== bProt) return bProt - aProt; // Protected first
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1; // Pinned first
+        return (a.id ?? 0) - (b.id ?? 0); // Stability
+      });
+
+      // 5. Window Consolidation & Mapping (Unified)
       const windowMap = groupingConfig.byWindow
         ? isDefined(groupingConfig.numWindowsToKeep)
           ? await this.consolidateWindows(
@@ -723,7 +704,7 @@ export class TabGroupingController {
           : await this.groupByWindow(processed)
         : new Map([[asWindowId(activeWindowId), processed]]);
 
-      // 4. Grouping Pass
+      // 6. Grouping Pass
       for (const [wid, tabs] of windowMap) {
         const groupMap = this.service.buildGroupMap(
           tabs,
