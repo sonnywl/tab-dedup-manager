@@ -26,7 +26,7 @@ export interface GroupMapEntry {
 export type GroupMap = Map<string, GroupMapEntry>;
 
 export interface GroupState {
-  readonly title: string;
+  readonly displayName: string;
   readonly sourceDomain: string;
   readonly tabIds: readonly TabId[];
   readonly groupId: GroupId | null;
@@ -40,6 +40,7 @@ export interface GroupPlan {
   readonly states: ReadonlyArray<{
     tabIds: readonly TabId[];
     displayName: string;
+    sourceDomain: string;
     targetIndex: number;
     isExternal?: boolean;
     groupId?: GroupId | null;
@@ -432,7 +433,7 @@ export class TabGroupingService {
 
       const sourceDomain = Array.from(domains)[0] || "other";
       initial.push({
-        title: isExternal
+        displayName: isExternal
           ? displayName
           : this.formatTitle(displayName) || sourceDomain,
         sourceDomain,
@@ -445,11 +446,11 @@ export class TabGroupingService {
 
     const titleCounts = new Map<string, number>();
     for (const s of initial)
-      titleCounts.set(s.title, (titleCounts.get(s.title) || 0) + 1);
+      titleCounts.set(s.displayName, (titleCounts.get(s.displayName) || 0) + 1);
 
     const resolved = initial.map((s) =>
-      !s.isExternal && (titleCounts.get(s.title) || 0) > 1
-        ? { ...s, title: `${this.formatTitle(s.sourceDomain)} - ${s.title}` }
+      !s.isExternal && (titleCounts.get(s.displayName) || 0) > 1
+        ? { ...s, displayName: `${this.formatTitle(s.sourceDomain)} - ${s.displayName}` }
         : s,
     );
 
@@ -461,7 +462,7 @@ export class TabGroupingService {
       const existing = validTabs.find((t) => {
         if (!isGrouped(t)) return false;
         const currentTitle = managedGroupIds.get(t.groupId!);
-        return currentTitle === s.title;
+        return currentTitle === s.displayName;
       });
 
       const groupId =
@@ -469,7 +470,7 @@ export class TabGroupingService {
           ? s.groupId
           : existing?.groupId != null
             ? asGroupId(existing.groupId)
-            : (s.title && groupsByTitle?.get(s.title)) || null;
+            : (s.displayName && groupsByTitle?.get(s.displayName)) || null;
 
       return { ...s, groupId };
     });
@@ -584,7 +585,7 @@ export class TabGroupingService {
       const currentTitle =
         s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
       const needsTitleUpdate =
-        s.groupId !== null && currentTitle !== null && currentTitle !== s.title;
+        s.groupId !== null && currentTitle !== null && currentTitle !== s.displayName;
 
       results.push({
         ...s,
@@ -613,7 +614,7 @@ export class TabGroupingService {
       const currentTitle =
         s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
       const needsTitleUpdate =
-        s.groupId !== null && currentTitle !== null && currentTitle !== s.title;
+        s.groupId !== null && currentTitle !== null && currentTitle !== s.displayName;
 
       results.push({
         ...s,
@@ -647,7 +648,8 @@ export class TabGroupingService {
       if (s.needsReposition || s.needsTitleUpdate) {
         states.push({
           tabIds: s.tabIds,
-          displayName: s.title,
+          displayName: s.displayName,
+          sourceDomain: s.sourceDomain,
           targetIndex: s.targetIndex ?? 0,
           isExternal: s.isExternal,
           groupId: s.groupId,

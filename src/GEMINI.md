@@ -6,7 +6,6 @@
 - **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
 - **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
-- **Verification**: **Always** utilize a sub-agent (e.g., `codebase_investigator` or `generalist`) in parallel to verify that any proposed plan or implemented change aligns perfectly with the established rules, invariants, and specifications.
 - **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal).
 - **Clean Code Mandate**: Remove dead code and redundant parameters immediately. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and parameters are strictly used.
 - **Format** Always format the code after changes
@@ -47,9 +46,8 @@ Destructive operations are applied **globally** before any grouping logic.
 4.  **Unified Mapping**:
     - `byWindow: true` -> Map groups to current/consolidated windows.
     - `byWindow: false` -> Map ALL groups to the `activeWindowId`.
-5.  **Membership Phase**: `applyGroupState` creates/merges groups to establish final IDs.
-6.  **Planning Phase**: Capture **Exactly One** fresh snapshot. Calculate window-scoped `targetIndex` for all groups.
-7.  **Surgical Execution**: `executeGroupPlan` applies moves using **Lazy Checks**. Cross-window moves happen in **one** API call (window + index).
+5.  **Planning Phase**: Build `GroupState` objects and calculate `targetIndex` for all groups (window-aware).
+6.  **Surgical Execution**: Capture **Exactly One** fresh snapshot. `executeGroupPlan` performs all physical changes (ungroup, move, group, title) atomically using **Lazy Checks**.
 
 ## Learnings & Best Practices
 

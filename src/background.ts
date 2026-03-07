@@ -3,7 +3,6 @@ import {
   GroupId,
   GroupMap,
   GroupPlan,
-  GroupState,
   ProtectedTabMetaMap,
   RulesByDomain,
   Tab,
@@ -11,11 +10,9 @@ import {
   TabId,
   WindowId,
   WindowManagementService,
-  asDomain,
   asGroupId,
   asTabId,
   asWindowId,
-  extractTabIds,
   isDefined,
   isGrouped,
 } from "./utils/grouping.js";
@@ -26,19 +23,6 @@ import {
 } from "./utils/storage.js";
 
 import startSyncStore from "./utils/startSyncStore.js";
-
-export {
-  CacheManager,
-  TabGroupingService,
-  WindowManagementService,
-  asTabId,
-  asGroupId,
-  asWindowId,
-  asDomain,
-  extractTabIds,
-  isDefined,
-  isGrouped,
-};
 
 // ============================================================================
 // TYPES
@@ -70,6 +54,8 @@ function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
+
+const TAB_UPDATE_DELAY = 50;
 
 async function retry<T>(
   fn: () => Promise<T>,
@@ -219,132 +205,6 @@ export class ChromeTabAdapter {
     return remaining;
   }
 
-  async applyGroupState(
-    state: GroupState,
-    tabCache: ReadonlyMap<TabId, Tab>,
-    groupMap?: Map<number, chrome.tabGroups.TabGroup>,
-  ): Promise<{ state: GroupState; group?: chrome.tabGroups.TabGroup }> {
-    if (state.tabIds.length === 0) return { state };
-
-    // Mandate: Manual groups are always preserved (even 1 tab). Managed groups need 2.
-    if (!state.isExternal && state.tabIds.length < 2) {
-      if (state.groupId !== null) {
-        await this.handleSingleTab(state, tabCache);
-        return { state: { ...state, groupId: null } };
-      }
-      return { state };
-    }
-
-    return this.handleMultiTabGroup(state, tabCache, groupMap);
-  }
-
-  private async handleSingleTab(
-    state: GroupState,
-    tabCache: ReadonlyMap<TabId, Tab>,
-  ): Promise<void> {
-    if (state.groupId === null || state.tabIds.length === 0) return;
-    const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
-    if (tabs.every((t) => !isGrouped(t))) return;
-
-    // Explicitly check if the tab is in the group we think it is
-    const idsToUngroup = state.tabIds.filter((id) => {
-      const t = tabCache.get(id);
-      return t && t.groupId === state.groupId;
-    });
-
-    if (idsToUngroup.length > 0) {
-      const r = await retry(() =>
-        chrome.tabs.ungroup(idsToUngroup as number[]),
-      );
-      if (!r.success)
-        console.warn(`Failed to ungroup single tab ${state.title}:`, r.error);
-    }
-  }
-
-  private async handleMultiTabGroup(
-    state: GroupState,
-    tabCache: ReadonlyMap<TabId, Tab>,
-    groupMap?: Map<number, chrome.tabGroups.TabGroup>,
-  ): Promise<{ state: GroupState; group?: chrome.tabGroups.TabGroup }> {
-    const tabs = state.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
-
-    if (state.groupId === null) {
-      const r = await retry(() =>
-        chrome.tabs.group({ tabIds: state.tabIds as number[] }),
-      );
-      if (!r.success) {
-        console.error(`[G4] Failed to create group "${state.title}":`, r.error);
-        return { state };
-      }
-
-      // Wait for Chrome to register the group creation before updating
-      await sleep(100);
-
-      let targetTitle = state.title;
-      if (!targetTitle && !state.isExternal) {
-        targetTitle = state.sourceDomain || "Group";
-      }
-
-      const updated = await retry(() =>
-        chrome.tabGroups.update(r.value, {
-          collapsed: false,
-          title: targetTitle,
-        }),
-      );
-      return {
-        state: { ...state, groupId: asGroupId(r.value) },
-        group: updated.value,
-      };
-    }
-
-    let group = groupMap?.get(state.groupId as number);
-    const allInCorrectGroup = tabs.every((t) => t.groupId === state.groupId);
-    const titleMatch = group?.title === state.title;
-
-    if (allInCorrectGroup && titleMatch) {
-      return { state, group };
-    }
-
-    const wrongGroup = state.tabIds.filter((id) => {
-      const t = tabCache.get(id);
-      return t && t.groupId !== state.groupId && isGrouped(t);
-    });
-    if (wrongGroup.length > 0)
-      await retry(() => chrome.tabs.ungroup(wrongGroup as number[]));
-
-    const r = await retry(() =>
-      chrome.tabs.group({
-        groupId: state.groupId as number,
-        tabIds: state.tabIds as number[],
-      }),
-    );
-    if (!r.success) {
-      console.warn(
-        `[G4] Stale groupId ${state.groupId} for "${state.title}" — aborting, will regroup next cycle`,
-      );
-      return { state };
-    }
-
-    if (!titleMatch) {
-      let targetTitle = state.title;
-      if (!targetTitle && !state.isExternal) {
-        console.warn(
-          `[G4] Warning: Managed Group "${state.sourceDomain}" has NO TITLE, fallback to domain`,
-        );
-        targetTitle = state.sourceDomain;
-      }
-      const updated = await retry(() =>
-        chrome.tabGroups.update(state.groupId as number, {
-          collapsed: false,
-          title: targetTitle,
-        }),
-      );
-      group = updated.value;
-    }
-
-    return { state, group };
-  }
-
   async executeGroupPlan(
     plan: GroupPlan,
     _initialCache: ReadonlyMap<TabId, Tab>,
@@ -382,12 +242,13 @@ export class ChromeTabAdapter {
             const groupTabs = snapshot.tabs.filter(
               (t) => t.groupId === state.groupId,
             );
-            const currentIds = new Set(groupTabs.map(t => asTabId(t.id)));
+            const currentIds = new Set(groupTabs.map((t) => asTabId(t.id)));
             const isMatch =
               groupTabs.length === state.tabIds.length &&
-              state.tabIds.every(id => currentIds.has(id));
+              state.tabIds.every((id) => currentIds.has(id));
 
-            if (isMatch) {              // Lazy Check: Is the group already at its target index and window?
+            if (isMatch) {
+              // Lazy Check: Is the group already at its target index and window?
               const firstTabInGroup = snapshot.tabs.find(
                 (t) => t.id === state.tabIds[0],
               );
@@ -418,7 +279,10 @@ export class ChromeTabAdapter {
         }
 
         // 2. Prepare for Move: Handle Ungrouping (only if target is NO GROUP)
-        if (state.groupId === null) {
+        if (
+          state.groupId === null &&
+          !(state.isExternal || state.tabIds.length >= 2)
+        ) {
           const toUngroup = state.tabIds.filter((id) => {
             const t = freshTabs.get(id);
             return t && isGrouped(t);
@@ -479,18 +343,24 @@ export class ChromeTabAdapter {
                 freshGroups.get(gid) || existingGroups.get(gid);
 
               // Wait for Chrome to register the group creation before updating
-              await sleep(100);
+              await sleep(TAB_UPDATE_DELAY);
 
-              // Update title ONLY if requested or if current title is empty
-              if (state.needsTitleUpdate || (currentGroup && !currentGroup.title)) {
-                let targetTitle = state.displayName;
-                if (!targetTitle && !state.isExternal) {
-                  targetTitle = "Managed Group";
+              // Update title ONLY if requested, if current title is empty, or if it's a new group (not in snapshot)
+              const needsUpdate =
+                state.needsTitleUpdate || !currentGroup || !currentGroup.title;
+
+              if (needsUpdate) {
+                const targetTitle =
+                  state.displayName ||
+                  (state.isExternal
+                    ? ""
+                    : state.sourceDomain || "Managed Group");
+                if (targetTitle) {
+                  await chrome.tabGroups.update(gid, {
+                    collapsed: false,
+                    title: targetTitle,
+                  });
                 }
-                await chrome.tabGroups.update(gid, {
-                  collapsed: false,
-                  title: targetTitle,
-                });
               }
               return gid;
             },
@@ -617,69 +487,27 @@ export class TabGroupingController {
         }
       }
 
-      // Initial pass to build states (using potentially stale allTabs for structure)
-      // but we will refresh cache before critical calculations
-      const initialCache = new CacheManager(allTabs);
+      const cache = new CacheManager(allTabs);
+
+      // Pipeline:
+      // 1. Virtual Mapping: Build initial group states based on current tab distribution and group ownership
       const groupStates = this.service.buildGroupStates(
         groupMap,
-        initialCache.snapshot(),
+        cache.snapshot(),
         groupsByTitle,
         managedGroupIds,
         windowId,
       );
 
-      const applyResults = await Promise.allSettled(
-        groupStates.map((s) =>
-          this.adapter.applyGroupState(
-            s,
-            initialCache.snapshot(),
-            groupIdToGroup,
-          ),
-        ),
-      );
-
-      const updatedGroupStates: GroupState[] = [];
-      const currentGroupIdToGroup = new Map(groupIdToGroup);
-
-      for (let i = 0; i < applyResults.length; i++) {
-        const r = applyResults[i];
-        if (r.status === "fulfilled" && r.value) {
-          updatedGroupStates.push(r.value.state);
-          if (r.value.group && r.value.state.groupId) {
-            currentGroupIdToGroup.set(
-              r.value.state.groupId as number,
-              r.value.group,
-            );
-          }
-        } else {
-          updatedGroupStates.push(groupStates[i]);
-        }
-      }
-
-      // Refresh cache to get updated indices and group IDs from grouping operations
-      const [freshTabsForCache, freshGroupsForCache] = await Promise.all([
-        this.adapter.getNormalTabs(),
-        chrome.tabGroups.query({}),
-      ]);
-
-      const cache = new CacheManager(freshTabsForCache);
-
-      const missingIds = Array.from(groupMap.values())
-        .flatMap((e) => extractTabIds(e.tabs))
-        .filter((id) => !cache.has(id));
-      if (missingIds.length > 0) {
-        const { missing } = await cache.refresh(missingIds, (fn) => retry(fn));
-        if (missing.length > 0)
-          console.warn(`[G8] ${missing.length} tab(s) unrecoverable — skipped`);
-      }
-
+      // 2. Reposition Needs: Calculate which groups need physical changes (repositioning, regrouping, or title updates)
       const withReposition = this.service.calculateRepositionNeeds(
-        updatedGroupStates,
+        groupStates,
         cache.snapshot(),
         windowId,
         managedGroupIds,
       );
 
+      // 3. Plan Creation: Create a concrete plan of physical actions (moves, groups, ungroups)
       const plan = this.service.createGroupPlan(
         withReposition,
         cache.snapshot(),
@@ -691,12 +519,18 @@ export class TabGroupingController {
         return { success: true, value: undefined };
       }
 
+      // 4. Surgical Execution: Execute the plan atomically
+      const [freshTabs, freshGroups] = await Promise.all([
+        this.adapter.getNormalTabs(),
+        chrome.tabGroups.query({}),
+      ]);
+
       return this.adapter.executeGroupPlan(
         plan,
         cache.snapshot(),
-        currentGroupIdToGroup,
+        groupIdToGroup,
         windowId,
-        { tabs: freshTabsForCache, groups: freshGroupsForCache },
+        { tabs: freshTabs, groups: freshGroups },
       );
     } catch (err) {
       return {

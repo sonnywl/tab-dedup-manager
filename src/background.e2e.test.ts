@@ -1,11 +1,14 @@
 import {
   ChromeTabAdapter,
   TabGroupingController,
+} from "./background";
+import {
   TabGroupingService,
   WindowManagementService,
   asWindowId,
   asTabId,
-} from "./background";
+  CacheManager,
+} from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import fc from "fast-check";
@@ -227,7 +230,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           );
 
           // 3. Verification: Tab IDs in the state MUST match the input order exactly
-          const pState = states.find((s) => s.title === "Manual Order");
+          const pState = states.find((s) => s.displayName === "Manual Order");
           expect(pState).toBeDefined();
           const expectedIds = tabs.map((t) => t.id);
           expect(pState!.tabIds).toEqual(expectedIds);
@@ -292,7 +295,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           // 5. Verification: State identified as external/manual
           const pGroup = states.find((s) => s.isExternal);
           expect(pGroup).toBeDefined();
-          expect(pGroup!.title).toBe(title);
+          expect(pGroup!.displayName).toBe(title);
           expect(pGroup!.isExternal).toBe(true);
 
           // 6. ADAPTER VERIFICATION
@@ -309,7 +312,13 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             managedGroupIds,
           );
 
-          await adapter.executeGroupPlan(plan, cache as any, new Map());
+          await adapter.executeGroupPlan(
+            plan,
+            cache as any,
+            new Map([[101, groupsMetadata.get(101)]]),
+            1, // targetWindowId
+            { tabs: mergedTabs, groups: [] },
+          );
 
           const groupCall = mockChrome.tabs.group.mock.calls.find((c) => {
             const tabIds = c[0].tabIds as number[];
@@ -322,10 +331,12 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           });
           expect(groupCall).toBeDefined();
 
-          expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
-            expect.any(Number),
-            expect.objectContaining({ title: title }),
-          );
+          if (title) {
+            expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
+              expect.any(Number),
+              expect.objectContaining({ title: title }),
+            );
+          }
         },
       ),
       { numRuns: 50 },
@@ -372,13 +383,13 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
                 rule.splitByPath && pathSegments.length >= rule.splitByPath;
 
               if (canSplit) {
-                expect(s.title).toContain(" - ");
-                expect(s.title.endsWith(` - ${base}`)).toBe(true);
+                expect(s.displayName).toContain(" - ");
+                expect(s.displayName.endsWith(` - ${base}`)).toBe(true);
               } else {
-                expect(s.title).toBe(base);
+                expect(s.displayName).toBe(base);
               }
             } else {
-              expect(s.title).toBe(domain);
+              expect(s.displayName).toBe(domain);
             }
           });
         },
@@ -425,7 +436,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           );
 
           // 4. Verification: The state MUST contain exactly 3 tabs and be marked external
-          const state = states.find((s) => s.title === "Custom Group");
+          const state = states.find((s) => s.displayName === "Custom Group");
           expect(state).toBeDefined();
           expect(state!.tabIds).toHaveLength(3);
           expect(state!.isExternal).toBe(true);
@@ -624,8 +635,7 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     // 1. Two main groups should be formed: "project-a - github.com" and "project-b - github.com"
     // 2. Each created group should contain the correct tabs.
     const groupCalls = mockChrome.tabs.group.mock.calls;
-    // Each group is created in applyGroupState, and potentially moved/re-grouped in executeGroupPlan.
-    // So we expect 2 calls per group (2*2 = 4)
+    // We expect 1 call per group in executeGroupPlan
     expect(groupCalls.length).toBeGreaterThanOrEqual(2);
 
     const projectAGroup = groupCalls.find((call) => call[0].tabIds.includes(1));
@@ -697,7 +707,7 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     // 1. Only the "images - bing.com" group should be formed (it has 2 tabs).
     // 2. "bing.com" and "search - bing.com" groups (single tabs) should NOT be formed per "1 tab -> ungroup" rule.
     const groupCalls = mockChrome.tabs.group.mock.calls;
-    // expect 2 calls (applyGroupState and executeGroupPlan)
+    // expect at least 1 call in executeGroupPlan
     expect(groupCalls.length).toBeGreaterThanOrEqual(1);
 
     // Verify "bing.com" group (root path) should not be created

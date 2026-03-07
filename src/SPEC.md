@@ -24,15 +24,16 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Responsibility**: Abstraction of the Chrome Extension API.
 - **Key Characteristics**:
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
-  - **Resilience**: Implements a `retry` mechanism with exponential backoff.
-  - **Surgical Moves**: `executeGroupPlan` performs window-aware movement. If a tab is already in the target window at the target index, the move call is skipped.
+  - **Resilience**: Implements a `retry` mechanism.
+  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It uses "Lazy Checks" to skip redundant API calls and `TAB_UPDATE_DELAY` (50ms) for Chrome stability.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
 ### 1.3 Application Layer (`TabGroupingController`)
 
 - **Responsibility**: Orchestration and workflow management.
 - **Unified Flow**: Treats both "Global" and "Per-Window" grouping as a single mapping operation. Global mode is simply a window map with one entry (the active window).
-- **Logical Efficiency**: Ensures exactly **two** full browser state captures per run (one for the fingerprint, one for final planning).
+- **Thinking -> Doing separation**: The logic is split into a pure pipeline (Thinking) and a surgical execution (Doing).
+- **Logical Efficiency**: Ensures exactly **two** full browser state captures per run (one for the fingerprint, one for the execution pass).
 - **Process Guarding**: Uses an `isProcessing` semaphore to prevent race conditions.
 
 ---
@@ -46,7 +47,6 @@ The extension ensures operations are both efficient and visually stable (minimiz
 | Mechanism | Layer | Scope | Goal |
 | :--- | :--- | :--- | :--- |
 | **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged. |
-| **State Synchronization** | Application | Scoped | **Accuracy**: Refreshes the internal cache (`cache.invalidate`) after grouping operations but before positioning to ensure target indices are calculated against current IDs. |
 | **Lazy Movement Check** | Infrastructure | Local | **Surgical Execution**: Checks both `windowId` and `index` immediately before moving. Skips move if both match target state. |
 
 ### 2.2 Unified Global Merging (Zero-Flicker)
@@ -63,7 +63,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
 - **Internal Title Detection**: `isInternalTitle` recognizes generated patterns (case-insensitive):
   - `domain`, `groupName`, `base - Title`, `base - segment`, or `base/segment`.
 - **Title Fallbacks**: 
-  - **Managed Groups**: Always have a title (falls back to `sourceDomain`).
+  - **Managed Groups**: Always have a title (falls back to `sourceDomain` or "Managed Group").
   - **Manual (External) Groups**: Allowed to remain unnamed to respect explicit user organization.
 - **Atomic Protection**: External groups move as cohesive blocks using `chrome.tabGroups.move`.
 
@@ -84,11 +84,11 @@ The extension ensures operations are both efficient and visually stable (minimiz
 5.  **Map Windows**: 
     - `byWindow: true` -> Map groups to their current/consolidated windows.
     - `byWindow: false` -> Map all groups to the `activeWindowId`.
-6.  **Grouping Process**:
-    - **Membership**: `applyGroupState` creates/merges groups.
-    - **Refresh**: Capture fresh snapshot (Exactly 1 call).
-    - **Plan**: `calculateRepositionNeeds` (window-scoped indices).
-    - **Execute**: `executeGroupPlan` using the captured snapshot.
+6.  **Simplified Pipeline**:
+    - **Mapping**: Build `GroupMap` based on rules and proximity.
+    - **Needs**: `calculateRepositionNeeds` determines virtual targets and titling needs.
+    - **Plan**: `createGroupPlan` generates declarative instructions.
+    - **Execute**: `executeGroupPlan` captures a final snapshot and performs all physical changes (ungroup, move, group, title) atomically using Lazy Checks.
 
 ---
 

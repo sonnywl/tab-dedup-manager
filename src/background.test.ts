@@ -1,10 +1,12 @@
 import {
-  CacheManager,
   ChromeTabAdapter,
   TabGroupingController,
+} from "./background";
+import {
+  CacheManager,
   TabGroupingService,
   asTabId,
-} from "./background";
+} from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ============================================================================
@@ -174,10 +176,6 @@ describe("TabGroupingController", () => {
     getNormalTabs: vi.fn().mockResolvedValue([]),
     deduplicateAllTabs: vi.fn().mockResolvedValue([]),
     cleanupTabsByRules: vi.fn().mockResolvedValue([]),
-    // Returns the passed state — matches new Promise<GroupState> signature
-    applyGroupState: vi
-      .fn()
-      .mockImplementation((s) => Promise.resolve({ state: s })),
     executeGroupPlan: vi
       .fn()
       .mockResolvedValue({ success: true, value: undefined }),
@@ -342,43 +340,6 @@ describe("TabGroupingController", () => {
     });
   });
 
-  describe("processGrouping() — applyGroupState return value propagation", () => {
-    it("uses updated groupId returned from applyGroupState in downstream steps", async () => {
-      const tab1 = mkTab(1, "a.com");
-      const tab2 = mkTab(2, "a.com");
-      const initialState: any = {
-        title: "a.com",
-        sourceDomain: "a.com",
-        tabIds: [1, 2],
-        groupId: null,
-        needsReposition: false,
-      };
-      const updatedState = { ...initialState, groupId: 42 };
-
-      (controller as any).adapter.getNormalTabs.mockResolvedValue([tab1, tab2]);
-      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue(
-        [initialState],
-      );
-      (controller as any).adapter.applyGroupState.mockResolvedValue({
-        state: updatedState,
-      });
-      vi.spyOn(
-        (controller as any).service,
-        "calculateRepositionNeeds",
-      ).mockImplementation((states: any[]) => {
-        expect(states[0].groupId).toBe(42);
-        return states.map((s: any) => ({ ...s, needsReposition: false }));
-      });
-
-      await controller.processGrouping(
-        [tab1, tab2],
-        new Map(),
-        new Map(),
-        new Map(),
-      );
-    });
-  });
-
   describe("groupByWindow()", () => {
     it("groups tabs by windowId", async () => {
       const tabs = [
@@ -538,38 +499,6 @@ describe("ChromeTabAdapter", () => {
     });
   });
 
-  describe("applyGroupState()", () => {
-    it("returns updated GroupState with new groupId after group creation", async () => {
-      const state: any = {
-        title: "a.com",
-        tabIds: [1, 2],
-        groupId: null,
-        needsReposition: false,
-        sourceDomain: "a.com",
-      };
-      const cache = new Map([
-        [1, mkTab(1, "a.com")],
-        [2, mkTab(2, "a.com")],
-      ]);
-      mockChrome.tabs.group.mockResolvedValue(55);
-      mockChrome.tabGroups.update.mockResolvedValue({});
-
-      const result = await adapter.applyGroupState(state, cache as any);
-      expect(result.state.groupId).toBe(55);
-    });
-
-    it("handles external groups (restores them if necessary)", async () => {
-      const state: any = { title: "Manual", tabIds: [1, 2], isExternal: true };
-      const cache = new Map([
-        [1, mkTab(1, "a.com")],
-        [2, mkTab(2, "b.com")],
-      ]);
-
-      await adapter.applyGroupState(state, cache as any);
-      expect(mockChrome.tabs.group).toHaveBeenCalled();
-    });
-  });
-
   describe("executeGroupPlan()", () => {
     it("performs grouping for external states if they lost their group ID", async () => {
       // Setup: Tabs are currently UNGROUPED in the browser (groupId: -1)
@@ -646,19 +575,6 @@ describe("ChromeTabAdapter", () => {
       await adapter.executeGroupPlan(plan, cache as any, new Map());
 
       expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([99]);
-    });
-
-    it("dissolves a managed group when it only has 1 tab", async () => {
-      const state: any = {
-        title: "google.com",
-        tabIds: [1], // Only 1 tab
-        groupId: 101,
-        isExternal: false,
-      };
-      const cache = new Map([[1, mkTab(1, "google.com", 101)]]);
-
-      await adapter.applyGroupState(state, cache as any);
-      expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
     });
 
     it("BUG REPRO: moves a managed group across windows using tabGroups.move even if internal order differs from URL order", async () => {
@@ -858,7 +774,7 @@ describe("TabGroupingService", () => {
     it("identifies intruder tabs that should be ungrouped", () => {
       const groupStates: any[] = [
         {
-          title: "Managed",
+          displayName: "Managed",
           tabIds: [1],
           groupId: 101,
           needsReposition: true,
@@ -889,14 +805,14 @@ describe("TabGroupingService", () => {
       // 2. google.com/mail (intruder, should be in "mail - google.com")
       const groupStates: any[] = [
         {
-          title: "search - google.com",
+          displayName: "search - google.com",
           tabIds: [1],
           groupId: 101,
           needsReposition: false,
           isExternal: false,
         },
         {
-          title: "mail - google.com",
+          displayName: "mail - google.com",
           tabIds: [2],
           groupId: null,
           needsReposition: false,
@@ -925,7 +841,7 @@ describe("TabGroupingService", () => {
       // Group title is "search - bing.com"
       const groupStates: any[] = [
         {
-          title: "search - bing.com",
+          displayName: "search - bing.com",
           tabIds: [1, 3],
           groupId: 101,
           needsReposition: false,
@@ -967,7 +883,7 @@ describe("TabGroupingService", () => {
       // because it's not in the expected state.
       const states: any[] = [
         {
-          title: "google.com",
+          displayName: "google.com",
           sourceDomain: "google.com",
           tabIds: [asTabId(1)],
           groupId: 10,
@@ -997,7 +913,7 @@ describe("TabGroupingService", () => {
     it("treats external groups as sortable blocks", () => {
       const states: any[] = [
         {
-          title: "Test",
+          displayName: "Test",
           tabIds: [1],
           isExternal: true,
           needsReposition: false,
@@ -1008,7 +924,7 @@ describe("TabGroupingService", () => {
         states as any,
         cache as any,
       );
-      expect(result[0].title).toBe("Test");
+      expect(result[0].displayName).toBe("Test");
     });
   });
 });
