@@ -431,8 +431,11 @@ export default function App() {
           </table>
         </section>
 
-        <footer className="mt-8 text-center text-gray-400 text-xs">
-          One-click Tab Dedup/Group Manager &copy; {new Date().getFullYear()}
+        <footer className="mt-8 text-center text-gray-400 text-xs flex flex-col gap-1">
+          <div>
+            One-click Tab Dedup/Group Manager &copy; {new Date().getFullYear()}
+          </div>
+          <div>v{chrome.runtime.getManifest().version}</div>
         </footer>
       </div>
     </div>

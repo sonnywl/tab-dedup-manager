@@ -16,6 +16,9 @@ expect.extend(matchers);
 
 // Mock chrome API
 const mockChrome = {
+  runtime: {
+    getManifest: vi.fn().mockReturnValue({ version: "1.0.0" }),
+  },
   storage: {
     local: {
       get: vi.fn().mockResolvedValue({}),

@@ -8,7 +8,7 @@
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
 - **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal).
 - **Clean Code Mandate**: Remove dead code and redundant parameters immediately. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and parameters are strictly used.
-- **Format** Always format the code after changes
+- **Format** Always prettier format the code after changes
 
 ## Architecture
 

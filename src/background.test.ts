@@ -1,12 +1,5 @@
-import {
-  ChromeTabAdapter,
-  TabGroupingController,
-} from "./background";
-import {
-  CacheManager,
-  TabGroupingService,
-  asTabId,
-} from "./utils/grouping";
+import { CacheManager, TabGroupingService } from "./utils/grouping";
+import { ChromeTabAdapter, TabGroupingController } from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ============================================================================
@@ -172,10 +165,8 @@ describe("TabGroupingController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new TabGroupingController();
-    (controller as any).isProcessing = false;
-    (controller as any).lastStateHash = null;
+    // Inject mock adapter but rely on internal real service
     (controller as any).adapter = makeAdapterMock();
-    (controller as any).service = new TabGroupingService();
   });
 
   describe("execute()", () => {
@@ -263,8 +254,8 @@ describe("TabGroupingController", () => {
       await adapter.executeGroupPlan(
         plan,
         new Map(), // existingGroups
-        1,         // targetWindowId
-        snapshot,  // snapshotOverride
+        1, // targetWindowId
+        snapshot, // snapshotOverride
       );
 
       expect(mockChrome.tabs.move).not.toHaveBeenCalled();
@@ -292,8 +283,8 @@ describe("TabGroupingController", () => {
       await adapter.executeGroupPlan(
         plan,
         new Map(), // existingGroups
-        1,         // targetWindowId
-        snapshot,  // snapshotOverride
+        1, // targetWindowId
+        snapshot, // snapshotOverride
       );
 
       expect(mockChrome.tabs.move).toHaveBeenCalled();
@@ -316,7 +307,10 @@ describe("TabGroupingController", () => {
 
       const adapter = new ChromeTabAdapter();
       mockChrome.tabs.group.mockResolvedValue(1000);
-      const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
+      const snapshot = {
+        tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")],
+        groups: [],
+      };
 
       await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
 
@@ -343,7 +337,10 @@ describe("TabGroupingController", () => {
 
       const adapter = new ChromeTabAdapter();
       mockChrome.tabs.group.mockResolvedValue(1000);
-      const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
+      const snapshot = {
+        tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")],
+        groups: [],
+      };
 
       const startTime = Date.now();
       await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
@@ -368,8 +365,13 @@ describe("TabGroupingController", () => {
       };
 
       (controller as any).adapter.getNormalTabs.mockResolvedValue([tab1, tab2]);
-      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue([initialState]);
-      vi.spyOn((controller as any).service, "calculateRepositionNeeds").mockReturnValue([initialState]);
+      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue(
+        [initialState],
+      );
+      vi.spyOn(
+        (controller as any).service,
+        "calculateRepositionNeeds",
+      ).mockReturnValue([initialState]);
       vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
         states: [initialState],
         tabsToUngroup: [],
@@ -402,7 +404,9 @@ describe("ChromeTabAdapter", () => {
   it("queries only normal windows in getNormalTabs", async () => {
     mockChrome.tabs.query.mockResolvedValue([]);
     await adapter.getNormalTabs();
-    expect(mockChrome.tabs.query).toHaveBeenCalledWith({ windowType: "normal" });
+    expect(mockChrome.tabs.query).toHaveBeenCalledWith({
+      windowType: "normal",
+    });
   });
 
   it("deduplicates tabs by URL", async () => {
@@ -445,8 +449,14 @@ describe("TabGroupingService", () => {
 
   describe("getGroupKey()", () => {
     it("splits by path segment", () => {
-      const rules: any = { "google.com": { domain: "google.com", splitByPath: 1 } };
-      const r = service.getGroupKey("google.com" as any, "https://google.com/search", rules);
+      const rules: any = {
+        "google.com": { domain: "google.com", splitByPath: 1 },
+      };
+      const r = service.getGroupKey(
+        "google.com" as any,
+        "https://google.com/search",
+        rules,
+      );
       expect(r.key).toBe("google.com::search");
       expect(r.title).toBe("search - google.com");
     });

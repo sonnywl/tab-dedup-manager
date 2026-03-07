@@ -1,12 +1,9 @@
-import {
-  ChromeTabAdapter,
-  TabGroupingController,
-} from "./background";
+import { ChromeTabAdapter, TabGroupingController } from "./background";
 import {
   TabGroupingService,
   WindowManagementService,
-  asWindowId,
   asTabId,
+  asWindowId,
 } from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -73,12 +70,17 @@ const mockChrome = {
       currentGroups.set(gid, { ...group, ...update });
       return Promise.resolve(currentGroups.get(gid));
     }),
-    query: vi.fn().mockImplementation(() => Promise.resolve(Array.from(currentGroups.values()))),
+    query: vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(Array.from(currentGroups.values())),
+      ),
     move: vi.fn().mockImplementation((gid, options) => {
       const group = currentGroups.get(gid);
       if (group && options.windowId) group.windowId = options.windowId;
-      currentTabs.forEach(t => {
-        if (t.groupId === gid && options.windowId) t.windowId = options.windowId;
+      currentTabs.forEach((t) => {
+        if (t.groupId === gid && options.windowId)
+          t.windowId = options.windowId;
       });
       return Promise.resolve(group);
     }),
@@ -443,60 +445,57 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
 
   it("Invariant: A 3-tab custom group ALWAYS retains its 3 tabs across execution pass", async () => {
     await fc.assert(
-      fc.asyncProperty(
-        fc.integer({ min: 1, max: 3 }),
-        async (windowId) => {
-          const rulesByDomain: any = {};
-          const tabs = [
-            mkTab(1, "https://google.com/1", 101, 0, windowId),
-            mkTab(2, "https://google.com/2", 101, 1, windowId),
-            mkTab(3, "https://google.com/3", 101, 2, windowId),
-          ];
-          const groupsMetadata = new Map([
-            [101, { id: 101, title: "Custom Group", color: "pink" } as any],
-          ]);
+      fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (windowId) => {
+        const rulesByDomain: any = {};
+        const tabs = [
+          mkTab(1, "https://google.com/1", 101, 0, windowId),
+          mkTab(2, "https://google.com/2", 101, 1, windowId),
+          mkTab(3, "https://google.com/3", 101, 2, windowId),
+        ];
+        const groupsMetadata = new Map([
+          [101, { id: 101, title: "Custom Group", color: "pink" } as any],
+        ]);
 
-          const { protectedMeta: protectedTabMeta, managedGroupIds } =
-            service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
-          expect(protectedTabMeta.size).toBe(3);
+        const { protectedMeta: protectedTabMeta, managedGroupIds } =
+          service.identifyProtectedTabs(tabs, groupsMetadata, rulesByDomain);
+        expect(protectedTabMeta.size).toBe(3);
 
-          const groupMap = service.buildGroupMap(
-            tabs,
-            rulesByDomain,
-            groupsMetadata,
-            protectedTabMeta,
-          );
-          const cache = new Map(tabs.map((t) => [t.id, t]));
-          const states = service.buildGroupStates(
-            groupMap,
-            cache as any,
-            undefined,
-            managedGroupIds,
-          );
+        const groupMap = service.buildGroupMap(
+          tabs,
+          rulesByDomain,
+          groupsMetadata,
+          protectedTabMeta,
+        );
+        const cache = new Map(tabs.map((t) => [t.id, t]));
+        const states = service.buildGroupStates(
+          groupMap,
+          cache as any,
+          undefined,
+          managedGroupIds,
+        );
 
-          const state = states.find((s) => s.displayName === "Custom Group");
-          expect(state).toBeDefined();
-          expect(state!.tabIds).toHaveLength(3);
-          expect(state!.isExternal).toBe(true);
+        const state = states.find((s) => s.displayName === "Custom Group");
+        expect(state).toBeDefined();
+        expect(state!.tabIds).toHaveLength(3);
+        expect(state!.isExternal).toBe(true);
 
-          const repositioned = service.calculateRepositionNeeds(
-            states,
-            cache as any,
-          );
-          const plan = service.createGroupPlan(
-            repositioned,
-            cache as any,
-            managedGroupIds,
-          );
+        const repositioned = service.calculateRepositionNeeds(
+          states,
+          cache as any,
+        );
+        const plan = service.createGroupPlan(
+          repositioned,
+          cache as any,
+          managedGroupIds,
+        );
 
-          plan.states.forEach((ps) => {
-            if (ps.displayName === "Custom Group") {
-              expect(ps.tabIds).toHaveLength(3);
-              expect(ps.isExternal).toBe(true);
-            }
-          });
-        },
-      ),
+        plan.states.forEach((ps) => {
+          if (ps.displayName === "Custom Group") {
+            expect(ps.tabIds).toHaveLength(3);
+            expect(ps.isExternal).toBe(true);
+          }
+        });
+      }),
       { numRuns: 50 },
     );
   });
@@ -818,9 +817,15 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     );
 
     const moveCalls = mockChrome.tabs.move.mock.calls;
-    const individualMove2 = moveCalls.find(call => call[0] === 2 || (Array.isArray(call[0]) && call[0].includes(2)));
-    const individualMove3 = moveCalls.find(call => call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)));
-    
+    const individualMove2 = moveCalls.find(
+      (call) =>
+        call[0] === 2 || (Array.isArray(call[0]) && call[0].includes(2)),
+    );
+    const individualMove3 = moveCalls.find(
+      (call) =>
+        call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)),
+    );
+
     expect(individualMove2).toBeUndefined();
     expect(individualMove3).toBeUndefined();
   });
