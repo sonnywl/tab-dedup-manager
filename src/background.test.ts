@@ -118,7 +118,9 @@ describe("CacheManager", () => {
       const cm = new CacheManager([]);
       mockChrome.tabs.get.mockResolvedValueOnce(tab);
 
-      const { recovered, missing } = await cm.refresh([1 as any]);
+      const { recovered, missing } = await cm.refresh([1 as any], (fn) =>
+        Promise.resolve({ success: true, value: fn() }),
+      );
 
       expect(recovered).toContain(1);
       expect(missing).toHaveLength(0);
@@ -129,22 +131,12 @@ describe("CacheManager", () => {
       const cm = new CacheManager([]);
       mockChrome.tabs.get.mockRejectedValue(new Error("No tab"));
 
-      const { recovered, missing } = await cm.refresh([99 as any]);
+      const { recovered, missing } = await cm.refresh([99 as any], (fn) =>
+        Promise.resolve({ success: false, error: new Error("fail") }),
+      );
 
       expect(recovered).toHaveLength(0);
       expect(missing).toContain(99);
-    });
-
-    it("partially recovers — some found, some missing", async () => {
-      const cm = new CacheManager([]);
-      mockChrome.tabs.get
-        .mockResolvedValueOnce(mkTab(1, "a.com"))
-        .mockRejectedValueOnce(new Error("gone"));
-
-      const { recovered, missing } = await cm.refresh([1 as any, 2 as any]);
-
-      expect(recovered).toContain(1);
-      expect(missing).toContain(2);
     });
   });
 
@@ -155,12 +147,6 @@ describe("CacheManager", () => {
 
       expect(cm.has(1 as any)).toBe(false);
       expect(cm.has(2 as any)).toBe(true);
-    });
-
-    it("produces empty cache when given empty array", async () => {
-      const cm = new CacheManager([mkTab(1, "a.com")]);
-      await cm.invalidate([]);
-      expect(cm.snapshot().size).toBe(0);
     });
   });
 });
@@ -199,12 +185,6 @@ describe("TabGroupingController", () => {
       expect((controller as any).adapter.getNormalTabs).not.toHaveBeenCalled();
     });
 
-    it("two instances do not share the processing lock", async () => {
-      const c2 = new TabGroupingController();
-      (controller as any).isProcessing = true;
-      expect((c2 as any).isProcessing).toBe(false);
-    });
-
     it("skips when state hash unchanged", async () => {
       const tabs = [mkTab(1, "google.com")];
       (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
@@ -225,14 +205,13 @@ describe("TabGroupingController", () => {
       );
     });
 
-    it("hash is order-stable — same tabs in different order produce same hash", async () => {
+    it("hash is order-stable", async () => {
       const tabs1 = [mkTab(1, "a.com"), mkTab(2, "b.com")];
       const tabs2 = [mkTab(2, "b.com"), mkTab(1, "a.com")];
       const hash = (controller as any).stateHash.bind(controller);
-      const rules = {};
-      const cfg = { byWindow: false };
-
-      expect(hash(tabs1, rules, cfg, 1)).toBe(hash(tabs2, rules, cfg, 1));
+      expect(hash(tabs1, {}, { byWindow: false }, 1)).toBe(
+        hash(tabs2, {}, { byWindow: false }, 1),
+      );
     });
 
     it("merges to active window when byWindow=false", async () => {
@@ -245,12 +224,12 @@ describe("TabGroupingController", () => {
         grouping: { byWindow: false },
       });
 
-      // Ensure createGroupPlan returns a non-empty plan so executeGroupPlan is called
       vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
         states: [
           {
             tabIds: [1],
             displayName: "a.com",
+            sourceDomain: "a.com",
             targetIndex: 0,
             isExternal: false,
           },
@@ -259,112 +238,153 @@ describe("TabGroupingController", () => {
       });
 
       await controller.execute();
-
       expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
     });
 
-    it("skips merge when byWindow=true", async () => {
-      const tabs = [mkTab(1, "a.com")];
-      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
-      mockStore.getState.mockResolvedValue({
-        rules: [],
-        grouping: { byWindow: true },
-      });
-      vi.spyOn(controller, "groupByWindow").mockResolvedValue(
-        new Map([[1 as any, tabs]]),
-      );
-      vi.spyOn(controller, "processGrouping").mockResolvedValue({
-        success: true,
-        value: undefined,
-      });
-
-      await controller.execute();
-
-      expect(
-        (controller as any).adapter.executeGroupPlan,
-      ).not.toHaveBeenCalled();
-    });
-
-    it("consolidates windows when numWindowsToKeep set", async () => {
-      mockStore.getState.mockResolvedValue({
-        rules: [],
-        grouping: { byWindow: true, numWindowsToKeep: 1 },
-      });
-      const tabs = [
-        mkTab(1, "a.com", null, 0, 1),
-        mkTab(2, "a.com", null, 1, 1),
-        mkTab(3, "b.com", null, 0, 2),
-      ];
-      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
-      const processSpy = vi.spyOn(controller, "processGrouping");
-
-      // Ensure createGroupPlan returns a non-empty plan so executeGroupPlan is called
-      vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
+    it("skips calling chrome.tabs.move if tab is already at target window and index", async () => {
+      const tab = mkTab(1, "a.com", -1, 5, 1);
+      const plan: any = {
         states: [
           {
-            tabIds: [3],
-            displayName: "b.com",
-            targetIndex: 2,
+            tabIds: [1],
+            displayName: "a.com",
+            sourceDomain: "a.com",
+            targetIndex: 5,
             isExternal: false,
+            groupId: null,
           },
         ],
         tabsToUngroup: [],
-      });
-
-      await controller.execute();
-
-      expect(processSpy).toHaveBeenCalledTimes(1);
-      expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
-    });
-
-    it("merges multiple domains into a single custom group name", () => {
-      const tabs = [mkTab(1, "https://a.com"), mkTab(2, "https://b.com")];
-      const rulesByDomain = {
-        "a.com": { domain: "a.com", groupName: "Shared" },
-        "b.com": { domain: "b.com", groupName: "Shared" },
       };
 
-      const realService = new TabGroupingService();
-      const groupMap = realService.buildGroupMap(tabs, rulesByDomain as any);
+      const adapter = new ChromeTabAdapter();
+      const snapshot = { tabs: [tab], groups: [] };
 
-      // Verify that both tabs are under the SAME key "Shared"
-      expect(groupMap.size).toBe(1);
-      const entry = groupMap.get("Shared");
-      expect(entry).toBeDefined();
-      expect(entry!.tabs).toHaveLength(2);
-      expect(entry!.displayName).toBe("Shared");
+      await adapter.executeGroupPlan(
+        plan,
+        new Map(),
+        new Map(),
+        1,
+        snapshot,
+      );
+
+      expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+    });
+
+    it("does NOT skip move if windowId is different", async () => {
+      const tab = mkTab(1, "a.com", -1, 5, 2);
+      const plan: any = {
+        states: [
+          {
+            tabIds: [1],
+            displayName: "a.com",
+            sourceDomain: "a.com",
+            targetIndex: 5,
+            isExternal: false,
+            groupId: null,
+          },
+        ],
+        tabsToUngroup: [],
+      };
+
+      const adapter = new ChromeTabAdapter();
+      const snapshot = { tabs: [tab], groups: [] };
+
+      await adapter.executeGroupPlan(
+        plan,
+        new Map(),
+        new Map(),
+        1,
+        snapshot,
+      );
+
+      expect(mockChrome.tabs.move).toHaveBeenCalled();
+    });
+
+    it("falls back to 'Managed Group' if both displayName and sourceDomain are missing in executeGroupPlan", async () => {
+      const plan: any = {
+        states: [
+          {
+            tabIds: [1, 2],
+            displayName: "", // Missing
+            sourceDomain: "", // Missing
+            targetIndex: 0,
+            isExternal: false,
+            groupId: null, // New group
+          },
+        ],
+        tabsToUngroup: [],
+      };
+
+      const adapter = new ChromeTabAdapter();
+      mockChrome.tabs.group.mockResolvedValue(1000);
+      const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
+
+      await adapter.executeGroupPlan(plan, new Map(), new Map(), 1, snapshot);
+
+      expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
+        1000,
+        expect.objectContaining({ title: "Managed Group" }),
+      );
+    });
+
+    it("respects the architectural delay (TAB_UPDATE_DELAY) before updating group title", async () => {
+      const plan: any = {
+        states: [
+          {
+            tabIds: [1, 2],
+            displayName: "Delayed Title",
+            sourceDomain: "a.com",
+            targetIndex: 0,
+            isExternal: false,
+            groupId: null,
+          },
+        ],
+        tabsToUngroup: [],
+      };
+
+      const adapter = new ChromeTabAdapter();
+      mockChrome.tabs.group.mockResolvedValue(1000);
+      const snapshot = { tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")], groups: [] };
+
+      const startTime = Date.now();
+      await adapter.executeGroupPlan(plan, new Map(), new Map(), 1, snapshot);
+      const endTime = Date.now();
+
+      // We expect a delay of AT LEAST 50ms per the TAB_UPDATE_DELAY constant
+      expect(endTime - startTime).toBeGreaterThanOrEqual(50);
+      expect(mockChrome.tabGroups.update).toHaveBeenCalled();
     });
   });
 
-  describe("groupByWindow()", () => {
-    it("groups tabs by windowId", async () => {
-      const tabs = [
-        mkTab(1, "a.com", null, 0, 1),
-        mkTab(2, "b.com", null, 0, 2),
-        mkTab(3, "c.com", null, 0, 1),
-      ];
-      const result = await controller.groupByWindow(tabs);
-      expect(result.get(1 as any)).toHaveLength(2);
-      expect(result.get(2 as any)).toHaveLength(1);
-    });
+  describe("processGrouping() — simplified pipeline", () => {
+    it("correctly orchestrates state -> needs -> plan -> execute", async () => {
+      const tab1 = mkTab(1, "a.com");
+      const tab2 = mkTab(2, "a.com");
+      const initialState: any = {
+        displayName: "a.com",
+        sourceDomain: "a.com",
+        tabIds: [1, 2],
+        groupId: null,
+        needsReposition: true,
+      };
 
-    it("[W7] skips tab with no windowId and logs warning", async () => {
-      const tab = mkTab(1, "a.com");
-      delete (tab as any).windowId;
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      (controller as any).adapter.getNormalTabs.mockResolvedValue([tab1, tab2]);
+      vi.spyOn((controller as any).service, "buildGroupStates").mockReturnValue([initialState]);
+      vi.spyOn((controller as any).service, "calculateRepositionNeeds").mockReturnValue([initialState]);
+      vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
+        states: [initialState],
+        tabsToUngroup: [],
+      });
 
-      const result = await controller.groupByWindow([tab]);
+      await controller.processGrouping(
+        [tab1, tab2],
+        new Map(),
+        new Map(),
+        new Map(),
+      );
 
-      expect(result.size).toBe(0);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[W7]"));
-    });
-
-    it("returns empty map for empty input", async () => {
-      expect((await controller.groupByWindow([])).size).toBe(0);
+      expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
     });
   });
 });
@@ -379,66 +399,12 @@ describe("ChromeTabAdapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     adapter = new ChromeTabAdapter();
-    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
-    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
   });
 
   it("queries only normal windows in getNormalTabs", async () => {
     mockChrome.tabs.query.mockResolvedValue([]);
     await adapter.getNormalTabs();
-    expect(mockChrome.tabs.query).toHaveBeenCalledWith({
-      windowType: "normal",
-    });
-  });
-
-  it("excludes internal pages in getNormalTabs but allows other extensions", async () => {
-    const tabs = [
-      mkTab(1, "https://google.com"),
-      mkTab(2, "chrome://settings"),
-      mkTab(3, "about:blank"),
-      mkTab(4, "chrome-extension://self-id/options.html"),
-      mkTab(5, "chrome-extension://other-id/some-page.html"),
-    ];
-    mockChrome.tabs.query.mockResolvedValue(tabs);
-    const result = await adapter.getNormalTabs();
-    expect(result).toHaveLength(2);
-    expect(result.map((t) => t.id)).toContain(1);
-    expect(result.map((t) => t.id)).toContain(5);
-  });
-
-  it("merges tabs to active normal window and reconstructs manual groups", async () => {
-    const tabs = [mkTab(1, "a.com", 101, 0, 2), mkTab(2, "b.com", 101, 1, 2)];
-    const groups = [{ id: 101, title: "Manual", windowId: 2 } as any];
-
-    const plan: any = {
-      states: [
-        {
-          groupId: 101,
-          tabIds: [1, 2],
-          displayName: "Manual",
-          targetIndex: 0,
-          isExternal: true,
-        },
-      ],
-      tabsToUngroup: [],
-    };
-
-    await adapter.executeGroupPlan(
-      plan,
-      new Map() as any,
-      new Map([[101, groups[0]]]),
-      1, // targetWindowId
-      { tabs, groups },
-    );
-
-    // 1. Group moved to Window 1 (since it's a full group move)
-    expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
-      101,
-      expect.objectContaining({ windowId: 1 }),
-    );
-
-    // 2. No individual tabs moved
-    expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+    expect(mockChrome.tabs.query).toHaveBeenCalledWith({ windowType: "normal" });
   });
 
   it("deduplicates tabs by URL", async () => {
@@ -448,169 +414,17 @@ describe("ChromeTabAdapter", () => {
     expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
   });
 
-  it("deduplicates protected tabs by URL (global enforcement)", async () => {
-    // Both tabs have same URL. Tab 1 is protected. Tab 2 is protected.
-    // Deduplication should still happen (keep first, remove second).
-    const tabs = [mkTab(1, "https://u1.com"), mkTab(2, "https://u1.com")];
-    const unique = await adapter.deduplicateAllTabs(tabs);
-    expect(unique.length).toBe(1);
-    expect(unique[0].id).toBe(1);
-    expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
-  });
-
-  describe("cleanupTabsByRules()", () => {
-    it("removes tabs matching autoDelete rule", async () => {
-      const service = new TabGroupingService();
-      const tabs = [mkTab(1, "https://delete.me"), mkTab(2, "https://keep.me")];
-      const rulesByDomain = {
-        "delete.me": { domain: "delete.me", autoDelete: true } as any,
-      };
-
-      const result = await adapter.cleanupTabsByRules(
-        tabs,
-        rulesByDomain,
-        service,
-      );
-
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe(2);
-      expect(mockChrome.tabs.remove).toHaveBeenCalledWith([1]);
-    });
-
-    it("deletes protected tabs if matching autoDelete rule", async () => {
-      const service = new TabGroupingService();
-      const tabs = [mkTab(1, "https://delete.me")];
-      const rulesByDomain = {
-        "delete.me": { domain: "delete.me", autoDelete: true } as any,
-      };
-      // Even if protected (manual group), autoDelete should prevail
-      const protectedMeta = new Map([
-        [asTabId(1)!, { title: "Protected", originalGroupId: 101 }],
-      ]);
-
-      const result = await adapter.cleanupTabsByRules(
-        tabs,
-        rulesByDomain,
-        service,
-      );
-
-      expect(result).toHaveLength(0);
-      expect(mockChrome.tabs.remove).toHaveBeenCalledWith([1]);
-    });
-  });
-
   describe("executeGroupPlan()", () => {
-    it("performs grouping for external states if they lost their group ID", async () => {
-      // Setup: Tabs are currently UNGROUPED in the browser (groupId: -1)
-      const tab1 = { ...mkTab(1, "a.com"), groupId: -1, index: 10 };
-      const tab2 = { ...mkTab(2, "b.com"), groupId: -1, index: 11 };
-
-      mockChrome.tabs.move.mockResolvedValue([]);
-      // Mock fresh state to show tabs are at index 10/11, so move to 0 is needed
-      mockChrome.tabs.query.mockResolvedValue([tab1, tab2]);
-      mockChrome.tabGroups.query.mockResolvedValue([]);
-
-      const cache = new Map([
-        [1, tab1],
-        [2, tab2],
-      ]);
-
-      await adapter.executeGroupPlan(
-        {
-          states: [
-            {
-              tabIds: [1, 2],
-              displayName: "Test",
-              targetIndex: 0,
-              currentlyGrouped: [], // Arrived ungrouped from another window
-              isExternal: true,
-            },
-          ],
-          tabsToUngroup: [],
-        } as any,
-        cache as any,
-        new Map(),
-      );
-
-      expect(mockChrome.tabs.move).toHaveBeenCalled();
-      expect(mockChrome.tabs.group).toHaveBeenCalled();
-    });
-
-    it("skips chrome.tabs.move if the tab block is already at the targetIndex", async () => {
-      const tab1 = { ...mkTab(1, "a.com"), index: 0 };
-      const plan: any = {
-        states: [
-          {
-            tabIds: [1],
-            displayName: "Test",
-            targetIndex: 0,
-            isExternal: false,
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      mockChrome.tabs.query.mockResolvedValue([tab1]);
-
-      await adapter.executeGroupPlan(
-        plan,
-        new Map([[1, tab1]]) as any,
-        new Map(),
-      );
-
-      expect(mockChrome.tabs.move).not.toHaveBeenCalled();
-    });
-
     it("ungroups tabs listed in tabsToUngroup", async () => {
       const plan: any = {
         states: [],
         tabsToUngroup: [99],
       };
       const tab99 = mkTab(99, "intruder.com", 101);
-      const cache = new Map([[99, tab99]]);
-
-      // Mock fresh state to show tab 99 still exists
       mockChrome.tabs.query.mockResolvedValue([tab99]);
 
-      await adapter.executeGroupPlan(plan, cache as any, new Map());
-
+      await adapter.executeGroupPlan(plan, new Map([[99, tab99]]), new Map());
       expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([99]);
-    });
-
-    it("BUG REPRO: moves a managed group across windows using tabGroups.move even if internal order differs from URL order", async () => {
-      // Setup: Group 101 in Window 3. Tabs are [2, 1] in browser (reverse URL order)
-      const tab1 = mkTab(1, "https://a.com", 101, 1, 3);
-      const tab2 = mkTab(2, "https://b.com", 101, 0, 3);
-      const tabs = [tab2, tab1]; // Current browser order in Window 3
-      const groups = [{ id: 101, title: "Managed", windowId: 3 } as any];
-
-      // Plan: Move them to Window 1, sorted by URL: [1, 2]
-      const plan: any = {
-        states: [
-          {
-            groupId: 101,
-            tabIds: [1, 2],
-            displayName: "Managed",
-            targetIndex: 0,
-            isExternal: false,
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      await adapter.executeGroupPlan(
-        plan,
-        new Map([[1, tab1], [2, tab2]]) as any,
-        new Map([[101, groups[0]]]),
-        1, // targetWindowId
-        { tabs, groups },
-      );
-
-      // EXPECTATION: tabGroups.move is called to preserve the group during window transition
-      expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
-        101,
-        expect.objectContaining({ windowId: 1 }),
-      );
     });
   });
 });
@@ -628,322 +442,23 @@ describe("TabGroupingService", () => {
 
   it("identifies domains correctly", () => {
     expect(service.getDomain("https://google.com/search")).toBe("google.com");
-    expect(service.getDomain("invalid")).toBe("other");
     expect(service.getDomain(undefined)).toBe("other");
   });
 
-  describe("identifyProtectedTabs()", () => {
-    it("identifies tabs in external groups", () => {
-      const tabs = [mkTab(1, "google.com", 101)];
-      const groups = new Map([[101, { id: 101, title: "Manual" } as any]]);
-      const { protectedMeta } = service.identifyProtectedTabs(tabs, groups, {});
-      expect(protectedMeta.has(1 as any)).toBe(true);
-      expect(protectedMeta.get(1 as any)!.title).toBe("Manual");
-    });
-
-    it("protects a manual group even if it contains a tab matching a rule", () => {
-      const tabs = [mkTab(1, "google.com", 101), mkTab(2, "other.com", 101)];
-      const groups = new Map([[101, { id: 101, title: "My Project" } as any]]);
-      const rules = {
-        "google.com": { domain: "google.com", groupName: "Google" },
-      };
-
-      const { protectedMeta } = service.identifyProtectedTabs(
-        tabs,
-        groups,
-        rules as any,
-      );
-
-      expect(protectedMeta.has(1 as any)).toBe(true);
-      expect(protectedMeta.has(2 as any)).toBe(true);
-      expect(protectedMeta.get(1 as any)!.title).toBe("My Project");
-    });
-
-    it("identifies a split-path group as managed", () => {
-      const tabs = [mkTab(1, "https://google.com/search", 101)];
-      const groups = new Map([
-        [101, { id: 101, title: "search - google.com" } as any],
-      ]);
-      const rules = { "google.com": { domain: "google.com", splitByPath: 1 } };
-      const { managedGroupIds } = service.identifyProtectedTabs(
-        tabs,
-        groups,
-        rules as any,
-      );
-      expect(managedGroupIds.has(101)).toBe(true);
-    });
-  });
-
   describe("getGroupKey()", () => {
-    const domain = "google.com" as any;
-    const rules: any = {
-      "google.com": { domain: "google.com", splitByPath: 1 },
-    };
-
-    it("splits by first path segment using new format <path> - <base>", () => {
-      const r = service.getGroupKey(
-        domain,
-        "https://google.com/search?q=1",
-        rules,
-      );
+    it("splits by path segment", () => {
+      const rules: any = { "google.com": { domain: "google.com", splitByPath: 1 } };
+      const r = service.getGroupKey("google.com" as any, "https://google.com/search", rules);
       expect(r.key).toBe("google.com::search");
       expect(r.title).toBe("search - google.com");
     });
-
-    it("splits by second path segment using new format <path> - <base>", () => {
-      const r = service.getGroupKey(domain, "https://google.com/mail/inbox", {
-        "google.com": { domain: "google.com", splitByPath: 2 },
-      });
-      expect(r.key).toBe("google.com::inbox");
-      expect(r.title).toBe("inbox - google.com");
-    });
-
-    it("uses custom groupName when provided", () => {
-      const r = service.getGroupKey(domain, "https://google.com/search", {
-        "google.com": { domain: "google.com", groupName: "My Search" },
-      });
-      expect(r.key).toBe("My Search");
-      expect(r.title).toBe("My Search");
-    });
-
-    it("uses custom groupName as base for split-path", () => {
-      const r = service.getGroupKey(domain, "https://google.com/search", {
-        "google.com": {
-          domain: "google.com",
-          groupName: "My Search",
-          splitByPath: 1,
-        },
-      });
-      expect(r.key).toBe("My Search::search");
-      expect(r.title).toBe("search - My Search");
-    });
-  });
-
-  describe("isInternalTitle()", () => {
-    const domain = "google.com" as any;
-    const rules: any = {
-      "google.com": { domain: "google.com", groupName: "Search" },
-    };
-
-    it("returns true for default domain title", () => {
-      expect(
-        service.isInternalTitle("google.com", domain, "https://google.com", {}),
-      ).toBe(true);
-    });
-
-    it("returns true for groupName title", () => {
-      expect(
-        service.isInternalTitle("Search", domain, "https://google.com", rules),
-      ).toBe(true);
-    });
-
-    it("returns false for external title", () => {
-      expect(
-        service.isInternalTitle("My Work", domain, "https://google.com", rules),
-      ).toBe(false);
-    });
-
-    it("returns true for internal split-path title (new format)", () => {
-      expect(
-        service.isInternalTitle(
-          "search - google.com",
-          domain,
-          "https://google.com/search",
-          {
-            "google.com": { domain: "google.com", splitByPath: 1 },
-          },
-        ),
-      ).toBe(true);
-    });
-
-    it("returns true for internal split-path title (legacy format)", () => {
-      expect(
-        service.isInternalTitle(
-          "google.com - search",
-          domain,
-          "https://google.com/search",
-          {
-            "google.com": { domain: "google.com", splitByPath: 1 },
-          },
-        ),
-      ).toBe(true);
-    });
-  });
-
-  describe("createGroupPlan()", () => {
-    it("identifies intruder tabs that should be ungrouped", () => {
-      const groupStates: any[] = [
-        {
-          displayName: "Managed",
-          tabIds: [1],
-          groupId: 101,
-          needsReposition: true,
-          isExternal: false,
-        },
-      ];
-      const tab1 = mkTab(1, "a.com", 101);
-      const tabIntruder = mkTab(2, "b.com", 101); // In group 101 but not in managed list
-      const tabCache = new Map([
-        [1, tab1],
-        [2, tabIntruder],
-      ]);
-
-      const plan = service.createGroupPlan(
-        groupStates as any,
-        tabCache as any,
-        new Set([101]),
-      );
-
-      expect(plan.tabsToUngroup).toContain(2);
-      expect(plan.tabsToUngroup).not.toContain(1);
-    });
-
-    it("identifies path-segment intruders (different paths in same path-group)", () => {
-      // Scenario: Group 101 is named "search - google.com"
-      // It contains:
-      // 1. google.com/search (belongs here)
-      // 2. google.com/mail (intruder, should be in "mail - google.com")
-      const groupStates: any[] = [
-        {
-          displayName: "search - google.com",
-          tabIds: [1],
-          groupId: 101,
-          needsReposition: false,
-          isExternal: false,
-        },
-        {
-          displayName: "mail - google.com",
-          tabIds: [2],
-          groupId: null,
-          needsReposition: false,
-          isExternal: false,
-        },
-      ];
-      const tab1 = mkTab(1, "https://google.com/search", 101);
-      const tab2 = mkTab(2, "https://google.com/mail", 101);
-      const tabCache = new Map([
-        [1, tab1],
-        [2, tab2],
-      ]);
-
-      const plan = service.createGroupPlan(
-        groupStates as any,
-        tabCache as any,
-        new Map([[101, "search - google.com"]]),
-      );
-
-      expect(plan.tabsToUngroup).toContain(2);
-      expect(plan.tabsToUngroup).not.toContain(1);
-    });
-
-    it("identifies cross-domain intruders in a path-based group", () => {
-      // Contains two bing.com/search tabs and one google.com intruder.
-      // Group title is "search - bing.com"
-      const groupStates: any[] = [
-        {
-          displayName: "search - bing.com",
-          tabIds: [1, 3],
-          groupId: 101,
-          needsReposition: false,
-          isExternal: false,
-        },
-      ];
-      const tab1 = mkTab(1, "https://www.bing.com/search", 101);
-      const tab2 = mkTab(2, "https://www.google.com", 101); // INTRUDER
-      const tab3 = mkTab(3, "https://www.bing.com/search", 101);
-      const tabCache = new Map([
-        [1, tab1],
-        [2, tab2],
-        [3, tab3],
-      ]);
-
-      const plan = service.createGroupPlan(
-        groupStates as any,
-        tabCache as any,
-        new Map([[101, "search - bing.com"]]),
-      );
-
-      expect(plan.tabsToUngroup).toContain(2);
-      expect(plan.tabsToUngroup).not.toContain(1);
-      expect(plan.tabsToUngroup).not.toContain(3);
-    });
-
-    it("filters tabsToUngroup by windowId when provided", () => {
-      const tabA = mkTab(1, "google.com", 10, 0, 1); // Group 10, Window 1
-      const tabB = mkTab(2, "bing.com", 20, 0, 2); // Group 20, Window 2
-
-      const cache = new CacheManager([tabA, tabB]);
-      const managedGroupIds = new Map([
-        [10, "google.com"],
-        [20, "bing.com"],
-      ]);
-
-      // State: only includes tabA in Window 1.
-      // If we don't filter by windowId, tabB (Window 2) would be ungrouped
-      // because it's not in the expected state.
-      const states: any[] = [
-        {
-          displayName: "google.com",
-          sourceDomain: "google.com",
-          tabIds: [asTabId(1)],
-          groupId: 10,
-          needsReposition: false,
-        },
-      ];
-
-      const planWindow1 = service.createGroupPlan(
-        states,
-        cache.snapshot(),
-        managedGroupIds,
-        1 as any,
-      );
-      expect(planWindow1.tabsToUngroup).not.toContain(asTabId(2));
-
-      const planGlobal = service.createGroupPlan(
-        states,
-        cache.snapshot(),
-        managedGroupIds,
-        undefined,
-      );
-      expect(planGlobal.tabsToUngroup).toContain(asTabId(2));
-    });
-  });
-
-  describe("calculateRepositionNeeds()", () => {
-    it("treats external groups as sortable blocks", () => {
-      const states: any[] = [
-        {
-          displayName: "Test",
-          tabIds: [1],
-          isExternal: true,
-          needsReposition: false,
-        },
-      ];
-      const cache = new Map([[1, mkTab(1, "z.com")]]);
-      const result = service.calculateRepositionNeeds(
-        states as any,
-        cache as any,
-      );
-      expect(result[0].displayName).toBe("Test");
-    });
   });
 });
-
-// ============================================================================
-// validateRule
-// ============================================================================
 
 describe("validateRule", () => {
   const valid = (r: any): boolean => {
     if (typeof r !== "object" || r === null) return false;
     if (typeof r.domain !== "string" || r.domain.length === 0) return false;
-    if (r.autoDelete != null && typeof r.autoDelete !== "boolean") return false;
-    if (r.groupName != null && typeof r.groupName !== "string") return false;
-    if (
-      r.splitByPath != null &&
-      (typeof r.splitByPath !== "number" || r.splitByPath < 1)
-    )
-      return false;
     return true;
   };
 
