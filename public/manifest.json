@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Group Manager",
-  "version": "0.5.21",
+  "version": "0.5.22",
   "description": "One-click tab organization. Instantly group and deduplicate tabs based on smart, user-defined rules. High-performance, non-destructive, and privacy-first.",
   "options_page": "index.html",
   "icons": {
@@ -13,18 +13,28 @@
       "id": "tab_dedup_manager@time_current.com",
       "update_url": "https://sea-lion-app-i977g.ondigitalocean.app/updates.json",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
   "action": {
-    "default_icon": { "192": "logo192.png" },
+    "default_icon": {
+      "192": "logo192.png"
+    },
     "default_title": "Tab Dedup Manager"
   },
   "background": {
-    "scripts": ["assets/background.js"],
+    "scripts": [
+      "assets/background.js"
+    ],
     "type": "module"
   },
-  "incognito": "spanning",
-  "permissions": ["storage", "tabs", "tabGroups"]
+  "incognito": "split",
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups"
+  ]
 }
