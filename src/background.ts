@@ -55,7 +55,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-const TAB_UPDATE_DELAY = 50;
+const TAB_UPDATE_DELAY = 100;
 
 async function retry<T>(
   fn: () => Promise<T>,
@@ -69,13 +69,22 @@ async function retry<T>(
     } catch (err) {
       lastError = err;
       if (i < maxAttempts) {
-        console.warn(`[Retry] Attempt ${i}/${maxAttempts} failed, retrying in ${delayMs * i}ms...`);
+        console.warn(
+          `[Retry] Attempt ${i}/${maxAttempts} failed, retrying in ${delayMs * i}ms...`,
+        );
         await new Promise((r) => setTimeout(r, delayMs * i));
       }
     }
   }
-  const finalError = lastError instanceof Error ? lastError : new Error(String(lastError || "Retry failed"));
-  console.error(`[Retry] All ${maxAttempts} attempts failed. Final error:`, finalError.message, finalError.stack);
+  const finalError =
+    lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError || "Retry failed"));
+  console.error(
+    `[Retry] All ${maxAttempts} attempts failed. Final error:`,
+    finalError.message,
+    finalError.stack,
+  );
   return { success: false, error: finalError };
 }
 
@@ -107,7 +116,11 @@ async function runAtomicOperation<T>(
 ): Promise<T> {
   const res = await retry(operation);
   if (!res.success) {
-    console.error("Atomic operation failed, triggering rollback. Error:", res.error.message, res.error.stack);
+    console.error(
+      "Atomic operation failed, triggering rollback. Error:",
+      res.error.message,
+      res.error.stack,
+    );
     await bestEffortRollback(snapshotTabs);
     throw res.error;
   }
@@ -215,6 +228,7 @@ export class ChromeTabAdapter {
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
   ): Promise<Result<void, Error>> {
     const snapshot = snapshotOverride || (await this.captureState());
+    const titlesToUpdate = new Map<number, string>();
 
     try {
       // 0. Ungroup tabs explicitly requested
@@ -263,6 +277,17 @@ export class ChromeTabAdapter {
                 firstTabInGroup && firstTabInGroup.index === state.targetIndex;
 
               if (isCorrectWindow && isCorrectIndex) {
+                // Queue title update for existing group that didn't move
+                const targetTitle =
+                  state.displayName ||
+                  (state.isExternal
+                    ? ""
+                    : state.sourceDomain || "Managed Group");
+                const needsUpdate =
+                  state.needsTitleUpdate || !group || !group.title;
+                if (needsUpdate && targetTitle) {
+                  titlesToUpdate.set(state.groupId as number, targetTitle);
+                }
                 continue;
               }
 
@@ -275,6 +300,16 @@ export class ChromeTabAdapter {
                 snapshot.tabs,
                 this.RATE_DELAY,
               );
+
+              // Queue title update for moved group
+              const targetTitle =
+                state.displayName ||
+                (state.isExternal ? "" : state.sourceDomain || "Managed Group");
+              const needsUpdate =
+                state.needsTitleUpdate || !group || !group.title;
+              if (needsUpdate && targetTitle) {
+                titlesToUpdate.set(state.groupId as number, targetTitle);
+              }
               continue;
             }
           }
@@ -344,9 +379,6 @@ export class ChromeTabAdapter {
               const currentGroup =
                 freshGroups.get(gid) || existingGroups.get(gid);
 
-              // Wait for Chrome to register the group creation before updating
-              await sleep(TAB_UPDATE_DELAY);
-
               // Update title ONLY if requested, if current title is empty, or if it's a new group (not in snapshot)
               const needsUpdate =
                 state.needsTitleUpdate || !currentGroup || !currentGroup.title;
@@ -358,10 +390,7 @@ export class ChromeTabAdapter {
                     ? ""
                     : state.sourceDomain || "Managed Group");
                 if (targetTitle) {
-                  await chrome.tabGroups.update(gid, {
-                    collapsed: false,
-                    title: targetTitle,
-                  });
+                  titlesToUpdate.set(gid, targetTitle);
                 }
               }
               return gid;
@@ -370,6 +399,16 @@ export class ChromeTabAdapter {
             this.RATE_DELAY,
           );
         }
+      }
+
+      await sleep(TAB_UPDATE_DELAY);
+      // Final Phase: Apply all collected title updates after layout is stable
+      for (const [gid, title] of titlesToUpdate) {
+        const r = await retry(() =>
+          chrome.tabGroups.update(gid, { title, collapsed: false }),
+        );
+        if (!r.success)
+          console.warn(`Failed to update title for group ${gid}:`, r.error);
       }
 
       return { success: true, value: undefined };
