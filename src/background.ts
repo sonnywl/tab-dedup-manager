@@ -62,19 +62,21 @@ async function retry<T>(
   maxAttempts = 3,
   delayMs = 100,
 ): Promise<Result<T, Error>> {
+  let lastError: any;
   for (let i = 1; i <= maxAttempts; i++) {
     try {
       return { success: true, value: await fn() };
     } catch (err) {
-      if (i === maxAttempts)
-        return {
-          success: false,
-          error: err instanceof Error ? err : new Error(String(err)),
-        };
-      await new Promise((r) => setTimeout(r, delayMs * i));
+      lastError = err;
+      if (i < maxAttempts) {
+        console.warn(`[Retry] Attempt ${i}/${maxAttempts} failed, retrying in ${delayMs * i}ms...`);
+        await new Promise((r) => setTimeout(r, delayMs * i));
+      }
     }
   }
-  return { success: false, error: new Error("Retry failed") };
+  const finalError = lastError instanceof Error ? lastError : new Error(String(lastError || "Retry failed"));
+  console.error(`[Retry] All ${maxAttempts} attempts failed. Final error:`, finalError.message, finalError.stack);
+  return { success: false, error: finalError };
 }
 
 async function bestEffortRollback(snapshotTabs: Tab[]): Promise<void> {
@@ -105,6 +107,7 @@ async function runAtomicOperation<T>(
 ): Promise<T> {
   const res = await retry(operation);
   if (!res.success) {
+    console.error("Atomic operation failed, triggering rollback. Error:", res.error.message, res.error.stack);
     await bestEffortRollback(snapshotTabs);
     throw res.error;
   }
@@ -573,11 +576,7 @@ export class TabGroupingController {
     rulesByDomain: RulesByDomain,
   ): Promise<void> {
     const unique = await this.adapter.deduplicateAllTabs(tabs);
-    await this.adapter.cleanupTabsByRules(
-      unique,
-      rulesByDomain,
-      this.service,
-    );
+    await this.adapter.cleanupTabsByRules(unique, rulesByDomain, this.service);
   }
 
   private async consolidateWindows(
