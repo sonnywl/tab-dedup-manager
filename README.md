@@ -2,6 +2,8 @@
 
 **Instantly declutter your browser with a single click.** One-click Tab Dedup/Group Manager is a high-performance Chrome extension that automates your browser chaos without getting in your way. Unlike other organizers that force a rigid structure, we respect your manual workflow while providing powerful, one-click automation for the tedious parts.
 
+Available on the [Chrome Web Store](https://chromewebstore.google.com/detail/one-click-tab-dedupgroup/ijiodcedhlelfclifbjgnkdfeaknakkk?authuser=0&hl=en).
+
 ## 🚀 Why One-click? (For Users)
 
 *   **One-Click Magic:** Instantly group and deduplicate your entire session. No complex menus, no friction.

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Group Manager",
   "version": "0.5.22",
-  "description": "One-click tab organization. Instantly group and deduplicate tabs based on smart, user-defined rules. High-performance, non-destructive, and privacy-first.",
+  "description": "",
   "options_page": "index.html",
   "icons": {
     "192": "logo192.png",
