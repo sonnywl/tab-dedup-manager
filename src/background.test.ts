@@ -1,6 +1,7 @@
 import { CacheManager, TabGroupingService } from "./utils/grouping";
 import { ChromeTabAdapter, TabGroupingController } from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkTab } from "./test-utils";
 
 // ============================================================================
 // MOCKS
@@ -50,41 +51,6 @@ const mockStore = {
     .mockResolvedValue({ rules: [], grouping: { byWindow: false } }),
 };
 vi.mock("./utils/startSyncStore.js", () => ({ default: () => mockStore }));
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-const mkTab = (
-  id: number,
-  url: string,
-  groupId: number | null = null,
-  index = 0,
-  windowId = 1,
-): chrome.tabs.Tab => {
-  const hasProtocol = /^[a-z-]+:/.test(url);
-  return {
-    id,
-    url: hasProtocol ? url : `https://${url}`,
-    index,
-    windowId,
-    groupId: groupId === null ? -1 : groupId,
-    active: false,
-    audible: false,
-    autoDiscardable: true,
-    discarded: false,
-    favIconUrl: "",
-    height: 0,
-    highlighted: false,
-    incognito: false,
-    mutedInfo: { muted: false },
-    pinned: false,
-    selected: false,
-    status: "complete",
-    title: "",
-    width: 0,
-  };
-};
 
 // ============================================================================
 // CACHE MANAGER

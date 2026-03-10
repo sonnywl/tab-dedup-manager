@@ -537,7 +537,6 @@ export class TabGroupingController {
         cache.snapshot(),
         groupsByTitle,
         managedGroupIds,
-        windowId,
       );
 
       // 2. Reposition Needs: Calculate which groups need physical changes (repositioning, regrouping, or title updates)
@@ -725,8 +724,15 @@ export class TabGroupingController {
         const aProt = protectedMeta.has(aId!) ? 1 : 0;
         const bProt = protectedMeta.has(bId!) ? 1 : 0;
 
-        if (aProt !== bProt) return bProt - aProt; // Protected first
         if (a.pinned !== b.pinned) return a.pinned ? -1 : 1; // Pinned first
+
+        // Visual Group Status (Manual or Managed 2+)
+        // Note: For managed, we check the global state context
+        const isGroupA = aProt || state.allTabs.filter(t => t.url === a.url).length >= 2 ? 1 : 0;
+        const isGroupB = bProt || state.allTabs.filter(t => t.url === b.url).length >= 2 ? 1 : 0;
+        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
+
+        if (aProt !== bProt) return bProt - aProt; // Protected before Managed
         return (a.id ?? 0) - (b.id ?? 0); // Stability
       });
 

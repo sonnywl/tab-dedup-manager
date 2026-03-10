@@ -358,7 +358,7 @@ export class TabGroupingService {
 
       if (!groupKey) {
         const { key, title } = this.getGroupKey(domain, tab.url, rulesByDomain);
-        groupKey = key;
+        groupKey = `${tab.pinned ? "pinned" : "unpinned"}::${key}`;
         displayName = title;
       }
 
@@ -402,7 +402,6 @@ export class TabGroupingService {
     tabCache: ReadonlyMap<TabId, Tab>,
     groupsByTitle?: Map<string, GroupId>,
     managedGroupIds: Map<number, string> = new Map(),
-    windowId?: WindowId,
   ): GroupState[] {
     const initial: GroupState[] = [];
 
@@ -448,11 +447,17 @@ export class TabGroupingService {
     for (const s of initial)
       titleCounts.set(s.displayName, (titleCounts.get(s.displayName) || 0) + 1);
 
-    const resolved = initial.map((s) =>
-      !s.isExternal && (titleCounts.get(s.displayName) || 0) > 1
-        ? { ...s, displayName: `${this.formatTitle(s.sourceDomain)} - ${s.displayName}` }
-        : s,
-    );
+    const resolved = initial.map((s) => {
+      if (s.isExternal || (titleCounts.get(s.displayName) || 0) <= 1) return s;
+
+      const prefix = this.formatTitle(s.sourceDomain);
+      if (s.displayName.toLowerCase().includes(prefix.toLowerCase())) return s;
+
+      return {
+        ...s,
+        displayName: `${prefix} - ${s.displayName}`,
+      };
+    });
 
     return resolved.map((s) => {
       const validTabs = s.tabIds
@@ -465,12 +470,18 @@ export class TabGroupingService {
         return currentTitle === s.displayName;
       });
 
-      const groupId =
+      let groupId =
         s.groupId != null
           ? s.groupId
           : existing?.groupId != null
             ? asGroupId(existing.groupId)
             : (s.displayName && groupsByTitle?.get(s.displayName)) || null;
+
+      // Mandate: If it's a managed item (not external) and only has 1 tab, 
+      // it MUST NOT have a groupId (enforces ungrouping).
+      if (!s.isExternal && s.tabIds.length < 2) {
+        groupId = null;
+      }
 
       return { ...s, groupId };
     });
@@ -493,14 +504,14 @@ export class TabGroupingService {
 
       const rightIndex = tab.index === expectedIndex + i;
       const rightGroup =
-        state.tabIds.length >= 2 || state.isExternal
+        state.groupId !== null || state.isExternal || state.tabIds.length >= 2
           ? tab.groupId === state.groupId
           : tab.groupId === -1;
       return rightWindow && rightIndex && rightGroup;
     });
     if (!consistent) return false;
 
-    if (state.groupId !== null) {
+    if (state.groupId !== null && (state.isExternal || state.tabIds.length >= 2)) {
       if (
         (tabsInGroupCount.get(state.groupId as number) || 0) !==
         state.tabIds.length
@@ -509,6 +520,7 @@ export class TabGroupingService {
       const ids = tabsInGroupIdMap.get(state.groupId as number);
       if (!ids || !state.tabIds.every((id) => ids.has(id))) return false;
     } else if (state.tabIds.length === 1 && !state.isExternal) {
+      // Mandate: If it's a single tab, it MUST be ungrouped (groupId -1)
       const tab = tabCache.get(state.tabIds[0]);
       if (tab && isGrouped(tab)) return false;
     }
@@ -538,6 +550,11 @@ export class TabGroupingService {
     );
 
     const sortByUrl = (a: GroupState, b: GroupState) => {
+      // Mandate: For managed items, if they have a displayName (like splitByPath segments),
+      // we sort by that first to ensure "a - domain" < "b - domain".
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
       const tA = tabCache.get(a.tabIds[0]);
       const tB = tabCache.get(b.tabIds[0]);
       const urlComp = (tA?.url || "").localeCompare(tB?.url || "");
@@ -545,16 +562,43 @@ export class TabGroupingService {
       return (tA?.id ?? 0) - (tB?.id ?? 0); // Stability
     };
 
+    const sortById = (a: GroupState, b: GroupState) => {
+      // Mandate: Even for manual groups, sort by displayName if it exists
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
+      const tA = tabCache.get(a.tabIds[0]);
+      const tB = tabCache.get(b.tabIds[0]);
+      return (tA?.id ?? 0) - (tB?.id ?? 0); // Stable ID
+    };
+
     const managedPinned = groupStates
       .filter((s) => tabCache.get(s.tabIds[0])?.pinned)
-      .sort(sortByUrl);
+      .sort((a, b) => {
+        // Rule: Group (Visual) -> Tab (Visual)
+        const isGroupA = a.isExternal || a.tabIds.length >= 2;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2;
+        if (isGroupA !== isGroupB) return isGroupA ? -1 : 1;
+
+        // Then Protected -> Managed
+        if (a.isExternal !== b.isExternal) return a.isExternal ? -1 : 1;
+
+        return sortById(a, b); // Stable ID for Pinned
+      });
 
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        const ga = a.tabIds.length >= 2 || a.isExternal,
-          gb = b.tabIds.length >= 2 || b.isExternal;
-        if (ga !== gb) return ga ? -1 : 1;
+        // Rule: Group (Visual) -> Tab (Visual)
+        const isGroupA = a.isExternal || a.tabIds.length >= 2;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2;
+        if (isGroupA !== isGroupB) return isGroupA ? -1 : 1;
+
+        // Then Protected -> Managed
+        if (a.isExternal !== b.isExternal) return a.isExternal ? -1 : 1;
+
+        // Rule: Manual groups use Stable ID, Managed items use URL
+        if (a.isExternal) return sortById(a, b);
         return sortByUrl(a, b);
       });
 
@@ -571,6 +615,7 @@ export class TabGroupingService {
 
     const results: GroupState[] = [];
 
+    // Managed Pinned follow Ignored Pinned
     let idx = ignoredPinned.length;
     for (const s of managedPinned) {
       const needsReposition = !this.validateGroupState(
@@ -585,7 +630,9 @@ export class TabGroupingService {
       const currentTitle =
         s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
       const needsTitleUpdate =
-        s.groupId !== null && currentTitle !== null && currentTitle !== s.displayName;
+        s.groupId !== null &&
+        currentTitle !== null &&
+        currentTitle !== s.displayName;
 
       results.push({
         ...s,
@@ -596,12 +643,7 @@ export class TabGroupingService {
       idx += s.tabIds.length;
     }
 
-    // Correctly calculate start index for unpinned: IgnoredPinned + ManagedPinnedTabs + IgnoredUnpinned
-    idx =
-      ignoredPinned.length +
-      managedPinned.reduce((sum, s) => sum + s.tabIds.length, 0) +
-      ignoredUnpinned.length;
-
+    // Managed Unpinned follow Managed Pinned (Ignored Unpinned are displaced to end)
     for (const s of managedUnpinned) {
       const needsReposition = !this.validateGroupState(
         s,
@@ -614,7 +656,9 @@ export class TabGroupingService {
       const currentTitle =
         s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
       const needsTitleUpdate =
-        s.groupId !== null && currentTitle !== null && currentTitle !== s.displayName;
+        s.groupId !== null &&
+        currentTitle !== null &&
+        currentTitle !== s.displayName;
 
       results.push({
         ...s,
@@ -720,15 +764,15 @@ export class WindowManagementService {
       const tid = asTabId(tab.id);
       const gid = tab.groupId;
       const isProtected = tid ? protectedTabMeta.has(tid) : false;
-      const isManaged = gid !== undefined && gid !== -1 && managedGroupIds.has(gid);
+      const isManaged =
+        gid !== undefined && gid !== -1 && managedGroupIds.has(gid);
 
       if (isProtected || isManaged) {
-        const effectiveGid = isProtected 
-          ? protectedTabMeta.get(tid!)!.originalGroupId 
+        const effectiveGid = isProtected
+          ? protectedTabMeta.get(tid!)!.originalGroupId
           : gid!;
-        
-        if (!groupToTabs.has(effectiveGid))
-          groupToTabs.set(effectiveGid, []);
+
+        if (!groupToTabs.has(effectiveGid)) groupToTabs.set(effectiveGid, []);
         groupToTabs.get(effectiveGid)!.push(tab);
       } else {
         individualTabs.push(tab);

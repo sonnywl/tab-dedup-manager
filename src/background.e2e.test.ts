@@ -8,6 +8,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import fc from "fast-check";
+import { mkTab } from "./test-utils";
 
 // ============================================================================
 // MOCKS & SETUP - MUST BE AT TOP
@@ -108,21 +109,6 @@ vi.mock("./utils/startSyncStore.js", () => ({
       .mockImplementation(() => mockChrome.storage.local.get("rules")),
   }),
 }));
-
-// Helper to make a tab
-const mkTab = (
-  id: number,
-  url: string,
-  groupId = -1,
-  index = 0,
-  windowId = 1,
-): any => ({
-  id,
-  url,
-  groupId,
-  index,
-  windowId,
-});
 
 // ============================================================================
 // ARBITRARIES (Generators)
