@@ -221,6 +221,31 @@ export class ChromeTabAdapter {
     return remaining;
   }
 
+  async ungroupSingleTabGroups(tabs: Tab[]): Promise<void> {
+    const groupCounts = new Map<number, number>();
+    for (const tab of tabs) {
+      if (tab.groupId !== -1 && tab.groupId !== undefined) {
+        groupCounts.set(tab.groupId, (groupCounts.get(tab.groupId) || 0) + 1);
+      }
+    }
+
+    const toUngroup: number[] = [];
+    for (const tab of tabs) {
+      if (tab.id && tab.groupId !== -1 && tab.groupId !== undefined) {
+        if (groupCounts.get(tab.groupId) === 1) {
+          toUngroup.push(tab.id);
+        }
+      }
+    }
+
+    for (const batch of this.batch(toUngroup)) {
+      const r = await retry(() => chrome.tabs.ungroup(batch as number[]));
+      if (!r.success)
+        console.warn("Failed to ungroup single-tab groups:", r.error);
+      await sleep(this.RATE_DELAY);
+    }
+  }
+
   async executeGroupPlan(
     plan: GroupPlan,
     existingGroups: Map<number, chrome.tabGroups.TabGroup>,
@@ -578,7 +603,11 @@ export class TabGroupingController {
   } | null> {
     const store: SyncStore = await startSyncStore({
       rules: [],
-      grouping: { byWindow: false, numWindowsToKeep: 2 },
+      grouping: {
+        byWindow: false,
+        numWindowsToKeep: 2,
+        ungroupSingleTab: false,
+      },
     });
     const state = await store.getState();
     if (!state?.rules || !state?.grouping) {
@@ -605,6 +634,7 @@ export class TabGroupingController {
       config: {
         byWindow: state.grouping.byWindow,
         numWindowsToKeep: state.grouping.numWindowsToKeep,
+        ungroupSingleTab: state.grouping.ungroupSingleTab,
       },
     };
   }
@@ -612,9 +642,17 @@ export class TabGroupingController {
   private async prepareTabs(
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
+    config: GroupingConfig,
   ): Promise<void> {
     const unique = await this.adapter.deduplicateAllTabs(tabs);
-    await this.adapter.cleanupTabsByRules(unique, rulesByDomain, this.service);
+    const remaining = await this.adapter.cleanupTabsByRules(
+      unique,
+      rulesByDomain,
+      this.service,
+    );
+    if (config.ungroupSingleTab) {
+      await this.adapter.ungroupSingleTabGroups(remaining);
+    }
   }
 
   private async consolidateWindows(
@@ -702,7 +740,7 @@ export class TabGroupingController {
 
       // 1. Cleanup Phase (Destructive)
       // Removes duplicates and auto-delete targets.
-      await this.prepareTabs(state.allTabs, rulesByDomain);
+      await this.prepareTabs(state.allTabs, rulesByDomain, groupingConfig);
 
       // 2. Refresh Phase
       // IMPORTANT: Re-capture state after cleanup to get accurate indices and surviving tabs.
@@ -728,8 +766,14 @@ export class TabGroupingController {
 
         // Visual Group Status (Manual or Managed 2+)
         // Note: For managed, we check the global state context
-        const isGroupA = aProt || state.allTabs.filter(t => t.url === a.url).length >= 2 ? 1 : 0;
-        const isGroupB = bProt || state.allTabs.filter(t => t.url === b.url).length >= 2 ? 1 : 0;
+        const isGroupA =
+          aProt || state.allTabs.filter((t) => t.url === a.url).length >= 2
+            ? 1
+            : 0;
+        const isGroupB =
+          bProt || state.allTabs.filter((t) => t.url === b.url).length >= 2
+            ? 1
+            : 0;
         if (isGroupA !== isGroupB) return isGroupB - isGroupA;
 
         if (aProt !== bProt) return bProt - aProt; // Protected before Managed

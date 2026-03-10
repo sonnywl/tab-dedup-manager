@@ -44,10 +44,10 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 ### 2.1 Layered Redundancy Checks
 
-| Mechanism | Layer | Scope | Goal |
-| :--- | :--- | :--- | :--- |
-| **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged. |
-| **Lazy Movement Check** | Infrastructure | Local | **Surgical Execution**: Checks both `windowId` and `index` immediately before moving. Skips move if both match target state. |
+| Mechanism                | Layer          | Scope  | Goal                                                                                                                         |
+| :----------------------- | :------------- | :----- | :--------------------------------------------------------------------------------------------------------------------------- |
+| **State Fingerprinting** | Application    | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                             |
+| **Lazy Movement Check**  | Infrastructure | Local  | **Surgical Execution**: Checks both `windowId` and `index` immediately before moving. Skips move if both match target state. |
 
 ### 2.2 Unified Global Merging (Zero-Flicker)
 
@@ -62,7 +62,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 - **Internal Title Detection**: `isInternalTitle` recognizes generated patterns (case-insensitive):
   - `domain`, `groupName`, `base - Title`, `base - segment`, or `base/segment`.
-- **Title Fallbacks**: 
+- **Title Fallbacks**:
   - **Managed Groups**: Always have a title (falls back to `sourceDomain` or "Managed Group").
   - **Manual (External) Groups**: Allowed to remain unnamed to respect explicit user organization.
 - **Atomic Protection**: External groups move as cohesive blocks using `chrome.tabGroups.move`.
@@ -79,9 +79,9 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 1.  **Trigger**: User clicks extension icon.
 2.  **Fingerprint**: `lastStateHash` check. Skip if identical.
-3.  **Clean**: Global deduplication and auto-deletion.
+3.  **Clean**: Global deduplication, auto-deletion, and optional single-tab ungrouping.
 4.  **Partition**: Gather `protectedTabIds` from external groups.
-5.  **Map Windows**: 
+5.  **Map Windows**:
     - `byWindow: true` -> Map groups to their current/consolidated windows.
     - `byWindow: false` -> Map all groups to the `activeWindowId`.
 6.  **Simplified Pipeline**:
@@ -102,17 +102,17 @@ The system is verified through a tiered testing approach:
 
 ### Requirements & Invariants Traceability Matrix
 
-| Requirement | Test(s) | Status |
-| :--- | :--- | :--- |
-| **Group threshold (2+ tabs)** | `Invariant: Managed group titles follow rules...` | **Verified** |
-| **1 tab -> ungroup, move to end** | `E2E: splitByPath correctly groups tabs by root...` | **Verified** |
-| **Global Grouping (byWindow: false)** | `Invariant: When byWindow is false...` | **Verified** |
-| **Per-window Grouping (byWindow: true)** | `Invariant: When byWindow is true...` | **Verified** |
-| **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...` | **Verified** |
-| **Manual Group Protection** | `Invariant: Manual groups are moved atomically` | **Verified** |
-| **Manual Group Order Persistence** | `Invariant: Manual groups preserve their internal tab order` | **Verified** |
-| **State Fingerprinting** | `TabGroupingController > execute() > skips when state hash unchanged` | **Verified** |
-| **Lazy Moves (Visual Stability)** | `ChromeTabAdapter > executeGroupPlan() > skips move if already at targetIndex` | **Verified** |
-| **Global Deduplication** | `E2E: global deduplication closes duplicate URLs session-wide...` | **Verified** |
-| **Global Auto-Delete** | `E2E: autoDelete rule correctly closes tabs session-wide...` | **Verified** |
-| **Exclusions (Popups, PWAs, Internal)** | `ChromeTabAdapter > excludes internal pages in getNormalTabs...` | **Verified** |
+| Requirement                                 | Test(s)                                                                        | Status       |
+| :------------------------------------------ | :----------------------------------------------------------------------------- | :----------- |
+| **Group threshold (2+ tabs)**               | `Invariant: Managed group titles follow rules...`                              | **Verified** |
+| **1 tab -> ungroup, move to end**           | `E2E: splitByPath correctly groups tabs by root...`                            | **Verified** |
+| **Global Grouping (byWindow: false)**       | `Invariant: When byWindow is false...`                                         | **Verified** |
+| **Per-window Grouping (byWindow: true)**    | `Invariant: When byWindow is true...`                                          | **Verified** |
+| **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...`                              | **Verified** |
+| **Manual Group Protection**                 | `Invariant: Manual groups are moved atomically`                                | **Verified** |
+| **Manual Group Order Persistence**          | `Invariant: Manual groups preserve their internal tab order`                   | **Verified** |
+| **State Fingerprinting**                    | `TabGroupingController > execute() > skips when state hash unchanged`          | **Verified** |
+| **Lazy Moves (Visual Stability)**           | `ChromeTabAdapter > executeGroupPlan() > skips move if already at targetIndex` | **Verified** |
+| **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`              | **Verified** |
+| **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                   | **Verified** |
+| **Exclusions (Popups, PWAs, Internal)**     | `ChromeTabAdapter > excludes internal pages in getNormalTabs...`               | **Verified** |

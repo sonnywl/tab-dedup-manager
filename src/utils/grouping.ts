@@ -477,7 +477,7 @@ export class TabGroupingService {
             ? asGroupId(existing.groupId)
             : (s.displayName && groupsByTitle?.get(s.displayName)) || null;
 
-      // Mandate: If it's a managed item (not external) and only has 1 tab, 
+      // Mandate: If it's a managed item (not external) and only has 1 tab,
       // it MUST NOT have a groupId (enforces ungrouping).
       if (!s.isExternal && s.tabIds.length < 2) {
         groupId = null;
@@ -511,7 +511,10 @@ export class TabGroupingService {
     });
     if (!consistent) return false;
 
-    if (state.groupId !== null && (state.isExternal || state.tabIds.length >= 2)) {
+    if (
+      state.groupId !== null &&
+      (state.isExternal || state.tabIds.length >= 2)
+    ) {
       if (
         (tabsInGroupCount.get(state.groupId as number) || 0) !==
         state.tabIds.length

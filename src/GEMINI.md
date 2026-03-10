@@ -36,12 +36,13 @@ Destructive operations are applied **globally** before any grouping logic.
 
 - **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest instance.
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
-- **Note**: Manual groups are NOT exempt from global cleanup (Deduplication/Delete).
+- **Global Single-Tab Ungroup** (Optional): Immediately ungroups any group that contains only one tab (if enabled in settings).
+- **Note**: Manual groups are NOT exempt from global cleanup (Deduplication/Delete/Ungroup).
 
 ## Execution Flow (Unified Orchestration)
 
 1.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
-2.  **Cleaning**: Session-wide deduplication and auto-deletion.
+2.  **Cleaning**: Session-wide deduplication, auto-deletion, and single-tab ungrouping.
 3.  **Protection**: Identify manual groups via `isInternalTitle`. Gather `protectedTabIds`.
 4.  **Unified Mapping**:
     - `byWindow: true` -> Map groups to current/consolidated windows.

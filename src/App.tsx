@@ -21,13 +21,17 @@ function normalizeRule(rule: Rule): Rule {
 function useSyncStore() {
   const [state, setStateInternal] = useState<SyncStoreState>({
     rules: [],
-    grouping: { byWindow: false },
+    grouping: { byWindow: false, ungroupSingleTab: false },
   });
 
   const syncToStore = useCallback(async (newState: SyncStoreState) => {
     const { setState } = await startSyncStore({
       rules: [],
-      grouping: { byWindow: false, numWindowsToKeep: 2 },
+      grouping: {
+        byWindow: false,
+        numWindowsToKeep: 2,
+        ungroupSingleTab: false,
+      },
     });
     setStateInternal(newState);
     await setState(newState);
@@ -37,13 +41,17 @@ function useSyncStore() {
     const init = async () => {
       const { getState } = await startSyncStore({
         rules: [],
-        grouping: { byWindow: false, numWindowsToKeep: 2 },
+        grouping: {
+          byWindow: false,
+          numWindowsToKeep: 2,
+          ungroupSingleTab: false,
+        },
       });
       const data = await getState();
       const validRules = (data.rules || []).filter(validateRule);
       setStateInternal({
         rules: validRules,
-        grouping: data.grouping || { byWindow: false },
+        grouping: data.grouping || { byWindow: false, ungroupSingleTab: false },
       });
     };
     init();
@@ -170,6 +178,24 @@ const GroupingSettings = ({
       Grouping Settings
     </label>
     <div className="space-y-4">
+      <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!config.ungroupSingleTab}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                ungroupSingleTab: e.target.checked,
+              })
+            }
+            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">
+            Ungroup groups that only contain one tab
+          </span>
+        </label>
+      </div>
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -212,7 +238,9 @@ const GroupingSettings = ({
                 // If they specifically wanted 2, we can intercept.
                 const finalVal =
                   isNaN(val) || (val === 1 && config.numWindowsToKeep === null)
-                    ? (isNaN(val) ? null : 2)
+                    ? isNaN(val)
+                      ? null
+                      : 2
                     : val;
                 onChange({
                   ...config,

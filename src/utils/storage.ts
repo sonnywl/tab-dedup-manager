@@ -9,6 +9,7 @@ export interface Rule {
 export interface GroupingConfig {
   byWindow: boolean;
   numWindowsToKeep?: number | null | undefined;
+  ungroupSingleTab?: boolean | null | undefined;
 }
 
 export interface SyncStoreState {

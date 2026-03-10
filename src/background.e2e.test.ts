@@ -926,4 +926,52 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     expect(removedIds).toContain(20);
     expect(removedIds).not.toContain(10);
   });
+
+  it("E2E: global single-tab ungrouping immediately ungroups 1-tab groups if enabled", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false, ungroupSingleTab: true },
+    });
+
+    const tabs = [
+      mkTab(1, "https://shared.com/page", 101, 0, 1), // Only tab in group 101
+      mkTab(2, "https://unique.com/page", -1, 1, 1),
+    ];
+
+    currentTabs = tabs;
+    currentGroups = new Map([
+      [101, { id: 101, title: "My Manual Group", windowId: 1 }],
+    ]);
+
+    await controller.execute();
+
+    // Tab 1 should now have groupId -1
+    const tab1 = currentTabs.find((t) => t.id === 1);
+    expect(tab1?.groupId).toBe(-1);
+    expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
+  });
+
+  it("E2E: global single-tab ungrouping skips 1-tab groups if disabled", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false, ungroupSingleTab: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://shared.com/page", 101, 0, 1), // Only tab in group 101
+      mkTab(2, "https://unique.com/page", -1, 1, 1),
+    ];
+
+    currentTabs = tabs;
+    currentGroups = new Map([
+      [101, { id: 101, title: "My Manual Group", windowId: 1 }],
+    ]);
+
+    await controller.execute();
+
+    // Tab 1 should still have groupId 101
+    const tab1 = currentTabs.find((t) => t.id === 1);
+    expect(tab1?.groupId).toBe(101);
+    expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
+  });
 });
