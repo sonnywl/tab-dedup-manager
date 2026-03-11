@@ -175,7 +175,7 @@ const GroupingSettings = ({
 }) => (
   <section className="bg-white rounded-lg shadow p-6 mb-6">
     <label className="block text-sm font-medium text-gray-700 mb-4">
-      Grouping Settings
+      Grouping Behavior
     </label>
     <div className="space-y-4">
       <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
@@ -327,14 +327,14 @@ const RuleRow = React.memo(
                 });
               }}
               className="w-14 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-              aria-label="Split by path segment index"
+              aria-label="Split by url path segment index"
             />
             <button
               disabled={rule.splitByPath === null}
               onClick={() => onUpdate(rule.id, { splitByPath: null })}
               className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
-              title="Clear split path"
-              aria-label="Clear split path"
+              title="Clear url path index"
+              aria-label="Clear url path index"
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
@@ -420,8 +420,8 @@ export default function App() {
           </p>
         </header>
 
-        <AddDomainForm onAdd={handleAddDomain} />
         <GroupingSettings config={grouping} onChange={updateGrouping} />
+        <AddDomainForm onAdd={handleAddDomain} />
 
         <section className="bg-white rounded-lg shadow overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
@@ -429,7 +429,7 @@ export default function App() {
               <tr>
                 <th className="px-6 py-4 text-left">Domain</th>
                 <th className="px-6 py-4 text-left">Auto Delete</th>
-                <th className="px-6 py-4 text-left">Split Path</th>
+                <th className="px-6 py-4 text-left">Split URL</th>
                 <th className="px-6 py-4 text-left">Group Name</th>
                 <th className="px-6 py-4 text-left">Actions</th>
               </tr>
