@@ -207,7 +207,7 @@ export class TabGroupingService {
     url: string | undefined,
     rulesByDomain: RulesByDomain,
   ): boolean {
-    if (!title) return false;
+    if (!title) return true; // Scavenge unnamed groups
 
     const rule = rulesByDomain[domain];
     const base = rule?.groupName || domain;
@@ -345,7 +345,7 @@ export class TabGroupingService {
             tab.url,
             rulesByDomain,
           );
-          groupKey = key;
+          groupKey = `${tab.pinned ? "pinned" : "unpinned"}::${key}`;
           displayName = title;
 
           // Mandate: Only inherit groupId if the title specifically matches what we expect for this tab
