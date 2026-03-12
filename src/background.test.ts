@@ -316,6 +316,38 @@ describe("TabGroupingController", () => {
       expect(endTime - startTime).toBeGreaterThanOrEqual(50);
       expect(mockChrome.tabGroups.update).toHaveBeenCalled();
     });
+
+    it("is idempotent: second execution does nothing after reaching stable state", async () => {
+      // Setup stable state
+      const tab1 = mkTab(1, "google.com", 10, 0, 1);
+      const tab2 = mkTab(2, "google.com", 10, 1, 1);
+      const group10 = { id: 10, title: "google.com", windowId: 1 } as chrome.tabGroups.TabGroup;
+      const tabs = [tab1, tab2];
+
+      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
+      (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
+      (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
+      mockChrome.tabGroups.query.mockResolvedValue([group10]);
+      mockChrome.windows.getCurrent.mockResolvedValue({ type: "normal", id: 1 } as any);
+
+      mockStore.getState.mockResolvedValue({
+        rules: [{ domain: "google.com" }],
+        grouping: { byWindow: false },
+      });
+
+      // Reset mock tracking
+      (controller as any).adapter.executeGroupPlan.mockClear();
+
+      // Trigger 1: Should calculate hash and run once if hash changed from previous test, 
+      // but let's assume it runs once.
+      await controller.execute();
+      const firstRunCalls = (controller as any).adapter.executeGroupPlan.mock.calls.length;
+
+      // Trigger 2: Should skip entirely due to lastStateHash check
+      await controller.execute();
+
+      expect((controller as any).adapter.executeGroupPlan.mock.calls.length).toBe(firstRunCalls);
+    });
   });
 
   describe("processGrouping() — simplified pipeline", () => {
@@ -344,6 +376,7 @@ describe("TabGroupingController", () => {
       });
 
       await controller.processGrouping(
+        [tab1, tab2],
         [tab1, tab2],
         new Map(),
         new Map(),

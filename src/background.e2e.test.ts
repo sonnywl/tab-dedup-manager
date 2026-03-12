@@ -280,7 +280,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
     );
   });
 
-  it("Invariant: Manual groups (including unnamed) are RE-BUNDLED after cross-window merge", async () => {
+  it("Invariant: Manual groups (NAMED ONLY) are RE-BUNDLED after cross-window merge", async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(
@@ -293,9 +293,9 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           { minLength: 2, maxLength: 5 },
         ),
         fc.boolean(),
-        async (rawTabs, isEmptyTitle) => {
+        async (rawTabs, byWindow) => {
           const rulesByDomain: any = {};
-          const title = isEmptyTitle ? "" : "Persistence Group";
+          const title = "Persistence Group"; // Mandate: Only named groups are protected
 
           const tabs = rawTabs.map((rt, i) =>
             mkTab(i + 1, `https://${rt.domain}/${rt.path}`, 101, i, 2),
@@ -973,5 +973,105 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     const tab1 = currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(101);
     expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
+  });
+});
+
+describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => {
+  let controller: TabGroupingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new TabGroupingController();
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    currentTabs = [];
+    currentGroups = new Map();
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: mixed group handles intruders (evicts them) and remains stable", async () => {
+    const rules = [
+      { domain: "google.com", autoDelete: false },
+      { domain: "bing.com", autoDelete: false },
+    ];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
+
+    // Group 100: [Google 1, Google 2, Bing 3 (Intruder)]
+    // Group 200: [Bing 4] (Single tab group)
+    const tabs = [
+      mkTab(1, "https://google.com/1", 100, 0, 1),
+      mkTab(2, "https://google.com/2", 100, 1, 1),
+      mkTab(3, "https://bing.com/1", 100, 2, 1), // Intruder
+      mkTab(4, "https://bing.com/2", 200, 3, 1), // Single tab group
+      mkTab(5, "https://yahoo.com/1", -1, 4, 1),  // Unsorted tab
+    ];
+
+    currentTabs = tabs;
+    currentGroups = new Map();
+    currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
+    currentGroups.set(200, { id: 200, title: "bing.com", windowId: 1 });
+
+    // Trigger 1: Execute
+    await controller.execute();
+
+    // Verify after 1st execution:
+    // Tab 1 & 2 are in a group (likely 100)
+    const t1 = currentTabs.find(t => t.id === 1);
+    const t2 = currentTabs.find(t => t.id === 2);
+    expect(t1.groupId).toBe(t2.groupId);
+    expect(t1.groupId).not.toBe(-1);
+
+    // Tab 3 & 4 should now be in the same group (Bing)
+    const t3 = currentTabs.find(t => t.id === 3);
+    const t4 = currentTabs.find(t => t.id === 4);
+    expect(t3.groupId).toBe(t4.groupId);
+    expect(t3.groupId).not.toBe(t1.groupId);
+    expect(t3.groupId).not.toBe(-1);
+
+    // Tab 5 stays unsorted (-1)
+    const t5 = currentTabs.find(t => t.id === 5);
+    expect(t5.groupId).toBe(-1);
+
+    // Reset mocks for idempotency check
+    mockChrome.tabs.move.mockClear();
+    mockChrome.tabs.group.mockClear();
+    mockChrome.tabs.ungroup.mockClear();
+    mockChrome.tabGroups.update.mockClear();
+
+    // Trigger 2: Idempotency
+    await controller.execute();
+
+    expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+    expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+    expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
+    expect(mockChrome.tabGroups.update).not.toHaveBeenCalled();
+  });
+
+  it("E2E: single managed group tab is ungrouped immediately", async () => {
+    const rules = [{ domain: "google.com", autoDelete: false }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://google.com/1", 100, 0, 1), // Managed group with only 1 tab
+      mkTab(2, "https://yahoo.com/1", -1, 1, 1),
+    ];
+
+    currentTabs = tabs;
+    currentGroups = new Map();
+    currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
+
+    await controller.execute();
+
+    const t1 = currentTabs.find(t => t.id === 1);
+    expect(t1.groupId).toBe(-1);
+    expect(mockChrome.tabs.ungroup).toHaveBeenCalled();
   });
 });

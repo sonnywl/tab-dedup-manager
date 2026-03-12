@@ -539,6 +539,7 @@ export class TabGroupingController {
 
   async processGrouping(
     allTabs: Tab[],
+    windowTabs: Tab[],
     groupMap: GroupMap,
     managedGroupIds: Map<number, string>,
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
@@ -553,29 +554,31 @@ export class TabGroupingController {
         }
       }
 
-      const cache = new CacheManager(allTabs);
+      // Mandate: Use windowTabs (the INTENDED state) for the cache during planning.
+      // This ensures that reposition needs are calculated against where the tab SHOULD be.
+      const planningCache = new CacheManager(windowTabs);
 
       // Pipeline:
-      // 1. Virtual Mapping: Build initial group states based on current tab distribution and group ownership
+      // 1. Virtual Mapping: Build initial group states based on intended tab distribution
       const groupStates = this.service.buildGroupStates(
         groupMap,
-        cache.snapshot(),
+        planningCache.snapshot(),
         groupsByTitle,
         managedGroupIds,
       );
 
-      // 2. Reposition Needs: Calculate which groups need physical changes (repositioning, regrouping, or title updates)
+      // 2. Reposition Needs: Calculate based on intended positions
       const withReposition = this.service.calculateRepositionNeeds(
         groupStates,
-        cache.snapshot(),
+        planningCache.snapshot(),
         windowId,
         managedGroupIds,
       );
 
-      // 3. Plan Creation: Create a concrete plan of physical actions (moves, groups, ungroups)
+      // 3. Plan Creation
       const plan = this.service.createGroupPlan(
         withReposition,
-        cache.snapshot(),
+        planningCache.snapshot(),
         managedGroupIds,
         windowId,
       );
@@ -584,7 +587,7 @@ export class TabGroupingController {
         return { success: true, value: undefined };
       }
 
-      // 4. Surgical Execution: Execute the plan atomically using the tabs we just query-snapshotting
+      // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
       return this.adapter.executeGroupPlan(plan, groupIdToGroup, windowId, {
         tabs: allTabs,
         groups: Array.from(groupIdToGroup.values()),
@@ -802,6 +805,7 @@ export class TabGroupingController {
         );
         await this.processGrouping(
           state.allTabs,
+          tabs,
           groupMap,
           managedGroupIds,
           state.groupIdToGroup,
