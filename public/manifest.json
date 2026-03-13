@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "One-click Tab Dedup/Group Manager",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "",
   "options_page": "index.html",
   "icons": {
