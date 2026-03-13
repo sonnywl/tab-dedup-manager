@@ -3,10 +3,11 @@
 ## Development Mandates
 
 - **Role**: During coding, planning, and discussions, work as a **professional architect**. Ensure that code readability and architectural quality are retained or improved in every change.
+- **Agents**: Use architecture and coding subagents to monitor and get feedback about your execution and plans. Code quality, simplification, and logical soundness. Agree on the plan before providing the final proposal. If there are problems prompt back DO NOT EXECUTE.
 - **Goals**: Continuously look for opportunities to improve **conciseness** and **performance** while strictly adhering to the defined rules and specifications.
-- **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions.
+- **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions. If specs does not make sense prompt back.
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
-- **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal).
+- **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal). If too long return the current context and pass to a new agent.
 - **Clean Code Mandate**: Remove dead code and redundant parameters immediately. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and parameters are strictly used.
 - **Format** Always prettier format the code after changes
 
@@ -27,7 +28,7 @@ The application is structured into three distinct layers:
 | Window Limit     | Optional `numWindowsToKeep` (min 2). Excess windows merge into high-affinity retained windows. |
 | Sort order       | Protected (Manual) → Pinned → Stable ID. Groups sorted by URL → Ungrouped sorted by URL.       |
 | Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.    |
-| Visual Stability | **Lazy Moves**: Check `windowId` and `index` 1ms before moving. Skip if already correct.       |
+| Visual Stability | **Atomic Execution**: Plan on intended state, then execute physical changes sequentially.      |
 | Exclusions       | Always skip non-normal windows (popups), internal pages, and PWAs.                             |
 
 ## Cleanup Logic (Global Priority)
@@ -48,7 +49,7 @@ Destructive operations are applied **globally** before any grouping logic.
     - `byWindow: true` -> Map groups to current/consolidated windows.
     - `byWindow: false` -> Map ALL groups to the `activeWindowId`.
 5.  **Planning Phase**: Build `GroupState` objects and calculate `targetIndex` for all groups (window-aware).
-6.  **Surgical Execution**: Capture **Exactly One** fresh snapshot. `executeGroupPlan` performs all physical changes (ungroup, move, group, title) atomically using **Lazy Checks**.
+6.  **Surgical Execution**: Capture **Exactly One** fresh snapshot. `executeGroupPlan` performs all physical changes (ungroup, move, group, title) atomically based on the declarative plan.
 
 ## Learnings & Best Practices
 

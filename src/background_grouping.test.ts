@@ -140,9 +140,11 @@ describe("TabGroupingService - Comprehensive Logic Tests", () => {
       );
       const repositioned = service.calculateRepositionNeeds(states, cache);
 
-      expect(repositioned[0].displayName).toBe("My Group"); // Manual
-      expect(repositioned[1].displayName).toBe("managed.com"); // Managed
-      expect(repositioned[2].displayName).toBe("other.com"); // Single
+      // New sorting logic interleaves Manual and Managed groups by Title/URL.
+      // "managed.com" < "My Group" (alphabetical)
+      expect(repositioned[0].displayName).toBe("managed.com"); // Managed
+      expect(repositioned[1].displayName).toBe("My Group"); // Manual
+      expect(repositioned[2].displayName).toBe("other.com"); // Single Tab
     });
 
     it("should maintain independent hierarchies in Pinned and Unpinned sections", () => {

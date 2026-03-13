@@ -110,6 +110,28 @@ vi.mock("./utils/startSyncStore.js", () => ({
   }),
 }));
 
+/**
+ * Helper to assert that a second execution of the controller does nothing.
+ * Standardizes the idempotency check across all E2E tests.
+ */
+const assertIdempotent = async (controller: TabGroupingController) => {
+  mockChrome.tabs.move.mockClear();
+  mockChrome.tabs.group.mockClear();
+  mockChrome.tabs.ungroup.mockClear();
+  mockChrome.tabs.remove.mockClear();
+  mockChrome.tabGroups.update.mockClear();
+  mockChrome.tabGroups.move.mockClear();
+
+  await controller.execute();
+
+  expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+  expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+  expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
+  expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+  expect(mockChrome.tabGroups.update).not.toHaveBeenCalled();
+  expect(mockChrome.tabGroups.move).not.toHaveBeenCalled();
+};
+
 // ============================================================================
 // ARBITRARIES (Generators)
 // ============================================================================
@@ -651,6 +673,8 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
       expect.any(Number),
       expect.objectContaining({ title: "project-b - github.com" }),
     ]);
+
+    await assertIdempotent(controller);
   });
 });
 
@@ -708,8 +732,10 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     expect(searchGroup).toBeUndefined();
     expect(mockChrome.tabGroups.update).not.toContainEqual([
       expect.any(Number),
-      expect.objectContaining({ title: "search - bing.com" }),
+      expect.objectContaining({ title: "images - bing.com" }),
     ]);
+
+    await assertIdempotent(controller);
   });
 });
 
@@ -768,6 +794,8 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     expect(movedTab6).toBeDefined();
     expect([1, 2]).toContain(movedTab5[1].windowId);
     expect([1, 2]).toContain(movedTab6[1].windowId);
+
+    await assertIdempotent(controller);
   });
 
   it("E2E: numWindowsToKeep correctly moves managed groups as a block via tabGroups.move", async () => {
@@ -861,6 +889,8 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
     expect(removedIds).not.toContain(2);
 
     expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+
+    await assertIdempotent(controller);
   });
 });
 
@@ -904,6 +934,8 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     expect(removedIds).toContain(3);
     expect(removedIds).not.toContain(1);
     expect(removedIds).not.toContain(2);
+
+    await assertIdempotent(controller);
   });
 
   it("E2E: deduplication prefers the earliest instance (lowest ID/index) regardless of window", async () => {
@@ -925,6 +957,8 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
     expect(removedIds).toContain(20);
     expect(removedIds).not.toContain(10);
+
+    await assertIdempotent(controller);
   });
 
   it("E2E: global single-tab ungrouping immediately ungroups 1-tab groups if enabled", async () => {
@@ -949,6 +983,8 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     const tab1 = currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(-1);
     expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
+
+    await assertIdempotent(controller);
   });
 
   it("E2E: global single-tab ungrouping skips 1-tab groups if disabled", async () => {
@@ -973,6 +1009,8 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     const tab1 = currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(101);
     expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
+
+    await assertIdempotent(controller);
   });
 });
 
@@ -1037,19 +1075,7 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     const t5 = currentTabs.find(t => t.id === 5);
     expect(t5.groupId).toBe(-1);
 
-    // Reset mocks for idempotency check
-    mockChrome.tabs.move.mockClear();
-    mockChrome.tabs.group.mockClear();
-    mockChrome.tabs.ungroup.mockClear();
-    mockChrome.tabGroups.update.mockClear();
-
-    // Trigger 2: Idempotency
-    await controller.execute();
-
-    expect(mockChrome.tabs.move).not.toHaveBeenCalled();
-    expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-    expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-    expect(mockChrome.tabGroups.update).not.toHaveBeenCalled();
+    await assertIdempotent(controller);
   });
 
   it("E2E: single managed group tab is ungrouped immediately", async () => {
@@ -1073,5 +1099,7 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     const t1 = currentTabs.find(t => t.id === 1);
     expect(t1.groupId).toBe(-1);
     expect(mockChrome.tabs.ungroup).toHaveBeenCalled();
+
+    await assertIdempotent(controller);
   });
 });

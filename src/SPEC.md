@@ -25,7 +25,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Key Characteristics**:
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
   - **Resilience**: Implements a `retry` mechanism.
-  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It uses "Lazy Checks" to skip redundant API calls and `TAB_UPDATE_DELAY` (50ms) for Chrome stability.
+  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It executes the plan sequentially and uses `TAB_UPDATE_DELAY` (50ms) for Chrome stability.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
 ### 1.3 Application Layer (`TabGroupingController`)
@@ -47,7 +47,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
 | Mechanism                | Layer          | Scope  | Goal                                                                                                                         |
 | :----------------------- | :------------- | :----- | :--------------------------------------------------------------------------------------------------------------------------- |
 | **State Fingerprinting** | Application    | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                             |
-| **Lazy Movement Check**  | Infrastructure | Local  | **Surgical Execution**: Checks both `windowId` and `index` immediately before moving. Skips move if both match target state. |
+| **Atomic Planning**      | Domain         | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality.       |
 
 ### 2.2 Unified Global Merging (Zero-Flicker)
 
@@ -88,7 +88,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
     - **Mapping**: Build `GroupMap` based on rules and proximity.
     - **Needs**: `calculateRepositionNeeds` determines virtual targets and titling needs.
     - **Plan**: `createGroupPlan` generates declarative instructions.
-    - **Execute**: `executeGroupPlan` captures a final snapshot and performs all physical changes (ungroup, move, group, title) atomically using Lazy Checks.
+    - **Execute**: `executeGroupPlan` captures a final snapshot and performs all physical changes (ungroup, move, group, title) atomically based on the declarative plan.
 
 ---
 
@@ -112,7 +112,7 @@ The system is verified through a tiered testing approach:
 | **Manual Group Protection**                 | `Invariant: Manual groups are moved atomically`                                | **Verified** |
 | **Manual Group Order Persistence**          | `Invariant: Manual groups preserve their internal tab order`                   | **Verified** |
 | **State Fingerprinting**                    | `TabGroupingController > execute() > skips when state hash unchanged`          | **Verified** |
-| **Lazy Moves (Visual Stability)**           | `ChromeTabAdapter > executeGroupPlan() > skips move if already at targetIndex` | **Verified** |
+| **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`              | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                   | **Verified** |
 | **Exclusions (Popups, PWAs, Internal)**     | `ChromeTabAdapter > excludes internal pages in getNormalTabs...`               | **Verified** |

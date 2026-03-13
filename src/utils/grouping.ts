@@ -593,15 +593,12 @@ export class TabGroupingService {
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
         // Rule: Group (Visual) -> Tab (Visual)
-        const isGroupA = a.isExternal || a.tabIds.length >= 2;
-        const isGroupB = b.isExternal || b.tabIds.length >= 2;
-        if (isGroupA !== isGroupB) return isGroupA ? -1 : 1;
+        // Manual groups and Managed groups (2+ tabs) are interleaved by unified key.
+        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
+        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
 
-        // Then Protected -> Managed
-        if (a.isExternal !== b.isExternal) return a.isExternal ? -1 : 1;
-
-        // Rule: Manual groups use Stable ID, Managed items use URL
-        if (a.isExternal) return sortById(a, b);
+        // Rule: All items in their respective clusters are sorted by Title/URL.
         return sortByUrl(a, b);
       });
 

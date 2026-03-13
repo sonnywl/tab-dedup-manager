@@ -198,7 +198,7 @@ describe("TabGroupingController", () => {
       expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
     });
 
-    it("skips calling chrome.tabs.move if tab is already at target window and index", async () => {
+    it("always calls chrome.tabs.move because lazy checks are removed", async () => {
       const tab = mkTab(1, "a.com", -1, 5, 1);
       const plan: any = {
         states: [
@@ -224,7 +224,7 @@ describe("TabGroupingController", () => {
         snapshot, // snapshotOverride
       );
 
-      expect(mockChrome.tabs.move).not.toHaveBeenCalled();
+      expect(mockChrome.tabs.move).toHaveBeenCalled();
     });
 
     it("does NOT skip move if windowId is different", async () => {
