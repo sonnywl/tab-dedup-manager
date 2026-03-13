@@ -293,17 +293,17 @@ const RuleRow = React.memo(
         <td className="px-6 py-4">
           <input
             type="checkbox"
-            checked={rule.autoDelete}
+            checked={!!rule.autoDelete}
             onChange={(e) => {
               if (e.target.checked) {
                 // FIX: Delete clears splitByPath and groupName per spec
-                onUpdate(rule.id, {
+                onUpdate(rule.id!, {
                   autoDelete: true,
                   splitByPath: null,
                   groupName: undefined,
                 });
               } else {
-                onUpdate(rule.id, { autoDelete: false });
+                onUpdate(rule.id!, { autoDelete: false });
               }
             }}
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
@@ -319,10 +319,10 @@ const RuleRow = React.memo(
               value={
                 typeof rule.splitByPath === "number" ? rule.splitByPath : ""
               }
-              disabled={isSplitDisabled}
+              disabled={!!isSplitDisabled}
               onChange={(e) => {
                 const val = parseInt(e.target.value, 10);
-                onUpdate(rule.id, {
+                onUpdate(rule.id!, {
                   splitByPath: isNaN(val) || val <= 0 ? null : val,
                 });
               }}
@@ -331,7 +331,7 @@ const RuleRow = React.memo(
             />
             <button
               disabled={rule.splitByPath === null}
-              onClick={() => onUpdate(rule.id, { splitByPath: null })}
+              onClick={() => onUpdate(rule.id!, { splitByPath: null })}
               className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
               title="Clear url path index"
               aria-label="Clear url path index"
@@ -343,14 +343,14 @@ const RuleRow = React.memo(
         <td className="px-6 py-4">
           <GroupNameInput
             value={rule.groupName || ""}
-            disabled={isGroupNameDisabled}
-            onChange={(val) => onUpdate(rule.id, { groupName: val })}
+            disabled={!!isGroupNameDisabled}
+            onChange={(val) => onUpdate(rule.id!, { groupName: val })}
             existingGroups={existingGroups}
           />
         </td>
         <td className="px-6 py-4">
           <button
-            onClick={() => onRemove(rule.id)}
+            onClick={() => onRemove(rule.id!)}
             className="text-red-600 hover:text-red-800 transition-colors p-1 rounded hover:bg-red-50"
             aria-label={`Remove rule for ${rule.domain}`}
           >
