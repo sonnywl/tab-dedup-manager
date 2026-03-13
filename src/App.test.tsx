@@ -225,7 +225,7 @@ describe("App Component", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const splitInput = await screen.findByLabelText(/split by path/i);
+    const splitInput = await screen.findByLabelText(/split by.*path/i);
     await user.type(splitInput, "1");
 
     await waitFor(() => {
@@ -237,7 +237,7 @@ describe("App Component", () => {
     });
 
     // Clear it
-    const clearButton = screen.getByTitle(/clear split path/i);
+    const clearButton = screen.getByTitle(/clear.*path.*index/i);
     await user.click(clearButton);
 
     await waitFor(() => {
@@ -349,7 +349,7 @@ describe("App Component", () => {
     render(<App />);
 
     const groupInputs = await screen.findAllByLabelText(/group name/i);
-    const splitInputs = await screen.findAllByLabelText(/split by path/i);
+    const splitInputs = await screen.findAllByLabelText(/split by.*path/i);
 
     expect(groupInputs[0]).toBeDisabled();
     expect(splitInputs[0]).toBeDisabled();

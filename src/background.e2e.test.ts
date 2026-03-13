@@ -1103,3 +1103,43 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     await assertIdempotent(controller);
   });
 });
+
+describe("TabGrouping E2E Title Management Tests", () => {
+  let controller: TabGroupingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new TabGroupingController();
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    currentTabs = [];
+    currentGroups = new Map();
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: Newly created groups have titles visible after ONE click", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    // Sets up 2 loose tabs.
+    const tabs = [
+      mkTab(1, "https://google.com/1"),
+      mkTab(2, "https://google.com/2"),
+    ];
+    currentTabs = tabs;
+    currentGroups = new Map();
+
+    // Executes grouping.
+    await controller.execute();
+
+    // Verifies mockChrome.tabGroups.update was called with the correct title.
+    expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({ title: "google.com" }),
+    );
+  });
+});

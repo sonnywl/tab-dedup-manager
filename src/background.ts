@@ -362,8 +362,9 @@ export class ChromeTabAdapter {
                 (state.isExternal
                   ? ""
                   : state.sourceDomain || "Managed Group");
-              if (targetTitle) {
-                titlesToUpdate.set(gid, targetTitle);
+              
+              if (targetTitle || state.groupId === null) {
+                titlesToUpdate.set(gid, targetTitle || "Managed Group");
               }
               return gid;
             },
@@ -380,7 +381,7 @@ export class ChromeTabAdapter {
           chrome.tabGroups.update(gid, { title, collapsed: false }),
         );
         if (!r.success)
-          console.warn(`Failed to update title for group ${gid}:`, r.error);
+          console.warn(`[Warning] Failed to update title for group ${gid}:`, r.error);
       }
 
       // Mandate: Final cleanup pass to ungroup any groups that have only a single tab.
