@@ -258,7 +258,6 @@ describe("TabGroupingService - Comprehensive Logic Tests", () => {
 
               if (groupIndices.length > 0 && tabIndices.length > 0) {
                 const minTabIdx = Math.min(...tabIndices);
-                const maxGroupIdx = Math.max(...groupIndices);
                 // Since targetIndex is the START of the group, we need to ensure minTabIdx >= maxGroupIdx + length
                 const lastGroup = sectionStates
                   .filter((s) => s.tabIds.length >= 2 || s.isExternal)

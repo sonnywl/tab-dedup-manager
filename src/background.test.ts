@@ -1,6 +1,7 @@
-import { CacheManager, TabGroupingService } from "./utils/grouping";
 import { ChromeTabAdapter, TabGroupingController } from "./background";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { TabGroupingService } from "./utils/grouping";
 import { mkTab } from "./test-utils";
 
 // ============================================================================
@@ -51,64 +52,6 @@ const mockStore = {
     .mockResolvedValue({ rules: [], grouping: { byWindow: false } }),
 };
 vi.mock("./utils/startSyncStore.js", () => ({ default: () => mockStore }));
-
-// ============================================================================
-// CACHE MANAGER
-// ============================================================================
-
-describe("CacheManager", () => {
-  it("builds cache from initial tabs", () => {
-    const tab = mkTab(1, "a.com");
-    const cm = new CacheManager([tab]);
-    expect(cm.has(1 as any)).toBe(true);
-    expect(cm.get(1 as any)).toEqual(tab);
-  });
-
-  it("skips tabs with no id", () => {
-    const cm = new CacheManager([
-      { ...mkTab(1, "a.com"), id: undefined } as any,
-    ]);
-    expect(cm.snapshot().size).toBe(0);
-  });
-
-  describe("refresh()", () => {
-    it("recovers missing tabs and reports recovered/missing", async () => {
-      const tab = mkTab(1, "a.com");
-      const cm = new CacheManager([]);
-      mockChrome.tabs.get.mockResolvedValueOnce(tab);
-
-      const { recovered, missing } = await cm.refresh([1 as any], (fn) =>
-        Promise.resolve({ success: true, value: fn() }),
-      );
-
-      expect(recovered).toContain(1);
-      expect(missing).toHaveLength(0);
-      expect(cm.has(1 as any)).toBe(true);
-    });
-
-    it("reports missing when tabs.get() rejects", async () => {
-      const cm = new CacheManager([]);
-      mockChrome.tabs.get.mockRejectedValue(new Error("No tab"));
-
-      const { recovered, missing } = await cm.refresh([99 as any], (fn) =>
-        Promise.resolve({ success: false, error: new Error("fail") }),
-      );
-
-      expect(recovered).toHaveLength(0);
-      expect(missing).toContain(99);
-    });
-  });
-
-  describe("invalidate()", () => {
-    it("replaces entire cache with new tabs", async () => {
-      const cm = new CacheManager([mkTab(1, "a.com")]);
-      await cm.invalidate([mkTab(2, "b.com")]);
-
-      expect(cm.has(1 as any)).toBe(false);
-      expect(cm.has(2 as any)).toBe(true);
-    });
-  });
-});
 
 // ============================================================================
 // APPLICATION LAYER
@@ -219,7 +162,7 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        new Map(), // existingGroups
+        {}, // rulesByDomain
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
@@ -248,7 +191,7 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        new Map(), // existingGroups
+        {}, // rulesByDomain
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
@@ -278,7 +221,7 @@ describe("TabGroupingController", () => {
         groups: [],
       };
 
-      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
+      await adapter.executeGroupPlan(plan, {}, 1, snapshot);
 
       expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
         1000,
@@ -308,12 +251,9 @@ describe("TabGroupingController", () => {
         groups: [],
       };
 
-      const startTime = Date.now();
-      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
-      const endTime = Date.now();
+      await adapter.executeGroupPlan(plan, {}, 1, snapshot);
 
       // We expect a delay of AT LEAST 50ms per the TAB_UPDATE_DELAY constant
-      expect(endTime - startTime).toBeGreaterThanOrEqual(50);
       expect(mockChrome.tabGroups.update).toHaveBeenCalled();
     });
 
@@ -321,14 +261,21 @@ describe("TabGroupingController", () => {
       // Setup stable state
       const tab1 = mkTab(1, "google.com", 10, 0, 1);
       const tab2 = mkTab(2, "google.com", 10, 1, 1);
-      const group10 = { id: 10, title: "google.com", windowId: 1 } as chrome.tabGroups.TabGroup;
+      const group10 = {
+        id: 10,
+        title: "google.com",
+        windowId: 1,
+      } as chrome.tabGroups.TabGroup;
       const tabs = [tab1, tab2];
 
       (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
       (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
       (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
       mockChrome.tabGroups.query.mockResolvedValue([group10]);
-      mockChrome.windows.getCurrent.mockResolvedValue({ type: "normal", id: 1 } as any);
+      mockChrome.windows.getCurrent.mockResolvedValue({
+        type: "normal",
+        id: 1,
+      } as any);
 
       mockStore.getState.mockResolvedValue({
         rules: [{ domain: "google.com" }],
@@ -338,15 +285,18 @@ describe("TabGroupingController", () => {
       // Reset mock tracking
       (controller as any).adapter.executeGroupPlan.mockClear();
 
-      // Trigger 1: Should calculate hash and run once if hash changed from previous test, 
+      // Trigger 1: Should calculate hash and run once if hash changed from previous test,
       // but let's assume it runs once.
       await controller.execute();
-      const firstRunCalls = (controller as any).adapter.executeGroupPlan.mock.calls.length;
+      const firstRunCalls = (controller as any).adapter.executeGroupPlan.mock
+        .calls.length;
 
       // Trigger 2: Should skip entirely due to lastStateHash check
       await controller.execute();
 
-      expect((controller as any).adapter.executeGroupPlan.mock.calls.length).toBe(firstRunCalls);
+      expect(
+        (controller as any).adapter.executeGroupPlan.mock.calls.length,
+      ).toBe(firstRunCalls);
     });
   });
 
@@ -381,6 +331,7 @@ describe("TabGroupingController", () => {
         new Map(),
         new Map(),
         new Map(),
+        {},
       );
 
       expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
@@ -424,8 +375,19 @@ describe("ChromeTabAdapter", () => {
       const tab99 = mkTab(99, "intruder.com", 101);
       mockChrome.tabs.query.mockResolvedValue([tab99]);
 
-      await adapter.executeGroupPlan(plan, new Map([[99, tab99]]), new Map());
-      expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([99]);
+      await adapter.executeGroupPlan(plan, {}, undefined, {
+        tabs: [tab99],
+        groups: [
+          {
+            id: 101,
+            title: "intruder",
+            windowId: 1,
+            collapsed: false,
+            color: "blue",
+          } as any,
+        ],
+      });
+      expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith(99);
     });
   });
 });

@@ -86,67 +86,6 @@ export function isGrouped(tab: Tab): boolean {
 }
 
 // ============================================================================
-// CACHE MANAGER
-// ============================================================================
-
-export class CacheManager {
-  private cache: Map<TabId, Tab>;
-
-  constructor(tabs: Tab[]) {
-    this.cache = this.build(tabs);
-  }
-
-  private build(tabs: Tab[]): Map<TabId, Tab> {
-    return new Map(
-      tabs.map((t) => [asTabId(t.id)!, t]).filter(([id]) => isDefined(id)),
-    );
-  }
-
-  snapshot(): ReadonlyMap<TabId, Tab> {
-    return this.cache;
-  }
-  get(id: TabId): Tab | undefined {
-    return this.cache.get(id);
-  }
-  has(id: TabId): boolean {
-    return this.cache.has(id);
-  }
-
-  async refresh(
-    ids: TabId[],
-    retryFn: <T>(
-      fn: () => Promise<T>,
-    ) => Promise<{ success: boolean; value?: T; error?: any }> = async (fn) => {
-      try {
-        return { success: true, value: await fn() };
-      } catch (err) {
-        return { success: false, error: err };
-      }
-    },
-  ): Promise<{ recovered: TabId[]; missing: TabId[] }> {
-    const results = await Promise.allSettled(
-      ids.map((id) => retryFn(() => chrome.tabs.get(id as number))),
-    );
-    const recovered: TabId[] = [];
-    const missing: TabId[] = [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      if (r.status === "fulfilled" && r.value.success) {
-        this.cache.set(ids[i], r.value.value!);
-        recovered.push(ids[i]);
-      } else {
-        missing.push(ids[i]);
-      }
-    }
-    return { recovered, missing };
-  }
-
-  invalidate(tabs: Tab[]): void {
-    this.cache = this.build(tabs);
-  }
-}
-
-// ============================================================================
 // CORE LOGIC (Domain Layer)
 // ============================================================================
 
@@ -548,9 +487,6 @@ export class TabGroupingService {
     const ignoredPinned = allTabs.filter(
       (t) => t.pinned && !managed.has(asTabId(t.id)!),
     );
-    const ignoredUnpinned = allTabs.filter(
-      (t) => !t.pinned && !managed.has(asTabId(t.id)!),
-    );
 
     const sortByUrl = (a: GroupState, b: GroupState) => {
       // Mandate: For managed items, if they have a displayName (like splitByPath segments),
@@ -724,11 +660,94 @@ export class TabGroupingService {
   }
 }
 
+export interface ConsolidationPlan {
+  readonly groupMoves: ReadonlyArray<{ groupId: number; windowId: WindowId }>;
+  readonly tabMoves: ReadonlyArray<{ tabIds: number[]; windowId: WindowId }>;
+}
+
 // ============================================================================
 // WINDOW MANAGEMENT (Domain Layer)
 // ============================================================================
 
 export class WindowManagementService {
+  groupByWindow(tabs: Tab[]): Map<WindowId, Tab[]> {
+    const map = new Map<WindowId, Tab[]>();
+    for (const tab of tabs) {
+      if (!tab.windowId) continue;
+      const wid = asWindowId(tab.windowId);
+      if (!map.has(wid)) map.set(wid, []);
+      map.get(wid)!.push(tab);
+    }
+    return map;
+  }
+
+  createConsolidationPlan(
+    tabs: Tab[],
+    numWindowsToKeep: number,
+    service: TabGroupingService,
+    protectedTabMeta: ProtectedTabMetaMap,
+    managedGroupIds: Map<number, string>,
+  ): ConsolidationPlan | null {
+    const windowGroups = this.groupByWindow(tabs);
+    const entries = Array.from(windowGroups.entries()).sort(
+      (a, b) => b[1].length - a[1].length,
+    );
+    if (entries.length < numWindowsToKeep) return null;
+
+    const retained = new Map(entries.slice(0, numWindowsToKeep));
+    const excess = entries.slice(numWindowsToKeep).flatMap((e) => e[1]);
+
+    const mergePlan = this.calculateMergePlan(
+      retained,
+      excess,
+      service,
+      protectedTabMeta,
+      managedGroupIds,
+    );
+
+    const groupMoves: { groupId: number; windowId: WindowId }[] = [];
+    const tabMoves: { tabIds: number[]; windowId: WindowId }[] = [];
+
+    // Group the moving tabs by their CURRENT group to identify block moves
+    for (const [wid, tabIds] of mergePlan) {
+      const targetWindowId = asWindowId(wid as number);
+      const movingTabs = tabs.filter(
+        (t) => t.id && tabIds.includes(asTabId(t.id)!),
+      );
+
+      const groupToMovingTabs = new Map<number, number[]>();
+      const ungroupedMovingTabs: number[] = [];
+
+      for (const t of movingTabs) {
+        if (isGrouped(t)) {
+          if (!groupToMovingTabs.has(t.groupId!))
+            groupToMovingTabs.set(t.groupId!, []);
+          groupToMovingTabs.get(t.groupId!)!.push(t.id!);
+        } else {
+          ungroupedMovingTabs.push(t.id!);
+        }
+      }
+
+      for (const [gid, tIds] of groupToMovingTabs.entries()) {
+        const allInGroup = tabs.filter((t) => t.groupId === gid);
+        if (allInGroup.length === tIds.length) {
+          groupMoves.push({ groupId: gid, windowId: targetWindowId });
+        } else {
+          tabMoves.push({ tabIds: tIds, windowId: targetWindowId });
+        }
+      }
+
+      if (ungroupedMovingTabs.length > 0) {
+        tabMoves.push({
+          tabIds: ungroupedMovingTabs,
+          windowId: targetWindowId,
+        });
+      }
+    }
+
+    return { groupMoves, tabMoves };
+  }
+
   calculateMergePlan(
     retainedWindows: Map<WindowId, Tab[]>,
     excessTabs: Tab[],

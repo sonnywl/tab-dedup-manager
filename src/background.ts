@@ -1,9 +1,8 @@
 import {
-  CacheManager,
+  ConsolidationPlan,
   GroupId,
   GroupMap,
   GroupPlan,
-  ProtectedTabMetaMap,
   RulesByDomain,
   Tab,
   TabGroupingService,
@@ -22,6 +21,7 @@ import {
   validateRule,
 } from "./utils/storage.js";
 
+// @ts-ignore
 import startSyncStore from "./utils/startSyncStore.js";
 
 // ============================================================================
@@ -54,8 +54,6 @@ function debounce<T extends (...args: any[]) => any>(fn: T, delay: number) {
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
-
-const TAB_UPDATE_DELAY = 100;
 
 async function retry<T>(
   fn: () => Promise<T>,
@@ -143,7 +141,8 @@ function validateTab(tab: any): tab is Tab {
 
 export class ChromeTabAdapter {
   private readonly MAX_BATCH = 100;
-  private readonly RATE_DELAY = 50;
+  private readonly RATE_DELAY = 30;
+  private service = new TabGroupingService();
 
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
@@ -239,16 +238,56 @@ export class ChromeTabAdapter {
     }
 
     for (const batch of this.batch(toUngroup)) {
-      const r = await retry(() => chrome.tabs.ungroup(batch as number[]));
-      if (!r.success)
-        console.warn("Failed to ungroup single-tab groups:", r.error);
+      if (batch.length === 0) continue;
+      await retry(() =>
+        chrome.tabs.ungroup(
+          batch.length === 1 ? batch[0] : (batch as [number, ...number[]]),
+        ),
+      );
       await sleep(this.RATE_DELAY);
+    }
+  }
+
+  async executeConsolidationPlan(
+    plan: ConsolidationPlan,
+    snapshotTabs: Tab[],
+  ): Promise<Result<void, Error>> {
+    try {
+      // 1. Move Groups
+      for (const gm of plan.groupMoves) {
+        await runAtomicOperation(
+          () =>
+            chrome.tabGroups.move(gm.groupId, {
+              windowId: gm.windowId,
+              index: -1,
+            }),
+          snapshotTabs,
+          this.RATE_DELAY,
+        );
+      }
+
+      // 2. Move Individual Tabs
+      for (const tm of plan.tabMoves) {
+        await runAtomicOperation(
+          () =>
+            chrome.tabs.move(tm.tabIds, { windowId: tm.windowId, index: -1 }),
+          snapshotTabs,
+          this.RATE_DELAY,
+        );
+      }
+
+      return { success: true, value: undefined };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
     }
   }
 
   async executeGroupPlan(
     plan: GroupPlan,
-    existingGroups: Map<number, chrome.tabGroups.TabGroup>,
+    rulesByDomain: RulesByDomain,
     targetWindowId?: number,
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
   ): Promise<Result<void, Error>> {
@@ -265,7 +304,12 @@ export class ChromeTabAdapter {
 
         if (validUngroup.length > 0) {
           await runAtomicOperation(
-            () => chrome.tabs.ungroup(validUngroup as number[]),
+            () =>
+              chrome.tabs.ungroup(
+                validUngroup.length === 1
+                  ? (validUngroup[0] as number)
+                  : (validUngroup as unknown as [number, ...number[]]),
+              ),
             snapshot.tabs,
             this.RATE_DELAY,
           );
@@ -320,7 +364,12 @@ export class ChromeTabAdapter {
           });
           if (toUngroup.length > 0) {
             await runAtomicOperation(
-              () => chrome.tabs.ungroup(toUngroup as number[]),
+              () =>
+                chrome.tabs.ungroup(
+                  toUngroup.length === 1
+                    ? (toUngroup[0] as number)
+                    : (toUngroup as unknown as [number, ...number[]]),
+                ),
               snapshot.tabs,
               this.RATE_DELAY,
             );
@@ -331,7 +380,7 @@ export class ChromeTabAdapter {
         if (state.tabIds.length > 0) {
           await runAtomicOperation(
             () =>
-              chrome.tabs.move(state.tabIds as number[], {
+              chrome.tabs.move(state.tabIds as unknown as number[], {
                 windowId: targetWindowId,
                 index: state.targetIndex,
               }),
@@ -349,8 +398,10 @@ export class ChromeTabAdapter {
         if (shouldGroup) {
           await runAtomicOperation(
             async () => {
+              const ids = state.tabIds as unknown as number[];
               const options: chrome.tabs.GroupOptions = {
-                tabIds: state.tabIds as number[],
+                tabIds:
+                  ids.length === 1 ? ids[0] : (ids as [number, ...number[]]),
               };
               if (state.groupId !== null) {
                 options.groupId = state.groupId as number;
@@ -359,10 +410,8 @@ export class ChromeTabAdapter {
               const gid = await chrome.tabs.group(options);
               const targetTitle =
                 state.displayName ||
-                (state.isExternal
-                  ? ""
-                  : state.sourceDomain || "Managed Group");
-              
+                (state.isExternal ? "" : state.sourceDomain || "Managed Group");
+
               if (targetTitle || state.groupId === null) {
                 titlesToUpdate.set(gid, targetTitle || "Managed Group");
               }
@@ -374,14 +423,16 @@ export class ChromeTabAdapter {
         }
       }
 
-      await sleep(TAB_UPDATE_DELAY);
       // Final Phase: Apply all collected title updates after layout is stable
       for (const [gid, title] of titlesToUpdate) {
         const r = await retry(() =>
           chrome.tabGroups.update(gid, { title, collapsed: false }),
         );
         if (!r.success)
-          console.warn(`[Warning] Failed to update title for group ${gid}:`, r.error);
+          console.warn(
+            `[Warning] Failed to update title for group ${gid}:`,
+            r.error,
+          );
       }
 
       // Mandate: Final cleanup pass to ungroup any groups that have only a single tab.
@@ -413,7 +464,13 @@ export class ChromeTabAdapter {
       }
 
       if (toUngroupIds.length > 0) {
-        await retry(() => chrome.tabs.ungroup(toUngroupIds));
+        await retry(() =>
+          chrome.tabs.ungroup(
+            toUngroupIds.length === 1
+              ? toUngroupIds[0]
+              : (toUngroupIds as [number, ...number[]]),
+          ),
+        );
       }
 
       return { success: true, value: undefined };
@@ -471,7 +528,6 @@ export class TabGroupingController {
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
     config: GroupingConfig,
-    activeWindowId: number | undefined,
   ): string {
     return JSON.stringify({
       tabs: [...tabs]
@@ -486,7 +542,6 @@ export class TabGroupingController {
         })),
       rules: rulesByDomain,
       config,
-      activeWindowId,
     });
   }
 
@@ -523,6 +578,7 @@ export class TabGroupingController {
     groupMap: GroupMap,
     managedGroupIds: Map<number, string>,
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+    rulesByDomain: RulesByDomain,
     windowId?: WindowId,
   ): Promise<Result<void, Error>> {
     try {
@@ -536,13 +592,15 @@ export class TabGroupingController {
 
       // Mandate: Use windowTabs (the INTENDED state) for the cache during planning.
       // This ensures that reposition needs are calculated against where the tab SHOULD be.
-      const planningCache = new CacheManager(windowTabs);
+      const planningCache = new Map<TabId, Tab>(
+        windowTabs.map((t) => [asTabId(t.id)!, t]),
+      );
 
       // Pipeline:
       // 1. Virtual Mapping: Build initial group states based on intended tab distribution
       const groupStates = this.service.buildGroupStates(
         groupMap,
-        planningCache.snapshot(),
+        planningCache,
         groupsByTitle,
         managedGroupIds,
       );
@@ -550,7 +608,7 @@ export class TabGroupingController {
       // 2. Reposition Needs: Calculate based on intended positions
       const withReposition = this.service.calculateRepositionNeeds(
         groupStates,
-        planningCache.snapshot(),
+        planningCache,
         windowId,
         managedGroupIds,
       );
@@ -558,7 +616,7 @@ export class TabGroupingController {
       // 3. Plan Creation
       const plan = this.service.createGroupPlan(
         withReposition,
-        planningCache.snapshot(),
+        planningCache,
         managedGroupIds,
         windowId,
       );
@@ -568,7 +626,7 @@ export class TabGroupingController {
       }
 
       // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
-      return this.adapter.executeGroupPlan(plan, groupIdToGroup, windowId, {
+      return this.adapter.executeGroupPlan(plan, rulesByDomain, windowId, {
         tabs: allTabs,
         groups: Array.from(groupIdToGroup.values()),
       });
@@ -638,47 +696,89 @@ export class TabGroupingController {
     }
   }
 
-  private async consolidateWindows(
-    tabs: Tab[],
-    numWindowsToKeep: number,
-    protectedTabMeta: ProtectedTabMetaMap,
-    managedGroupIds: Map<number, string>,
-  ): Promise<Map<WindowId, Tab[]>> {
-    const windowGroups = await this.groupByWindow(tabs);
-    const entries = Array.from(windowGroups.entries()).sort(
-      (a, b) => b[1].length - a[1].length,
-    );
-    if (entries.length <= numWindowsToKeep) return windowGroups;
+  private async ensureActiveWindowId(): Promise<number | undefined> {
+    const activeWindow = await chrome.windows.getCurrent();
+    if (activeWindow.type === "normal" && activeWindow.id !== undefined) {
+      return activeWindow.id;
+    }
+    const allWindows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    return allWindows[0]?.id;
+  }
 
-    const retained = new Map(entries.slice(0, numWindowsToKeep));
-    const excess = entries.slice(numWindowsToKeep).flatMap((e) => e[1]);
-    const mergePlan = this.windowService.calculateMergePlan(
-      retained,
-      excess,
+  private async runConsolidationPhase(
+    state: BrowserState,
+    rulesByDomain: RulesByDomain,
+    groupingConfig: GroupingConfig,
+  ): Promise<BrowserState> {
+    if (
+      !groupingConfig.byWindow ||
+      !isDefined(groupingConfig.numWindowsToKeep)
+    ) {
+      return state;
+    }
+
+    const { protectedMeta, managedGroupIds } =
+      this.service.identifyProtectedTabs(
+        state.allTabs,
+        state.groupIdToGroup,
+        rulesByDomain,
+      );
+
+    const plan = this.windowService.createConsolidationPlan(
+      state.allTabs,
+      groupingConfig.numWindowsToKeep,
       this.service,
-      protectedTabMeta,
+      protectedMeta,
       managedGroupIds,
     );
 
-    // Build the final map by adding excess tabs to their target windows
-    const result = new Map<WindowId, Tab[]>(retained);
-    const tabsById = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
-
-    for (const [wid, tabIds] of mergePlan) {
-      const targetWid = asWindowId(wid as number);
-      const targetWindowTabs = result.get(targetWid) || [];
-      const incomingTabs = tabIds
-        .map((id) => {
-          const t = tabsById.get(id);
-          // Clone and update windowId to reflect its intended destination
-          return t ? { ...t, windowId: targetWid } : undefined;
-        })
-        .filter(isDefined);
-
-      result.set(targetWid, [...targetWindowTabs, ...incomingTabs]);
+    if (plan) {
+      const res = await this.adapter.executeConsolidationPlan(
+        plan,
+        state.allTabs,
+      );
+      if (!res.success) throw res.error;
+      return this.captureBrowserState();
     }
 
-    return result;
+    return state;
+  }
+
+  private async runGroupingPhase(
+    state: BrowserState,
+    rulesByDomain: RulesByDomain,
+    groupingConfig: GroupingConfig,
+    activeWindowId: number,
+  ): Promise<void> {
+    const windowMap = groupingConfig.byWindow
+      ? await this.groupByWindow(state.allTabs)
+      : new Map([[asWindowId(activeWindowId), state.allTabs]]);
+
+    for (const [wid, tabs] of windowMap) {
+      const { protectedMeta, managedGroupIds } =
+        this.service.identifyProtectedTabs(
+          tabs,
+          state.groupIdToGroup,
+          rulesByDomain,
+        );
+
+      const groupMap = this.service.buildGroupMap(
+        tabs,
+        rulesByDomain,
+        state.groupIdToGroup,
+        protectedMeta,
+      );
+
+      await this.processGrouping(
+        state.allTabs,
+        tabs,
+        groupMap,
+        managedGroupIds,
+        state.groupIdToGroup,
+        rulesByDomain,
+        wid,
+      );
+    }
   }
 
   async execute(): Promise<void> {
@@ -691,114 +791,43 @@ export class TabGroupingController {
       const { rulesByDomain, config: groupingConfig } = config;
 
       let state = await this.captureBrowserState();
-      const activeWindow = await chrome.windows.getCurrent();
-      let activeWindowId =
-        activeWindow.type === "normal" ? activeWindow.id : undefined;
-
-      // Ensure we have a valid target window for global grouping
-      if (activeWindowId === undefined) {
-        const allWindows = await chrome.windows.getAll({
-          windowTypes: ["normal"],
-        });
-        activeWindowId = allWindows[0]?.id
-          ? asWindowId(allWindows[0].id)
-          : undefined;
-      }
-
+      const activeWindowId = await this.ensureActiveWindowId();
       if (activeWindowId === undefined) {
         console.warn("No normal windows found to group tabs in.");
         return;
       }
 
-      const hash = this.stateHash(
-        state.allTabs,
-        rulesByDomain,
-        groupingConfig,
-        activeWindowId,
-      );
+      const hash = this.stateHash(state.allTabs, rulesByDomain, groupingConfig);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
         return;
       }
 
-      // 1. Cleanup Phase (Destructive)
-      // Removes duplicates and auto-delete targets.
+      // 1. Cleanup & Refresh
       await this.prepareTabs(state.allTabs, rulesByDomain, groupingConfig);
-
-      // 2. Refresh Phase
-      // IMPORTANT: Re-capture state after cleanup to get accurate indices and surviving tabs.
       state = await this.captureBrowserState();
 
-      // 3. Identification Phase
-      // Identify Protected Tabs (External groups) using fresh state.
-      const { protectedMeta, managedGroupIds } =
-        this.service.identifyProtectedTabs(
-          state.allTabs,
-          state.groupIdToGroup,
-          rulesByDomain,
-        );
+      // 2. Phase 1: Window Consolidation
+      state = await this.runConsolidationPhase(
+        state,
+        rulesByDomain,
+        groupingConfig,
+      );
 
-      // 4. Stable Sort survivors before window mapping
-      const processed = [...state.allTabs].sort((a, b) => {
-        const aId = asTabId(a.id);
-        const bId = asTabId(b.id);
-        const aProt = protectedMeta.has(aId!) ? 1 : 0;
-        const bProt = protectedMeta.has(bId!) ? 1 : 0;
+      // 3. Phase 2: Grouping Pass
+      await this.runGroupingPhase(
+        state,
+        rulesByDomain,
+        groupingConfig,
+        activeWindowId,
+      );
 
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1; // Pinned first
-
-        // Visual Group Status (Manual or Managed 2+)
-        // Note: For managed, we check the global state context
-        const isGroupA =
-          aProt || state.allTabs.filter((t) => t.url === a.url).length >= 2
-            ? 1
-            : 0;
-        const isGroupB =
-          bProt || state.allTabs.filter((t) => t.url === b.url).length >= 2
-            ? 1
-            : 0;
-        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
-
-        if (aProt !== bProt) return bProt - aProt; // Protected before Managed
-        return (a.id ?? 0) - (b.id ?? 0); // Stability
-      });
-
-      // 5. Window Consolidation & Mapping (Unified)
-      const windowMap = groupingConfig.byWindow
-        ? isDefined(groupingConfig.numWindowsToKeep)
-          ? await this.consolidateWindows(
-              processed,
-              groupingConfig.numWindowsToKeep,
-              protectedMeta,
-              managedGroupIds,
-            )
-          : await this.groupByWindow(processed)
-        : new Map([[asWindowId(activeWindowId), processed]]);
-
-      // 6. Grouping Pass
-      for (const [wid, tabs] of windowMap) {
-        const groupMap = this.service.buildGroupMap(
-          tabs,
-          rulesByDomain,
-          state.groupIdToGroup,
-          protectedMeta,
-        );
-        await this.processGrouping(
-          state.allTabs,
-          tabs,
-          groupMap,
-          managedGroupIds,
-          state.groupIdToGroup,
-          wid,
-        );
-      }
-
+      // 4. Finalize state hash
       const finalState = await this.captureBrowserState();
       this.lastStateHash = this.stateHash(
         finalState.allTabs,
         rulesByDomain,
         groupingConfig,
-        activeWindowId,
       );
     } catch (err) {
       console.warn("Execute error:", err);

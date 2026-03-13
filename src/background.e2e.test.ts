@@ -1,10 +1,5 @@
 import { ChromeTabAdapter, TabGroupingController } from "./background";
-import {
-  TabGroupingService,
-  WindowManagementService,
-  asTabId,
-  asWindowId,
-} from "./utils/grouping";
+import { TabGroupingService, asTabId, asWindowId } from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import fc from "fast-check";
@@ -32,14 +27,16 @@ const mockChrome = {
   tabs: {
     group: vi.fn().mockImplementation((options) => {
       const gid = options.groupId || Math.floor(Math.random() * 1000) + 1000;
-      const tabIds = options.tabIds as number[];
+      const tabIds = Array.isArray(options.tabIds)
+        ? options.tabIds
+        : [options.tabIds];
       currentTabs.forEach((t) => {
         if (tabIds.includes(t.id)) t.groupId = gid;
       });
       return Promise.resolve(gid);
     }),
     ungroup: vi.fn().mockImplementation((ids) => {
-      const tabIds = ids as number[];
+      const tabIds = Array.isArray(ids) ? ids : [ids];
       currentTabs.forEach((t) => {
         if (tabIds.includes(t.id)) t.groupId = -1;
       });
@@ -315,7 +312,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           { minLength: 2, maxLength: 5 },
         ),
         fc.boolean(),
-        async (rawTabs, byWindow) => {
+        async (rawTabs, _byWindow) => {
           const rulesByDomain: any = {};
           const title = "Persistence Group"; // Mandate: Only named groups are protected
 
@@ -367,22 +364,24 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             managedGroupIds,
           );
 
-          await adapter.executeGroupPlan(
-            plan,
-            new Map([[101, groupsMetadata.get(101)]]),
-            1,
-            { tabs: mergedTabs, groups: [] },
-          );
+          await adapter.executeGroupPlan(plan, rulesByDomain, 1, {
+            tabs: mergedTabs,
+            groups: [],
+          });
 
           const groupCall = mockChrome.tabs.group.mock.calls.find((c) => {
-            const tabIds = c[0].tabIds as number[];
+            const options = c[0];
+            const tabIds = Array.isArray(options.tabIds)
+              ? options.tabIds
+              : [options.tabIds];
             const expectedIds = mergedTabs.map((t) => t.id);
             return (
               tabIds &&
-              expectedIds.every((id) => tabIds.includes(id)) &&
+              expectedIds.every((id) => tabIds.includes(id as number)) &&
               tabIds.length === expectedIds.length
             );
           });
+
           expect(groupCall).toBeDefined();
 
           if (title) {
@@ -792,8 +791,8 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
 
     expect(movedTab5).toBeDefined();
     expect(movedTab6).toBeDefined();
-    expect([1, 2]).toContain(movedTab5[1].windowId);
-    expect([1, 2]).toContain(movedTab6[1].windowId);
+    expect([1, 2]).toContain(movedTab5![1].windowId);
+    expect([1, 2]).toContain(movedTab6![1].windowId);
 
     await assertIdempotent(controller);
   });
@@ -982,7 +981,7 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     // Tab 1 should now have groupId -1
     const tab1 = currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(-1);
-    expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith([1]);
+    expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith(1);
 
     await assertIdempotent(controller);
   });
@@ -1046,7 +1045,7 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
       mkTab(2, "https://google.com/2", 100, 1, 1),
       mkTab(3, "https://bing.com/1", 100, 2, 1), // Intruder
       mkTab(4, "https://bing.com/2", 200, 3, 1), // Single tab group
-      mkTab(5, "https://yahoo.com/1", -1, 4, 1),  // Unsorted tab
+      mkTab(5, "https://yahoo.com/1", -1, 4, 1), // Unsorted tab
     ];
 
     currentTabs = tabs;
@@ -1059,20 +1058,20 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     // Verify after 1st execution:
     // Tab 1 & 2 are in a group (likely 100)
-    const t1 = currentTabs.find(t => t.id === 1);
-    const t2 = currentTabs.find(t => t.id === 2);
+    const t1 = currentTabs.find((t) => t.id === 1);
+    const t2 = currentTabs.find((t) => t.id === 2);
     expect(t1.groupId).toBe(t2.groupId);
     expect(t1.groupId).not.toBe(-1);
 
     // Tab 3 & 4 should now be in the same group (Bing)
-    const t3 = currentTabs.find(t => t.id === 3);
-    const t4 = currentTabs.find(t => t.id === 4);
+    const t3 = currentTabs.find((t) => t.id === 3);
+    const t4 = currentTabs.find((t) => t.id === 4);
     expect(t3.groupId).toBe(t4.groupId);
     expect(t3.groupId).not.toBe(t1.groupId);
     expect(t3.groupId).not.toBe(-1);
 
     // Tab 5 stays unsorted (-1)
-    const t5 = currentTabs.find(t => t.id === 5);
+    const t5 = currentTabs.find((t) => t.id === 5);
     expect(t5.groupId).toBe(-1);
 
     await assertIdempotent(controller);
@@ -1096,7 +1095,7 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     await controller.execute();
 
-    const t1 = currentTabs.find(t => t.id === 1);
+    const t1 = currentTabs.find((t) => t.id === 1);
     expect(t1.groupId).toBe(-1);
     expect(mockChrome.tabs.ungroup).toHaveBeenCalled();
 

@@ -96,7 +96,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 The system is verified through a tiered testing approach:
 
-1.  **Unit Tests (`background.test.ts`)**: Verify isolated logic in `CacheManager`, `TabGroupingService`, and `ChromeTabAdapter` edge cases.
+1.  **Unit Tests (`background.test.ts`)**: Verify isolated logic in `TabGroupingService`, and `ChromeTabAdapter` edge cases.
 2.  **E2E Integration Tests (`background.e2e.test.ts`)**: Verify the unified orchestration of the `TabGroupingController`.
 3.  **Property-Based Tests (`background.e2e.test.ts` via `fast-check`)**: Exhaustively verify structural invariants and manual group persistence across 100+ random tab/window configurations.
 
