@@ -15,13 +15,12 @@ export default defineConfig((configEnv) => ({
     environment: "jsdom",
   },
   resolve: {
-    alias: aliases.reduce((acc, curr) => {
+    alias: aliases.reduce((acc: { [key: string]: string }, curr) => {
       acc[curr.find] = fileURLToPath(new URL(curr.url, import.meta.url));
       return acc;
     }, {}),
   },
   build: {
-    sourcemap: "inline",
     // sourcemap: true,
     // minify: false,
     outDir: "./build",
