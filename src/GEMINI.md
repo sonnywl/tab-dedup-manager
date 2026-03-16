@@ -58,4 +58,5 @@ Destructive operations are applied **globally** to the entire session before pha
 - **Window-Scoped Coordinates:** Chrome indices are per-window. Repositioning logic must be `targetWindowId` aware to prevent index conflicts during global merges.
 - **Atomic Manual Groups:** Move external groups as cohesive blocks using `chrome.tabGroups.move` to preserve their internal order and metadata.
 - **Snapshot Re-use:** Pass browser snapshots (`tabs` and `groups` arrays) between methods to avoid redundant `chrome.tabs.query` calls.
+- **Port-Aware Grouping:** Uses `url.host` instead of `url.hostname` to ensure different services on `localhost` (e.g., `:8000`, `:3000`) are grouped separately, improving developer workflow.
 - **Stability sorting**: Always include `(a.id ?? 0) - (b.id ?? 0)` as a fallback in sorts to prevent "jitter" when URLs are identical.

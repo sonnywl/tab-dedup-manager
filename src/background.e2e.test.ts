@@ -1103,6 +1103,56 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
   });
 });
 
+describe("TabGrouping E2E Localhost & Ports Tests", () => {
+  let controller: TabGroupingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new TabGroupingController();
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    currentTabs = [];
+    currentGroups = new Map();
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: localhost with different ports are grouped separately (uses host)", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "http://localhost:8000/1", -1, 0, 1),
+      mkTab(2, "http://localhost:8000/2", -1, 1, 1),
+      mkTab(3, "http://localhost:8529/1", -1, 2, 1),
+      mkTab(4, "http://localhost:8529/2", -1, 3, 1),
+    ];
+    currentTabs = tabs;
+    currentGroups = new Map();
+
+    await controller.execute();
+
+    // Verify they are in separate groups
+    const t1 = currentTabs.find((t) => t.id === 1);
+    const t3 = currentTabs.find((t) => t.id === 3);
+
+    expect(t1.groupId).not.toBe(-1);
+    expect(t3.groupId).not.toBe(-1);
+    expect(t1.groupId).not.toBe(t3.groupId);
+
+    // Verify group titles include ports
+    const group1 = currentGroups.get(t1.groupId);
+    const group2 = currentGroups.get(t3.groupId);
+    expect(group1?.title).toBe("localhost:8000");
+    expect(group2?.title).toBe("localhost:8529");
+
+    await assertIdempotent(controller);
+  });
+});
+
 describe("TabGrouping E2E Title Management Tests", () => {
   let controller: TabGroupingController;
 

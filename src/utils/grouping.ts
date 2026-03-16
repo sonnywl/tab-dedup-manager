@@ -98,8 +98,9 @@ export class TabGroupingService {
   getDomain(url: string | undefined): Domain {
     if (!url) return asDomain("other");
     try {
-      const host = new URL(url).hostname;
-      return this.normalizeDomain(host);
+      const u = new URL(url);
+      // Mandate: Use .host instead of .hostname to include significant ports (e.g. localhost:8000)
+      return this.normalizeDomain(u.host);
     } catch {
       return asDomain("other");
     }
