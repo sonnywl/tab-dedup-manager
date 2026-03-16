@@ -58,37 +58,49 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 ## 3. Critical Behaviors & Design Patterns
 
+## 3. Critical Behaviors & Design Patterns
+
 ### 3.1 External Group Protection & Title Management
 
 - **Internal Title Detection**: `isInternalTitle` recognizes generated patterns (case-insensitive):
   - `domain`, `groupName`, `base - Title`, `base - segment`, or `base/segment`.
+  - It handles collision-resolved variants (e.g., "google.com - Search") and path-segment variants.
 - **Title Fallbacks**:
-  - **Managed Groups**: Always have a title (falls back to `sourceDomain` or "Managed Group").
-  - **Manual (External) Groups**: Allowed to remain unnamed to respect explicit user organization.
+  - **Managed Groups**: Always have a title based on the rule or domain. If `splitByPath` is used, the title follows the `segment - base` or `segment/base` pattern.
+  - **Manual (External) Groups**: Allowed to remain unnamed or have custom titles; they are protected if their title does not match the managed patterns.
 - **Atomic Protection**: External groups move as cohesive blocks using `chrome.tabGroups.move`.
 
 ### 3.2 Stable Positioning Strategy
 
-- **Pinned Priority**: Managed pinned tabs follow ignored pinned tabs.
-- **Managed Anchor**: Managed unpinned tabs are anchored to the front of the unpinned section.
-- **Ignored Displacement**: Non-managed tabs (PWAs, popups) are naturally displaced to the end of the window.
+The layout follows a deterministic order:
+1.  **Ignored Pinned**: Non-managed pinned tabs (e.g., internal pages) remain at the very front.
+2.  **Managed Pinned**: Sorted by "Group vs Tab" (groups first), then "Protected vs Managed" (manual groups first), and finally by Stable ID.
+3.  **Managed Unpinned**: 
+    - **Clustered**: Groups (2+ tabs or Manual groups) are placed before single managed tabs.
+    - **Sorted**: Within clusters, items are sorted by Title (lexicographical) and then URL/ID for stability.
+4.  **Ignored Unpinned**: Unmanaged unpinned tabs (PWAs, popups, internal pages) are naturally displaced to the end of the window.
+
+### 3.3 Grouping Threshold & Path Splitting
+
+- **Threshold**: 2+ tabs with the same group key (domain + path segment if applicable) form a group. 1 tab is ungrouped.
+- **Path Splitting**: Rules can define `splitByPath` (index-based). This creates unique group keys per path segment, allowing tabs like `github.com/org1` and `github.com/org2` to be grouped separately.
+- **Single-Tab Ungrouping**: If a group (managed) is left with only one tab after moves or cleanup, it is explicitly ungrouped in a final pass.
 
 ---
 
 ## 4. Data Flow
 
 1.  **Trigger**: User clicks extension icon.
-2.  **Fingerprint**: `lastStateHash` check. Skip if identical.
-3.  **Clean**: Global deduplication, auto-deletion, and optional single-tab ungrouping.
-4.  **Partition**: Gather `protectedTabIds` from external groups.
-5.  **Map Windows**:
-    - `byWindow: true` -> Map groups to their current/consolidated windows.
-    - `byWindow: false` -> Map all groups to the `activeWindowId`.
-6.  **Simplified Pipeline**:
-    - **Mapping**: Build `GroupMap` based on rules and proximity.
-    - **Needs**: `calculateRepositionNeeds` determines virtual targets and titling needs.
-    - **Plan**: `createGroupPlan` generates declarative instructions.
-    - **Execute**: `executeGroupPlan` captures a final snapshot and performs all physical changes (ungroup, move, group, title) atomically based on the declarative plan.
+2.  **Load Config**: Fetch rules and grouping settings from sync storage.
+3.  **Fingerprint**: `lastStateHash` check. Skip if identical.
+4.  **Clean**: Global deduplication (keeping the first occurrence in the tab list), auto-deletion, and optional single-tab ungrouping.
+5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
+6.  **Phase 2: Grouping Pass**:
+    - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
+    - **States**: `buildGroupStates` creates the virtual target state.
+    - **Needs**: `calculateRepositionNeeds` determines which tabs/groups actually need physical movement or title updates.
+    - **Plan**: `createGroupPlan` generates declarative instructions (ungroup, move, group).
+    - **Execute**: `executeGroupPlan` performs physical changes atomically, including a final single-tab ungrouping pass.
 
 ---
 

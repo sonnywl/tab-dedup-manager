@@ -21,35 +21,36 @@ The application is structured into three distinct layers:
 
 ## Requirements & Invariants
 
-| Rule             | Behavior                                                                                       |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| Group threshold  | 2+ tabs with same domain (or group key) → group, 1 tab → ungroup, move to end                  |
-| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                    |
-| Window Limit     | Optional `numWindowsToKeep` (min 2). Excess windows merge into high-affinity retained windows. |
-| Sort order       | Protected (Manual) → Pinned → Stable ID. Groups sorted by URL → Ungrouped sorted by URL.       |
-| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.    |
-| Visual Stability | **Atomic Execution**: Plan on intended state, then execute physical changes sequentially.      |
-| Exclusions       | Always skip non-normal windows (popups), internal pages, and PWAs.                             |
+| Rule             | Behavior                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------- |
+| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                 |
+| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                           |
+| Window Limit     | Optional `numWindowsToKeep`. Excess windows merge into high-affinity retained windows based on domain frequency. |
+| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Clustered Groups → Title/URL. |
+| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.           |
+| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.    |
+| Exclusions       | Always skip non-normal windows, internal pages (`chrome://`), and extension-owned pages.              |
 
 ## Cleanup Logic (Global Priority)
 
-Destructive operations are applied **globally** before any grouping logic.
+Destructive operations are applied **globally** to the entire session before phase 1.
 
-- **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest instance.
+- **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list.
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
-- **Global Single-Tab Ungroup** (Optional): Immediately ungroups any group that contains only one tab (if enabled in settings).
-- **Note**: Manual groups are NOT exempt from global cleanup (Deduplication/Delete/Ungroup).
+- **Global Single-Tab Ungroup** (Optional): Immediately ungroups any managed group that contains only one tab.
 
 ## Execution Flow (Unified Orchestration)
 
-1.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
-2.  **Cleaning**: Session-wide deduplication, auto-deletion, and single-tab ungrouping.
-3.  **Protection**: Identify manual groups via `isInternalTitle`. Gather `protectedTabIds`.
-4.  **Unified Mapping**:
-    - `byWindow: true` -> Map groups to current/consolidated windows.
-    - `byWindow: false` -> Map ALL groups to the `activeWindowId`.
-5.  **Planning Phase**: Build `GroupState` objects and calculate `targetIndex` for all groups (window-aware).
-6.  **Surgical Execution**: Capture **Exactly One** fresh snapshot. `executeGroupPlan` performs all physical changes (ungroup, move, group, title) atomically based on the declarative plan.
+1.  **Config**: Load current rules and grouping settings.
+2.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
+3.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping.
+4.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
+5.  **Phase 2: Grouping Pass**:
+    - **Identify**: Gather `protectedTabIds` from external groups.
+    - **Mapping**: Build virtual target state based on rules and proximity.
+    - **Planning**: Calculate physical `targetIndex` and title needs.
+    - **Execution**: Physical API calls (ungroup, move, group, title) performed atomically with stability delays.
+    - **Cleanup**: Final pass to ensure no single-tab managed groups remain.
 
 ## Learnings & Best Practices
 

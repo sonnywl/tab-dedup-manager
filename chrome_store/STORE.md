@@ -1,26 +1,26 @@
-# One-click Tab Dedup/Group Manager: Fast & Intelligent Browser Organization
+# One-click Tab Manager: Organize, Group & Deduplicate
 
-**One Click to Instant Clarity. Declutter Your Tabs, Save Memory, and Boost Your Productivity.**
+**Stop tab overload instantly. One-click Tab Manager is a high-performance Chrome extension designed to organize, group, and deduplicate your browser tabs with a single click.**
 
-Are you drowning in a sea of open tabs? Stop wasting time hunting for that one lost document. **One-click Tab Dedup/Group Manager** is the high-performance tool built for power users who need instant organization without the complexity of traditional tab managers.
+Reclaim your workspace and save system memory. Whether you handle 10 or 100+ tabs across multiple windows, this extension provides a fast, deterministic way to stay organized without the manual effort.
 
-### 🌟 Key Features
+### 🚀 Key Features
 
-*   **⚡ Instant One-Click Grouping:** Group all your open tabs by domain automatically. Turn chaos into structured workspaces in less than a second.
-*   **🧹 Global Deduplication:** Instantly find and close duplicate URLs across all your browser windows. Reclaim your system memory and focus.
-*   **🔒 Manual Group Protection:** We respect your workflow. Manually created tab groups are treated as "Protected Blocks"—we'll move them for you, but we’ll never break them apart.
-*   **📂 Smart Window Consolidation:** Open too many windows? Automatically merge scattered tabs into your most relevant windows based on what you’re working on.
-*   **🎨 Custom Organization Rules:** Define custom rules to split groups by URL path or assign permanent names to your favorite domains.
-*   **🚀 Zero-Flicker Performance:** Engineered for speed. We use atomic API calls to ensure tabs move smoothly without visual jitter or UI lag.
+*   **⚡ Smart Tab Grouping:** Automatically group tabs by domain or custom rules. Turn a cluttered tab bar into organized workspaces in seconds.
+*   **🧹 Global Deduplication:** Find and close duplicate URLs across all open windows to free up RAM and reduce clutter.
+*   **📂 Window Consolidation:** Automatically merge scattered tabs into your primary windows based on domain affinity and workspace rules.
+*   **🛡️ Manual Group Protection:** Your custom-named groups stay intact. The extension moves them as cohesive blocks without breaking your manual organization.
+*   **🔗 Path-Based Splitting:** Advanced rules allow you to group tabs by URL path (e.g., separate groups for different GitHub organizations or Jira projects).
+*   **🏎️ Zero-Flicker Performance:** Built with atomic execution logic to ensure smooth, jitter-free tab movements and optimal browser stability.
 
-### 🛡️ Privacy & Stability First
+### 🛡️ Privacy & Performance
 
-*   **100% Local & Private:** Your browsing history and tab data never leave your computer. No accounts, no tracking, no cloud syncing.
-*   **Resource Efficient:** Built with a "State Hashing" engine that ensures the extension only runs when a change is actually needed, saving your CPU and battery life.
-*   **Power User Ready:** Designed to handle hundreds of tabs across multiple windows with stable, deterministic sorting.
+*   **100% Private:** All processing happens locally on your machine. No tracking, no data collection, and no cloud syncing required.
+*   **Resource Efficient:** State-hashing technology ensures the extension only runs when necessary, preserving CPU and battery life.
+*   **Power User Optimized:** Designed for stability and speed, even with hundreds of tabs across multi-monitor setups.
 
-### 💡 Why choose One-click?
+### 💡 Why Use One-click Tab Manager?
 
-Most tab organizers either do too little or demand too much of your time. One-click is different. It provides high-speed, intelligent automation that acts as a "smart assistant" for your tabs—cleaning up the mess while staying completely out of your way.
+Most tab organizers are either too manual or too intrusive. One-click Tab Manager is built for speed and reliability, acting as a surgical tool that cleans your browser session exactly how you want it—every time.
 
-**Experience the cleanest browser session you've ever had. Install One-click Tab Dedup/Group Manager today!**
+**Declutter your browser and boost your productivity. Install One-click Tab Manager today!**
