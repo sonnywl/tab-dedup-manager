@@ -692,7 +692,7 @@ export class WindowManagementService {
     const entries = Array.from(windowGroups.entries()).sort(
       (a, b) => b[1].length - a[1].length,
     );
-    if (entries.length < numWindowsToKeep) return null;
+    if (entries.length <= numWindowsToKeep) return null;
 
     const retained = new Map(entries.slice(0, numWindowsToKeep));
     const excess = entries.slice(numWindowsToKeep).flatMap((e) => e[1]);
