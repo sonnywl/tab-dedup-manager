@@ -364,10 +364,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             managedGroupIds,
           );
 
-          await adapter.executeGroupPlan(plan, rulesByDomain, 1, {
+          await adapter.executeGroupPlan(plan, new Map(), 1, {
             tabs: mergedTabs,
             groups: [],
           });
+
 
           const groupCall = mockChrome.tabs.group.mock.calls.find((c) => {
             const options = c[0];

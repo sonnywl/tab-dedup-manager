@@ -33,7 +33,7 @@ export interface GroupState {
   readonly needsReposition: boolean;
   readonly needsTitleUpdate?: boolean;
   readonly isExternal?: boolean;
-  targetIndex?: number;
+  readonly targetIndex?: number;
 }
 
 export interface GroupPlan {
@@ -129,7 +129,7 @@ export class TabGroupingService {
         if (parts.length >= rule.splitByPath) {
           const seg = parts[rule.splitByPath - 1];
           return {
-            key: `${base}::${seg}`,
+            key: `${base}::${seg.toLowerCase()}`,
             title: `${seg} - ${base}`,
           };
         }
@@ -343,7 +343,7 @@ export class TabGroupingService {
     groupsByTitle?: Map<string, GroupId>,
     managedGroupIds: Map<number, string> = new Map(),
   ): GroupState[] {
-    const initial: GroupState[] = [];
+    const rawStates: GroupState[] = [];
 
     for (const {
       tabs,
@@ -362,16 +362,8 @@ export class TabGroupingService {
 
       if (valid.length === 0) continue;
 
-      if (!isExternal) {
-        valid.sort((a, b) => {
-          const urlComp = (a.url || "").localeCompare(b.url || "");
-          if (urlComp !== 0) return urlComp;
-          return (a.id ?? 0) - (b.id ?? 0); // Stability
-        });
-      }
-
       const sourceDomain = Array.from(domains)[0] || "other";
-      initial.push({
+      rawStates.push({
         displayName: isExternal
           ? displayName
           : this.formatTitle(displayName) || sourceDomain,
@@ -381,6 +373,48 @@ export class TabGroupingService {
         needsReposition: false,
         isExternal,
       });
+    }
+
+    // Merge pass: Consolidate states that have identical (case-insensitive) displayName and sourceDomain
+    // This handles accidental key collisions or case-insensitive path segments.
+    // Mandate: We MUST keep Pinned and Unpinned states separate because they belong to different window sections.
+    const merged = new Map<string, GroupState>();
+    for (const s of rawStates) {
+      if (s.isExternal) {
+        // External groups are always kept separate as they represent physical group IDs
+        const key = `external::${s.groupId}::${s.displayName}`;
+        merged.set(key, s);
+        continue;
+      }
+
+      const isPinned = tabCache.get(s.tabIds[0])?.pinned ? "pinned" : "unpinned";
+      const key = `${isPinned}::${s.sourceDomain.toLowerCase()}::${s.displayName.toLowerCase()}`;
+      const existing = merged.get(key);
+      if (existing) {
+        merged.set(key, {
+          ...existing,
+          tabIds: [...existing.tabIds, ...s.tabIds],
+          groupId: existing.groupId || s.groupId,
+        });
+      } else {
+        merged.set(key, s);
+      }
+    }
+
+    const initial = Array.from(merged.values());
+
+    for (const s of initial) {
+      if (!s.isExternal) {
+        const valid = s.tabIds
+          .map((id) => tabCache.get(id))
+          .filter(isDefined);
+        valid.sort((a, b) => {
+          const urlComp = (a.url || "").localeCompare(b.url || "");
+          if (urlComp !== 0) return urlComp;
+          return (a.id ?? 0) - (b.id ?? 0); // Stability
+        });
+        (s as any).tabIds = extractTabIds(valid);
+      }
     }
 
     const titleCounts = new Map<string, number>();

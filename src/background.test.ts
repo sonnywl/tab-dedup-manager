@@ -330,8 +330,9 @@ describe("TabGroupingController", () => {
         [tab1, tab2],
         new Map(),
         new Map(),
-        new Map(),
-        {},
+        new Map(), // protectedMeta
+        new Map(), // groupIdToGroup
+        {}, // rulesByDomain
       );
 
       expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();

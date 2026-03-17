@@ -14,6 +14,7 @@ import {
   asWindowId,
   isDefined,
   isGrouped,
+  ProtectedTabMetaMap,
 } from "./utils/grouping.js";
 import {
   GroupingConfig,
@@ -142,7 +143,6 @@ function validateTab(tab: any): tab is Tab {
 export class ChromeTabAdapter {
   private readonly MAX_BATCH = 100;
   private readonly RATE_DELAY = 30;
-  private service = new TabGroupingService();
 
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
@@ -287,7 +287,7 @@ export class ChromeTabAdapter {
 
   async executeGroupPlan(
     plan: GroupPlan,
-    rulesByDomain: RulesByDomain,
+    protectedMeta: ProtectedTabMetaMap,
     targetWindowId?: number,
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
   ): Promise<Result<void, Error>> {
@@ -445,18 +445,13 @@ export class ChromeTabAdapter {
         }
       }
 
-      // Identify which groups are managed/internal
-      const { protectedMeta } = this.service.identifyProtectedTabs(
-        finalState.tabs,
-        new Map(finalState.groups.map((g) => [g.id, g])),
-        rulesByDomain,
-      );
-
       const toUngroupIds: number[] = [];
       for (const t of finalState.tabs) {
         if (!t.id || !isGrouped(t)) continue;
         const tid = asTabId(t.id)!;
         const isSingle = groupCounts.get(t.groupId!) === 1;
+        
+        // Use the passed-in protectedMeta instead of recalculating
         const isProtected = protectedMeta.has(tid);
         if (isSingle && !isProtected) {
           toUngroupIds.push(t.id);
@@ -577,6 +572,7 @@ export class TabGroupingController {
     windowTabs: Tab[],
     groupMap: GroupMap,
     managedGroupIds: Map<number, string>,
+    protectedMeta: ProtectedTabMetaMap,
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
     rulesByDomain: RulesByDomain,
     windowId?: WindowId,
@@ -626,10 +622,15 @@ export class TabGroupingController {
       }
 
       // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
-      return this.adapter.executeGroupPlan(plan, rulesByDomain, windowId, {
-        tabs: allTabs,
-        groups: Array.from(groupIdToGroup.values()),
-      });
+      return this.adapter.executeGroupPlan(
+        plan,
+        protectedMeta,
+        windowId,
+        {
+          tabs: allTabs,
+          groups: Array.from(groupIdToGroup.values()),
+        },
+      );
     } catch (err) {
       return {
         success: false,
@@ -774,6 +775,7 @@ export class TabGroupingController {
         tabs,
         groupMap,
         managedGroupIds,
+        protectedMeta,
         state.groupIdToGroup,
         rulesByDomain,
         wid,
