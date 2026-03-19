@@ -3,6 +3,7 @@ import {
   GroupId,
   GroupMap,
   GroupPlan,
+  ProtectedTabMetaMap,
   RulesByDomain,
   Tab,
   TabGroupingService,
@@ -14,7 +15,6 @@ import {
   asWindowId,
   isDefined,
   isGrouped,
-  ProtectedTabMetaMap,
 } from "./utils/grouping.js";
 import {
   GroupingConfig,
@@ -450,7 +450,7 @@ export class ChromeTabAdapter {
         if (!t.id || !isGrouped(t)) continue;
         const tid = asTabId(t.id)!;
         const isSingle = groupCounts.get(t.groupId!) === 1;
-        
+
         // Use the passed-in protectedMeta instead of recalculating
         const isProtected = protectedMeta.has(tid);
         if (isSingle && !isProtected) {
@@ -574,7 +574,6 @@ export class TabGroupingController {
     managedGroupIds: Map<number, string>,
     protectedMeta: ProtectedTabMetaMap,
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
-    rulesByDomain: RulesByDomain,
     windowId?: WindowId,
   ): Promise<Result<void, Error>> {
     try {
@@ -622,15 +621,10 @@ export class TabGroupingController {
       }
 
       // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
-      return this.adapter.executeGroupPlan(
-        plan,
-        protectedMeta,
-        windowId,
-        {
-          tabs: allTabs,
-          groups: Array.from(groupIdToGroup.values()),
-        },
-      );
+      return this.adapter.executeGroupPlan(plan, protectedMeta, windowId, {
+        tabs: allTabs,
+        groups: Array.from(groupIdToGroup.values()),
+      });
     } catch (err) {
       return {
         success: false,
@@ -777,7 +771,6 @@ export class TabGroupingController {
         managedGroupIds,
         protectedMeta,
         state.groupIdToGroup,
-        rulesByDomain,
         wid,
       );
     }

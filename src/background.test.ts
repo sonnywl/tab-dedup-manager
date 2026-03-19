@@ -162,7 +162,6 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        {}, // rulesByDomain
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
@@ -191,7 +190,6 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
-        {}, // rulesByDomain
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
