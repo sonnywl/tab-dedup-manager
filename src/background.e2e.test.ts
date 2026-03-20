@@ -1,5 +1,7 @@
-import { ChromeTabAdapter, TabGroupingController } from "./background";
-import { TabGroupingService, asTabId, asWindowId } from "./utils/grouping";
+import { TabGroupingController } from "./controllers/TabGroupingController";
+import { ChromeTabAdapter } from "./infrastructure/ChromeTabAdapter";
+import { asTabId, asWindowId } from "./types";
+import { TabGroupingService, WindowManagementService } from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import fc from "fast-check";
@@ -624,7 +626,10 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -683,7 +688,10 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -744,7 +752,10 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -850,7 +861,10 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -899,7 +913,10 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1019,7 +1036,10 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1109,7 +1129,10 @@ describe("TabGrouping E2E Localhost & Ports Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1159,7 +1182,10 @@ describe("TabGrouping E2E Title Management Tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    controller = new TabGroupingController(service, windowService, adapter);
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 

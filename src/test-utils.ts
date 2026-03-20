@@ -1,4 +1,4 @@
-import { Tab, asTabId } from "./utils/grouping";
+import { Tab, asTabId } from "./types";
 
 /**
  * Creates a mock Chrome Tab object for testing.

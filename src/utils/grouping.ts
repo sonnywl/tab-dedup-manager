@@ -1,89 +1,24 @@
-import { Rule } from "./storage";
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-export type Domain = string & { readonly __brand: "Domain" };
-export type TabId = number & { readonly __brand: "TabId" };
-export type GroupId = number & { readonly __brand: "GroupId" };
-export type WindowId = number & { readonly __brand: "WindowId" };
-
-export interface RulesByDomain {
-  [domain: string]: Rule;
-}
-
-export type Tab = chrome.tabs.Tab;
-
-export interface GroupMapEntry {
-  readonly tabs: Tab[];
-  readonly displayName: string;
-  readonly domains: ReadonlySet<Domain>;
-  readonly isExternal?: boolean;
-  readonly groupId?: GroupId | null;
-}
-
-export type GroupMap = Map<string, GroupMapEntry>;
-
-export interface GroupState {
-  readonly displayName: string;
-  readonly sourceDomain: string;
-  readonly tabIds: readonly TabId[];
-  readonly groupId: GroupId | null;
-  readonly needsReposition: boolean;
-  readonly needsTitleUpdate?: boolean;
-  readonly isExternal?: boolean;
-  readonly targetIndex?: number;
-}
-
-export interface GroupPlan {
-  readonly states: ReadonlyArray<{
-    tabIds: readonly TabId[];
-    displayName: string;
-    sourceDomain: string;
-    targetIndex: number;
-    isExternal?: boolean;
-    groupId?: GroupId | null;
-    needsTitleUpdate?: boolean;
-  }>;
-  readonly tabsToUngroup: readonly TabId[];
-}
-
-export interface ProtectedTabMeta {
-  readonly title: string;
-  readonly originalGroupId: number;
-}
-
-export type ProtectedTabMetaMap = Map<TabId, ProtectedTabMeta>;
-
-// ============================================================================
-// TYPE CASTING & GUARDS
-// ============================================================================
-
-export function isDefined<T>(v: T | undefined | null): v is T {
-  return v !== undefined && v !== null;
-}
-
-export function asTabId(id: number | undefined): TabId | undefined {
-  return id as TabId | undefined;
-}
-export function asGroupId(id: number): GroupId {
-  return id as GroupId;
-}
-export function asWindowId(id: number): WindowId {
-  return id as WindowId;
-}
-export function asDomain(s: string): Domain {
-  return s as Domain;
-}
-
-export function extractTabIds(tabs: Tab[]): TabId[] {
-  return tabs.map((t) => asTabId(t.id)).filter(isDefined);
-}
-
-export function isGrouped(tab: Tab): boolean {
-  return tab.groupId != null && tab.groupId !== -1;
-}
+import {
+  ConsolidationPlan,
+  Domain,
+  GroupId,
+  GroupMap,
+  GroupMapEntry,
+  GroupPlan,
+  GroupState,
+  ProtectedTabMetaMap,
+  RulesByDomain,
+  Tab,
+  TabId,
+  WindowId,
+  asDomain,
+  asGroupId,
+  asTabId,
+  asWindowId,
+  extractTabIds,
+  isDefined,
+  isGrouped,
+} from "../types.js";
 
 // ============================================================================
 // CORE LOGIC (Domain Layer)
@@ -337,14 +272,11 @@ export class TabGroupingService {
     return count;
   }
 
-  buildGroupStates(
+  private mapRawStates(
     groupMap: GroupMap,
     tabCache: ReadonlyMap<TabId, Tab>,
-    groupsByTitle?: Map<string, GroupId>,
-    managedGroupIds: Map<number, string> = new Map(),
   ): GroupState[] {
     const rawStates: GroupState[] = [];
-
     for (const {
       tabs,
       displayName,
@@ -374,20 +306,25 @@ export class TabGroupingService {
         isExternal,
       });
     }
+    return rawStates;
+  }
 
-    // Merge pass: Consolidate states that have identical (case-insensitive) displayName and sourceDomain
-    // This handles accidental key collisions or case-insensitive path segments.
-    // Mandate: We MUST keep Pinned and Unpinned states separate because they belong to different window sections.
+  private resolveGroupCollisions(
+    rawStates: GroupState[],
+    tabCache: ReadonlyMap<TabId, Tab>,
+  ): GroupState[] {
     const merged = new Map<string, GroupState>();
+
     for (const s of rawStates) {
       if (s.isExternal) {
-        // External groups are always kept separate as they represent physical group IDs
         const key = `external::${s.groupId}::${s.displayName}`;
         merged.set(key, s);
         continue;
       }
 
-      const isPinned = tabCache.get(s.tabIds[0])?.pinned ? "pinned" : "unpinned";
+      const isPinned = tabCache.get(s.tabIds[0])?.pinned
+        ? "pinned"
+        : "unpinned";
       const key = `${isPinned}::${s.sourceDomain.toLowerCase()}::${s.displayName.toLowerCase()}`;
       const existing = merged.get(key);
       if (existing) {
@@ -400,14 +337,21 @@ export class TabGroupingService {
         merged.set(key, s);
       }
     }
+    return Array.from(merged.values());
+  }
 
-    const initial = Array.from(merged.values());
+  buildGroupStates(
+    groupMap: GroupMap,
+    tabCache: ReadonlyMap<TabId, Tab>,
+    groupsByTitle?: Map<string, GroupId>,
+    managedGroupIds: Map<number, string> = new Map(),
+  ): GroupState[] {
+    const rawStates = this.mapRawStates(groupMap, tabCache);
+    const initial = this.resolveGroupCollisions(rawStates, tabCache);
 
     for (const s of initial) {
       if (!s.isExternal) {
-        const valid = s.tabIds
-          .map((id) => tabCache.get(id))
-          .filter(isDefined);
+        const valid = s.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
         valid.sort((a, b) => {
           const urlComp = (a.url || "").localeCompare(b.url || "");
           if (urlComp !== 0) return urlComp;
@@ -451,8 +395,6 @@ export class TabGroupingService {
             ? asGroupId(existing.groupId)
             : (s.displayName && groupsByTitle?.get(s.displayName)) || null;
 
-      // Mandate: If it's a managed item (not external) and only has 1 tab,
-      // it MUST NOT have a groupId (enforces ungrouping).
       if (!s.isExternal && s.tabIds.length < 2) {
         groupId = null;
       }
@@ -473,9 +415,7 @@ export class TabGroupingService {
       const tab = tabCache.get(id);
       if (!tab) return false;
 
-      // Mandate: Must be in the correct window if specified
       const rightWindow = windowId === undefined || tab.windowId === windowId;
-
       const rightIndex = tab.index === expectedIndex + i;
       const rightGroup =
         state.groupId !== null || state.isExternal || state.tabIds.length >= 2
@@ -497,12 +437,35 @@ export class TabGroupingService {
       const ids = tabsInGroupIdMap.get(state.groupId as number);
       if (!ids || !state.tabIds.every((id) => ids.has(id))) return false;
     } else if (state.tabIds.length === 1 && !state.isExternal) {
-      // Mandate: If it's a single tab, it MUST be ungrouped (groupId -1)
       const tab = tabCache.get(state.tabIds[0]);
       if (tab && isGrouped(tab)) return false;
     }
 
     return true;
+  }
+
+  private getSortingStrategies(tabCache: ReadonlyMap<TabId, Tab>) {
+    const sortByUrl = (a: GroupState, b: GroupState) => {
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
+      const tA = tabCache.get(a.tabIds[0]);
+      const tB = tabCache.get(b.tabIds[0]);
+      const urlComp = (tA?.url || "").localeCompare(tB?.url || "");
+      if (urlComp !== 0) return urlComp;
+      return (tA?.id ?? 0) - (tB?.id ?? 0);
+    };
+
+    const sortById = (a: GroupState, b: GroupState) => {
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
+      const tA = tabCache.get(a.tabIds[0]);
+      const tB = tabCache.get(b.tabIds[0]);
+      return (tA?.id ?? 0) - (tB?.id ?? 0);
+    };
+
+    return { sortByUrl, sortById };
   }
 
   calculateRepositionNeeds(
@@ -518,58 +481,28 @@ export class TabGroupingService {
     allTabs.sort((a, b) => a.index - b.index);
 
     const managed = new Set(groupStates.flatMap((s) => s.tabIds));
-
     const ignoredPinned = allTabs.filter(
       (t) => t.pinned && !managed.has(asTabId(t.id)!),
     );
 
-    const sortByUrl = (a: GroupState, b: GroupState) => {
-      // Mandate: For managed items, if they have a displayName (like splitByPath segments),
-      // we sort by that first to ensure "a - domain" < "b - domain".
-      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
-      if (nameComp !== 0) return nameComp;
-
-      const tA = tabCache.get(a.tabIds[0]);
-      const tB = tabCache.get(b.tabIds[0]);
-      const urlComp = (tA?.url || "").localeCompare(tB?.url || "");
-      if (urlComp !== 0) return urlComp;
-      return (tA?.id ?? 0) - (tB?.id ?? 0); // Stability
-    };
-
-    const sortById = (a: GroupState, b: GroupState) => {
-      // Mandate: Even for manual groups, sort by displayName if it exists
-      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
-      if (nameComp !== 0) return nameComp;
-
-      const tA = tabCache.get(a.tabIds[0]);
-      const tB = tabCache.get(b.tabIds[0]);
-      return (tA?.id ?? 0) - (tB?.id ?? 0); // Stable ID
-    };
+    const { sortByUrl, sortById } = this.getSortingStrategies(tabCache);
 
     const managedPinned = groupStates
       .filter((s) => tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        // Rule: Group (Visual) -> Tab (Visual)
         const isGroupA = a.isExternal || a.tabIds.length >= 2;
         const isGroupB = b.isExternal || b.tabIds.length >= 2;
         if (isGroupA !== isGroupB) return isGroupA ? -1 : 1;
-
-        // Then Protected -> Managed
         if (a.isExternal !== b.isExternal) return a.isExternal ? -1 : 1;
-
-        return sortById(a, b); // Stable ID for Pinned
+        return sortById(a, b);
       });
 
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        // Rule: Group (Visual) -> Tab (Visual)
-        // Manual groups and Managed groups (2+ tabs) are interleaved by unified key.
         const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
         const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
         if (isGroupA !== isGroupB) return isGroupB - isGroupA;
-
-        // Rule: All items in their respective clusters are sorted by Title/URL.
         return sortByUrl(a, b);
       });
 
@@ -585,60 +518,37 @@ export class TabGroupingService {
     }
 
     const results: GroupState[] = [];
-
-    // Managed Pinned follow Ignored Pinned
     let idx = ignoredPinned.length;
-    for (const s of managedPinned) {
-      const needsReposition = !this.validateGroupState(
-        s,
-        tabCache,
-        tabsInGroupCount,
-        tabsInGroupIdMap,
-        idx,
-        windowId,
-      );
-      // Mandate: Check if title also needs update
-      const currentTitle =
-        s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
-      const needsTitleUpdate =
-        s.groupId !== null &&
-        currentTitle !== null &&
-        currentTitle !== s.displayName;
 
-      results.push({
-        ...s,
-        needsReposition,
-        needsTitleUpdate,
-        targetIndex: idx,
-      });
-      idx += s.tabIds.length;
-    }
+    const processStates = (states: GroupState[]) => {
+      for (const s of states) {
+        const needsReposition = !this.validateGroupState(
+          s,
+          tabCache,
+          tabsInGroupCount,
+          tabsInGroupIdMap,
+          idx,
+          windowId,
+        );
+        const currentTitle =
+          s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
+        const needsTitleUpdate =
+          s.groupId !== null &&
+          currentTitle !== null &&
+          currentTitle !== s.displayName;
 
-    // Managed Unpinned follow Managed Pinned (Ignored Unpinned are displaced to end)
-    for (const s of managedUnpinned) {
-      const needsReposition = !this.validateGroupState(
-        s,
-        tabCache,
-        tabsInGroupCount,
-        tabsInGroupIdMap,
-        idx,
-        windowId,
-      );
-      const currentTitle =
-        s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
-      const needsTitleUpdate =
-        s.groupId !== null &&
-        currentTitle !== null &&
-        currentTitle !== s.displayName;
+        results.push({
+          ...s,
+          needsReposition,
+          needsTitleUpdate,
+          targetIndex: idx,
+        });
+        idx += s.tabIds.length;
+      }
+    };
 
-      results.push({
-        ...s,
-        needsReposition,
-        needsTitleUpdate,
-        targetIndex: idx,
-      });
-      idx += s.tabIds.length;
-    }
+    processStates(managedPinned);
+    processStates(managedUnpinned);
 
     return results;
   }
@@ -675,8 +585,6 @@ export class TabGroupingService {
 
     const tabsToUngroup: TabId[] = [];
     for (const tab of tabCache.values()) {
-      // Mandate: If windowId is specified, only ungroup tabs that are CURRENTLY in this window.
-      // This prevents "byWindow" grouping from ungrouping everything in other windows.
       if (windowId !== undefined && tab.windowId !== windowId) continue;
 
       const tid = asTabId(tab.id);
@@ -693,11 +601,6 @@ export class TabGroupingService {
 
     return { states, tabsToUngroup };
   }
-}
-
-export interface ConsolidationPlan {
-  readonly groupMoves: ReadonlyArray<{ groupId: number; windowId: WindowId }>;
-  readonly tabMoves: ReadonlyArray<{ tabIds: number[]; windowId: WindowId }>;
 }
 
 // ============================================================================

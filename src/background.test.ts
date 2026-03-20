@@ -1,8 +1,9 @@
-import { ChromeTabAdapter, TabGroupingController } from "./background";
+import { TabGroupingController } from "./controllers/TabGroupingController";
+import { ChromeTabAdapter } from "./infrastructure/ChromeTabAdapter";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TabGroupingService } from "./utils/grouping";
 import { mkTab } from "./test-utils";
+import { TabGroupingService, WindowManagementService } from "./utils/grouping";
 
 // ============================================================================
 // MOCKS
@@ -73,9 +74,12 @@ describe("TabGroupingController", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    controller = new TabGroupingController();
-    // Inject mock adapter but rely on internal real service
-    (controller as any).adapter = makeAdapterMock();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = makeAdapterMock();
+
+    // @ts-ignore
+    controller = new TabGroupingController(service, windowService, adapter);
   });
 
   describe("execute()", () => {
@@ -162,6 +166,7 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
+        new Map(),
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
@@ -190,6 +195,7 @@ describe("TabGroupingController", () => {
 
       await adapter.executeGroupPlan(
         plan,
+        new Map(),
         1, // targetWindowId
         snapshot, // snapshotOverride
       );
@@ -219,7 +225,7 @@ describe("TabGroupingController", () => {
         groups: [],
       };
 
-      await adapter.executeGroupPlan(plan, {}, 1, snapshot);
+      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
 
       expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
         1000,
@@ -249,7 +255,7 @@ describe("TabGroupingController", () => {
         groups: [],
       };
 
-      await adapter.executeGroupPlan(plan, {}, 1, snapshot);
+      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
 
       // We expect a delay of AT LEAST 50ms per the TAB_UPDATE_DELAY constant
       expect(mockChrome.tabGroups.update).toHaveBeenCalled();
@@ -374,7 +380,7 @@ describe("ChromeTabAdapter", () => {
       const tab99 = mkTab(99, "intruder.com", 101);
       mockChrome.tabs.query.mockResolvedValue([tab99]);
 
-      await adapter.executeGroupPlan(plan, {}, undefined, {
+      await adapter.executeGroupPlan(plan, new Map(), undefined, {
         tabs: [tab99],
         groups: [
           {

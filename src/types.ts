@@ -1,0 +1,136 @@
+// ============================================================================
+// SHARED TYPES
+// ============================================================================
+
+export type Domain = string & { readonly __brand: "Domain" };
+export type TabId = number & { readonly __brand: "TabId" };
+export type GroupId = number & { readonly __brand: "GroupId" };
+export type WindowId = number & { readonly __brand: "WindowId" };
+
+export interface Rule {
+  id?: string;
+  domain: string;
+  autoDelete?: boolean | null | undefined;
+  groupName?: string | null | undefined;
+  splitByPath?: number | null | undefined;
+}
+
+export interface RulesByDomain {
+  [domain: string]: Rule;
+}
+
+export interface GroupingConfig {
+  byWindow: boolean;
+  numWindowsToKeep?: number | null | undefined;
+  ungroupSingleTab?: boolean | null | undefined;
+}
+
+export interface SyncStoreState {
+  rules: Rule[];
+  grouping: GroupingConfig;
+}
+
+export type Tab = chrome.tabs.Tab;
+
+export interface GroupMapEntry {
+  readonly tabs: Tab[];
+  readonly displayName: string;
+  readonly domains: ReadonlySet<Domain>;
+  readonly isExternal?: boolean;
+  readonly groupId?: GroupId | null;
+}
+
+export type GroupMap = Map<string, GroupMapEntry>;
+
+export interface GroupState {
+  readonly displayName: string;
+  readonly sourceDomain: string;
+  readonly tabIds: readonly TabId[];
+  readonly groupId: GroupId | null;
+  readonly needsReposition: boolean;
+  readonly needsTitleUpdate?: boolean;
+  readonly isExternal?: boolean;
+  readonly targetIndex?: number;
+}
+
+export interface GroupPlan {
+  readonly states: ReadonlyArray<{
+    tabIds: readonly TabId[];
+    displayName: string;
+    sourceDomain: string;
+    targetIndex: number;
+    isExternal?: boolean;
+    groupId?: GroupId | null;
+    needsTitleUpdate?: boolean;
+  }>;
+  readonly tabsToUngroup: readonly TabId[];
+}
+
+export interface ProtectedTabMeta {
+  readonly title: string;
+  readonly originalGroupId: number;
+}
+
+export type ProtectedTabMetaMap = Map<TabId, ProtectedTabMeta>;
+
+export interface ConsolidationPlan {
+  readonly groupMoves: ReadonlyArray<{ groupId: number; windowId: WindowId }>;
+  readonly tabMoves: ReadonlyArray<{ tabIds: number[]; windowId: WindowId }>;
+}
+
+export interface BrowserState {
+  allTabs: Tab[];
+  groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>;
+}
+
+export interface SyncStore {
+  getState: () => Promise<SyncStoreState>;
+}
+
+export type Result<T, E> = { success: true; value: T } | { success: false; error: E };
+
+// ============================================================================
+// TYPE GUARDS & UTILS
+// ============================================================================
+
+export function isDefined<T>(v: T | undefined | null): v is T {
+  return v !== undefined && v !== null;
+}
+
+export function asTabId(id: number | undefined): TabId | undefined {
+  return id as TabId | undefined;
+}
+export function asGroupId(id: number): GroupId {
+  return id as GroupId;
+}
+export function asWindowId(id: number): WindowId {
+  return id as WindowId;
+}
+export function asDomain(s: string): Domain {
+  return s as Domain;
+}
+
+export function extractTabIds(tabs: Tab[]): TabId[] {
+  return tabs.map((t) => asTabId(t.id)).filter(isDefined);
+}
+
+export function isGrouped(tab: Tab): boolean {
+  return tab.groupId != null && tab.groupId !== -1;
+}
+
+export function validateRule(rule: any): rule is Rule {
+  if (typeof rule !== "object" || rule === null) return false;
+  if (typeof rule.domain !== "string" || rule.domain.length === 0) return false;
+
+  if (rule.autoDelete != null && typeof rule.autoDelete !== "boolean")
+    return false;
+  if (rule.groupName != null && typeof rule.groupName !== "string")
+    return false;
+  if (
+    rule.splitByPath != null &&
+    (typeof rule.splitByPath !== "number" || rule.splitByPath < 1)
+  )
+    return false;
+
+  return true;
+}

@@ -1,10 +1,10 @@
 import {
   RulesByDomain,
   Tab,
-  TabGroupingService,
   TabId,
   asTabId,
-} from "./utils/grouping";
+} from "./types";
+import { TabGroupingService } from "./utils/grouping";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import fc from "fast-check";
