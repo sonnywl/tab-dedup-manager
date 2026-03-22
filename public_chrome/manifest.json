@@ -22,9 +22,5 @@
     "type": "module"
   },
   "incognito": "split",
-  "permissions": [
-    "storage",
-    "tabs",
-    "tabGroups"
-  ]
+  "permissions": ["storage", "tabs", "tabGroups"]
 }

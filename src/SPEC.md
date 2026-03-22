@@ -4,9 +4,9 @@ This document outlines the architecture, critical behaviors, and design principl
 
 ## 1. Architectural Overview
 
-The code follows a strict layered architecture to ensure testability, maintainability, and separation of concerns.
+The code follows a strict layered architecture to ensure testability, maintainability, and separation of concerns. All shared data structures and validation logic are centralized in `src/types.ts`.
 
-### 1.1 Domain Layer (`TabGroupingService` & `WindowManagementService`)
+### 1.1 Domain Layer (`src/utils/grouping.ts`)
 
 - **TabGroupingService**:
   - **Side-effect free**: Does not call Chrome APIs or external services.
@@ -19,22 +19,29 @@ The code follows a strict layered architecture to ensure testability, maintainab
   - **Optimization**: Favors windows that already contain matching domains (frequency-based scoring).
   - **Defaults**: `numWindowsToKeep` defaults to **2** (minimum 2).
 
-### 1.2 Infrastructure Layer (`ChromeTabAdapter`)
+### 1.2 Infrastructure Layer (`src/core/ChromeTabAdapter.ts`)
 
-- **Responsibility**: Abstraction of the Chrome Extension API.
+- **Responsibility**: Abstraction of the Chrome Extension API and low-level utility functions (`retry`, `runAtomicOperation`).
 - **Key Characteristics**:
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
-  - **Resilience**: Implements a `retry` mechanism.
-  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It executes the plan sequentially and uses `TAB_UPDATE_DELAY` (50ms) for Chrome stability.
+  - **Resilience**: Implements a `retry` mechanism for all destructive or movement-based API calls.
+  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It executes the plan sequentially and uses `RATE_DELAY` (30ms) for Chrome stability.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
-### 1.3 Application Layer (`TabGroupingController`)
+### 1.3 Application Layer (`src/core/TabGroupingController.ts`)
 
-- **Responsibility**: Orchestration and workflow management.
+- **Responsibility**: Orchestration, workflow management, and state fingerprinting.
 - **Unified Flow**: Treats both "Global" and "Per-Window" grouping as a single mapping operation. Global mode is simply a window map with one entry (the active window).
+- **Dependency Injection**: Services and adapters are injected via the constructor, allowing for easy mocking in tests.
 - **Thinking -> Doing separation**: The logic is split into a pure pipeline (Thinking) and a surgical execution (Doing).
 - **Logical Efficiency**: Ensures exactly **two** full browser state captures per run (one for the fingerprint, one for the execution pass).
 - **Process Guarding**: Uses an `isProcessing` semaphore to prevent race conditions.
+
+### 1.4 Shared Types & Validation (`src/types.ts`)
+
+- **Centralization**: All interfaces (`Tab`, `Rule`, `GroupState`, `GroupPlan`, etc.) are defined in a single location to eliminate circular dependencies.
+- **Validation**: Contains core validation logic like `validateRule` and type guards (`isGrouped`, `asTabId`).
+- **Standardization**: Enforces consistency across the options UI (`App.tsx`) and background processes.
 
 ---
 
@@ -44,10 +51,10 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 ### 2.1 Layered Redundancy Checks
 
-| Mechanism                | Layer          | Scope  | Goal                                                                                                                         |
-| :----------------------- | :------------- | :----- | :--------------------------------------------------------------------------------------------------------------------------- |
-| **State Fingerprinting** | Application    | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                             |
-| **Atomic Planning**      | Domain         | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality.       |
+| Mechanism                | Layer       | Scope  | Goal                                                                                                                   |
+| :----------------------- | :---------- | :----- | :--------------------------------------------------------------------------------------------------------------------- |
+| **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                       |
+| **Atomic Planning**      | Domain      | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality. |
 
 ### 2.2 Unified Global Merging (Zero-Flicker)
 
@@ -73,9 +80,10 @@ The extension ensures operations are both efficient and visually stable (minimiz
 ### 3.2 Stable Positioning Strategy
 
 The layout follows a deterministic order:
+
 1.  **Ignored Pinned**: Non-managed pinned tabs (e.g., internal pages) remain at the very front.
 2.  **Managed Pinned**: Sorted by "Group vs Tab" (groups first), then "Protected vs Managed" (manual groups first), and finally by Stable ID.
-3.  **Managed Unpinned**: 
+3.  **Managed Unpinned**:
     - **Clustered**: Groups (2+ tabs or Manual groups) are placed before single managed tabs.
     - **Sorted**: Within clusters, items are sorted by Title (lexicographical) and then URL/ID for stability.
 4.  **Ignored Unpinned**: Unmanaged unpinned tabs (PWAs, popups, internal pages) are naturally displaced to the end of the window.
@@ -114,17 +122,17 @@ The system is verified through a tiered testing approach:
 
 ### Requirements & Invariants Traceability Matrix
 
-| Requirement                                 | Test(s)                                                                        | Status       |
-| :------------------------------------------ | :----------------------------------------------------------------------------- | :----------- |
-| **Group threshold (2+ tabs)**               | `Invariant: Managed group titles follow rules...`                              | **Verified** |
-| **1 tab -> ungroup, move to end**           | `E2E: splitByPath correctly groups tabs by root...`                            | **Verified** |
-| **Global Grouping (byWindow: false)**       | `Invariant: When byWindow is false...`                                         | **Verified** |
-| **Per-window Grouping (byWindow: true)**    | `Invariant: When byWindow is true...`                                          | **Verified** |
-| **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...`                              | **Verified** |
-| **Manual Group Protection**                 | `Invariant: Manual groups are moved atomically`                                | **Verified** |
-| **Manual Group Order Persistence**          | `Invariant: Manual groups preserve their internal tab order`                   | **Verified** |
-| **State Fingerprinting**                    | `TabGroupingController > execute() > skips when state hash unchanged`          | **Verified** |
+| Requirement                                 | Test(s)                                                                            | Status       |
+| :------------------------------------------ | :--------------------------------------------------------------------------------- | :----------- |
+| **Group threshold (2+ tabs)**               | `Invariant: Managed group titles follow rules...`                                  | **Verified** |
+| **1 tab -> ungroup, move to end**           | `E2E: splitByPath correctly groups tabs by root...`                                | **Verified** |
+| **Global Grouping (byWindow: false)**       | `Invariant: When byWindow is false...`                                             | **Verified** |
+| **Per-window Grouping (byWindow: true)**    | `Invariant: When byWindow is true...`                                              | **Verified** |
+| **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...`                                  | **Verified** |
+| **Manual Group Protection**                 | `Invariant: Manual groups are moved atomically`                                    | **Verified** |
+| **Manual Group Order Persistence**          | `Invariant: Manual groups preserve their internal tab order`                       | **Verified** |
+| **State Fingerprinting**                    | `TabGroupingController > execute() > skips when state hash unchanged`              | **Verified** |
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
-| **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`              | **Verified** |
-| **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                   | **Verified** |
-| **Exclusions (Popups, PWAs, Internal)**     | `ChromeTabAdapter > excludes internal pages in getNormalTabs...`               | **Verified** |
+| **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
+| **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |
+| **Exclusions (Popups, PWAs, Internal)**     | `ChromeTabAdapter > excludes internal pages in getNormalTabs...`                   | **Verified** |

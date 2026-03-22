@@ -8,28 +8,28 @@
 - **Guidance**: Use the project specs (`SPEC.md`) and rules (`GEMINI.md`) as the primary foundational guidance for all decisions. If specs does not make sense prompt back.
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
 - **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal). If too long return the current context and pass to a new agent.
-- **Clean Code Mandate**: Remove dead code and redundant parameters immediately. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and parameters are strictly used.
+- **Clean Code Mandate**: Adhere strictly to the **Single Responsibility Principle (SRP)**. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and dependencies are injected. Remove dead code and redundant parameters immediately.
 - **Format** Always prettier format the code after changes
 
 ## Architecture
 
-The application is structured into three distinct layers:
+The application is structured into three distinct layers with all shared data structures consolidated in `src/types.ts`:
 
-1.  **Domain Layer (`TabGroupingService` & `WindowManagementService`):** Pure business logic. side-effect free. Responsible for domain extraction, group mapping, repositioning needs (window-aware), and window merging heuristics.
-2.  **Infrastructure Layer (`ChromeTabAdapter`):** Encapsulates all Chrome API interactions. Implements resilient retry mechanisms, atomic movements, and surgical window-aware execution.
-3.  **Application Layer (`TabGroupingController`):** Unified orchestration. Treats global and per-window grouping as a single mapping flow. Manages state fingerprinting and process guarding.
+1.  **Domain Layer (`src/utils/grouping.ts`):** Pure business logic. Side-effect free. Responsible for domain extraction, group mapping, repositioning needs, and window merging heuristics.
+2.  **Infrastructure Layer (`src/core/ChromeTabAdapter.ts`):** Encapsulates all Chrome API interactions and low-level utilities (retry, atomic operations). Implements surgical, window-aware execution.
+3.  **Application Layer (`src/core/TabGroupingController.ts`):** Unified orchestration. Manages state fingerprinting, process guarding, and high-level workflow. Uses **Dependency Injection** for all services and adapters.
 
 ## Requirements & Invariants
 
-| Rule             | Behavior                                                                                              |
-| ---------------- | ----------------------------------------------------------------------------------------------------- |
-| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                 |
-| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                           |
+| Rule             | Behavior                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                            |
+| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                      |
 | Window Limit     | Optional `numWindowsToKeep`. Excess windows merge into high-affinity retained windows based on domain frequency. |
-| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Clustered Groups → Title/URL. |
-| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.           |
-| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.    |
-| Exclusions       | Always skip non-normal windows, internal pages (`chrome://`), and extension-owned pages.              |
+| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Clustered Groups → Title/URL.   |
+| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.                      |
+| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                |
+| Exclusions       | Always skip non-normal windows, internal pages (`chrome://`), and extension-owned pages.                         |
 
 ## Cleanup Logic (Global Priority)
 

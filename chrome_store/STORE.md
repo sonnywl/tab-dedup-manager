@@ -6,18 +6,18 @@ Reclaim your workspace and save system memory. Whether you handle 10 or 100+ tab
 
 ### 🚀 Key Features
 
-*   **⚡ Smart Tab Grouping:** Automatically group tabs by domain or custom rules. Turn a cluttered tab bar into organized workspaces in seconds.
-*   **🧹 Global Deduplication:** Find and close duplicate URLs across all open windows to free up RAM and reduce clutter.
-*   **📂 Window Consolidation:** Automatically merge scattered tabs into your primary windows based on domain affinity and workspace rules.
-*   **🛡️ Manual Group Protection:** Your custom-named groups stay intact. The extension moves them as cohesive blocks without breaking your manual organization.
-*   **🔗 Path-Based Splitting:** Advanced rules allow you to group tabs by URL path (e.g., separate groups for different GitHub organizations or Jira projects).
-*   **🏎️ Zero-Flicker Performance:** Built with atomic execution logic to ensure smooth, jitter-free tab movements and optimal browser stability.
+- **⚡ Smart Tab Grouping:** Automatically group tabs by domain or custom rules. Turn a cluttered tab bar into organized workspaces in seconds.
+- **🧹 Global Deduplication:** Find and close duplicate URLs across all open windows to free up RAM and reduce clutter.
+- **📂 Window Consolidation:** Automatically merge scattered tabs into your primary windows based on domain affinity and workspace rules.
+- **🛡️ Manual Group Protection:** Your custom-named groups stay intact. The extension moves them as cohesive blocks without breaking your manual organization.
+- **🔗 Path-Based Splitting:** Advanced rules allow you to group tabs by URL path (e.g., separate groups for different GitHub organizations or Jira projects).
+- **🏎️ Zero-Flicker Performance:** Built with atomic execution logic to ensure smooth, jitter-free tab movements and optimal browser stability.
 
 ### 🛡️ Privacy & Performance
 
-*   **100% Private:** All processing happens locally on your machine. No tracking, no data collection, and no cloud syncing required.
-*   **Resource Efficient:** State-hashing technology ensures the extension only runs when necessary, preserving CPU and battery life.
-*   **Power User Optimized:** Designed for stability and speed, even with hundreds of tabs across multi-monitor setups.
+- **100% Private:** All processing happens locally on your machine. No tracking, no data collection, and no cloud syncing required.
+- **Resource Efficient:** State-hashing technology ensures the extension only runs when necessary, preserving CPU and battery life.
+- **Power User Optimized:** Designed for stability and speed, even with hundreds of tabs across multi-monitor setups.
 
 ### 💡 Why Use One-click Tab Manager?
 

@@ -1,9 +1,4 @@
-import {
-  GroupingConfig,
-  Rule,
-  SyncStoreState,
-  validateRule,
-} from "./types";
+import { GroupingConfig, Rule, SyncStoreState, validateRule } from "./types";
 import { PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
