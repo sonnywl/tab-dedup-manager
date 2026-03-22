@@ -10,7 +10,7 @@ export const mkTab = (
   groupId: number | null = null,
   index = 0,
   windowId = 1,
-  pinned = false
+  pinned = false,
 ): Tab => {
   const hasProtocol = /^[a-z-]+:/.test(url);
   return {
@@ -39,4 +39,4 @@ export const mkTab = (
 /**
  * Helper to extract tab IDs from an array of tabs and cast them to TabId.
  */
-export const getTabIds = (tabs: Tab[]) => tabs.map(t => asTabId(t.id)!);
+export const getTabIds = (tabs: Tab[]) => tabs.map((t) => asTabId(t.id)!);

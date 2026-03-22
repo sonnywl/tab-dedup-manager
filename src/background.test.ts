@@ -1,5 +1,5 @@
-import { TabGroupingController } from "./controllers/TabGroupingController";
-import { ChromeTabAdapter } from "./infrastructure/ChromeTabAdapter";
+import TabGroupingController from "./core/TabGroupingController";
+import ChromeTabAdapter from "./core/ChromeTabAdapter";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mkTab } from "./test-utils";

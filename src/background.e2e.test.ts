@@ -1,5 +1,5 @@
-import { TabGroupingController } from "./controllers/TabGroupingController";
-import { ChromeTabAdapter } from "./infrastructure/ChromeTabAdapter";
+import TabGroupingController from "./core/TabGroupingController";
+import ChromeTabAdapter from "./core/ChromeTabAdapter";
 import { asTabId, asWindowId } from "./types";
 import { TabGroupingService, WindowManagementService } from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -370,7 +370,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             tabs: mergedTabs,
             groups: [],
           });
-
 
           const groupCall = mockChrome.tabs.group.mock.calls.find((c) => {
             const options = c[0];

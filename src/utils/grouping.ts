@@ -41,10 +41,6 @@ export class TabGroupingService {
     }
   }
 
-  private formatTitle(s: string): string {
-    return s;
-  }
-
   getGroupKey(
     domain: Domain,
     url: string | undefined,
@@ -139,6 +135,18 @@ export class TabGroupingService {
     return false;
   }
 
+  private getTabsByGroup(tabs: Tab[]): Map<number, Tab[]> {
+    const tabsByGroup = new Map<number, Tab[]>();
+    for (const tab of tabs) {
+      if (isGrouped(tab)) {
+        const gid = tab.groupId!;
+        if (!tabsByGroup.has(gid)) tabsByGroup.set(gid, []);
+        tabsByGroup.get(gid)!.push(tab);
+      }
+    }
+    return tabsByGroup;
+  }
+
   identifyProtectedTabs(
     tabs: Tab[],
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
@@ -149,15 +157,7 @@ export class TabGroupingService {
   } {
     const protectedMeta = new Map<TabId, ProtectedTabMeta>();
     const managedGroupIds = new Map<number, string>();
-
-    const tabsByGroup = new Map<number, Tab[]>();
-    for (const tab of tabs) {
-      if (isGrouped(tab)) {
-        const gid = tab.groupId!;
-        if (!tabsByGroup.has(gid)) tabsByGroup.set(gid, []);
-        tabsByGroup.get(gid)!.push(tab);
-      }
-    }
+    const tabsByGroup = this.getTabsByGroup(tabs);
 
     for (const [gid, gTabs] of tabsByGroup.entries()) {
       const g = groupIdToGroup.get(gid);
@@ -296,9 +296,7 @@ export class TabGroupingService {
 
       const sourceDomain = Array.from(domains)[0] || "other";
       rawStates.push({
-        displayName: isExternal
-          ? displayName
-          : this.formatTitle(displayName) || sourceDomain,
+        displayName: isExternal ? displayName : displayName || sourceDomain,
         sourceDomain,
         tabIds: extractTabIds(valid),
         groupId: entryGroupId || null,
@@ -368,7 +366,7 @@ export class TabGroupingService {
     const resolved = initial.map((s) => {
       if (s.isExternal || (titleCounts.get(s.displayName) || 0) <= 1) return s;
 
-      const prefix = this.formatTitle(s.sourceDomain);
+      const prefix = s.sourceDomain;
       if (s.displayName.toLowerCase().includes(prefix.toLowerCase())) return s;
 
       return {
@@ -396,6 +394,11 @@ export class TabGroupingService {
             : (s.displayName && groupsByTitle?.get(s.displayName)) || null;
 
       if (!s.isExternal && s.tabIds.length < 2) {
+        groupId = null;
+      }
+
+      const firstTab = tabCache.get(s.tabIds[0]);
+      if (firstTab?.pinned) {
         groupId = null;
       }
 
@@ -508,13 +511,11 @@ export class TabGroupingService {
 
     const tabsInGroupCount = new Map<number, number>();
     const tabsInGroupIdMap = new Map<number, Set<TabId>>();
-    for (const tab of allTabs) {
-      if (isGrouped(tab)) {
-        const gid = tab.groupId!;
-        tabsInGroupCount.set(gid, (tabsInGroupCount.get(gid) || 0) + 1);
-        if (!tabsInGroupIdMap.has(gid)) tabsInGroupIdMap.set(gid, new Set());
-        tabsInGroupIdMap.get(gid)!.add(asTabId(tab.id)!);
-      }
+
+    const tabsByGroup = this.getTabsByGroup(allTabs);
+    for (const [gid, tabs] of tabsByGroup.entries()) {
+      tabsInGroupCount.set(gid, tabs.length);
+      tabsInGroupIdMap.set(gid, new Set(tabs.map((t) => asTabId(t.id)!)));
     }
 
     const results: GroupState[] = [];

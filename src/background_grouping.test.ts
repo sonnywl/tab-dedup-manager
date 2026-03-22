@@ -1,9 +1,4 @@
-import {
-  RulesByDomain,
-  Tab,
-  TabId,
-  asTabId,
-} from "./types";
+import { RulesByDomain, Tab, TabId, asTabId } from "./types";
 import { TabGroupingService } from "./utils/grouping";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -197,6 +192,31 @@ describe("TabGroupingService - Comprehensive Logic Tests", () => {
           (s) => s.displayName === "b.com" && s.tabIds.includes(asTabId(6)!),
         )!.targetIndex,
       ).toBe(5);
+    });
+
+    it("should NOT assign a groupId to pinned tabs even if they meet the grouping threshold", () => {
+      const rulesByDomain: RulesByDomain = {
+        "pinned.com": { domain: "pinned.com", autoDelete: false },
+      };
+
+      const tabs = [
+        mkTab(1, "https://pinned.com/1", -1, 0, 1, true),
+        mkTab(2, "https://pinned.com/2", -1, 1, 1, true),
+      ];
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const groupMap = service.buildGroupMap(tabs, rulesByDomain);
+      const states = service.buildGroupStates(
+        groupMap,
+        cache,
+        new Map(),
+        new Map(),
+      );
+
+      const pinnedState = states.find((s) => s.displayName === "pinned.com");
+      expect(pinnedState).toBeDefined();
+      expect(pinnedState?.tabIds).toHaveLength(2);
+      expect(pinnedState?.groupId).toBeNull();
     });
   });
 
