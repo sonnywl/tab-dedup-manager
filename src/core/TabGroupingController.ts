@@ -24,8 +24,6 @@ import {
 import ChromeTabAdapter from "./ChromeTabAdapter.js";
 import startSyncStore from "../utils/startSyncStore.js";
 
-// @ts-ignore
-
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
@@ -94,7 +92,7 @@ export default class TabGroupingController {
     windowId?: WindowId,
   ): Promise<Result<void, Error>> {
     try {
-      const groupsByTitle = new Map<string, number>(); // Using number for GroupId
+      const groupsByTitle = new Map<string, GroupId>();
       for (const [gid, g] of groupIdToGroup.entries()) {
         const isCorrectWindow = !windowId || g.windowId === windowId;
         if (isCorrectWindow && g.title) {
@@ -113,7 +111,7 @@ export default class TabGroupingController {
       const groupStates = this.service.buildGroupStates(
         groupMap,
         planningCache,
-        groupsByTitle as unknown as Map<string, GroupId>, // Types conflict fix
+        groupsByTitle,
         managedGroupIds,
       );
 
