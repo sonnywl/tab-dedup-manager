@@ -1,0 +1,22 @@
+One-click Tab Manager: Organize, Group, and Deduplicate Browser Tabs
+
+Stop tab overload and reclaim your workspace with One-click Tab Manager, the high-performance browser extension designed to effortlessly organize, group, and deduplicate your tabs. Whether you manage dozens of tabs across multiple windows or struggle with a cluttered browser, this tool provides a fast, deterministic way to stay focused without manual effort.
+
+Key Features to Boost Your Productivity:
+
+- 🧠 Smart Tab Grouping: Automatically organize tabs by domain or custom path rules. Turn a chaotic browser session into structured, manageable workspaces in seconds.
+- 🧹 Global Deduplication: Instantly identify and close duplicate URLs across all open windows. Free up valuable system memory and reduce visual noise automatically.
+- 🪟 Window Consolidation: Easily merge scattered tabs into your primary windows. Our intelligent algorithm groups tabs by domain affinity to keep related projects together.
+- 🛡️ Manual Group Protection: Your custom-named groups stay intact. Our extension moves manual groups as cohesive blocks, ensuring your personal organization remains untouched.
+- 🚀 Zero-Flicker Performance: Built with atomic execution logic, One-click Tab Manager ensures smooth, jitter-free tab movements and optimal browser stability.
+- 🔗 Advanced Path-Based Rules: Define granular grouping by URL path, allowing you to separate different projects, repositories, or services hosted on the same domain.
+
+Why Choose One-click Tab Manager?
+
+Most tab organizers are either too manual or too intrusive. One-click Tab Manager is built for speed and reliability, acting as a surgical, resource-efficient tool that cleans your browser session exactly how you want it. It is designed for power users who require stability when handling hundreds of tabs across multi-monitor setups.
+
+Privacy-First Design:
+
+We value your privacy as much as your productivity. One-click Tab Manager performs all processing locally on your machine. There is no tracking, no data collection, and no cloud syncing required. Our intelligent state-hashing technology ensures the extension only runs when necessary, preserving your CPU and battery life.
+
+Take control of your browser session, declutter your workspace, and boost your daily productivity. Install One-click Tab Manager today and experience a smarter, faster way to browse.

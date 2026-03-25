@@ -27,12 +27,25 @@ import startSyncStore from "../utils/startSyncStore.js";
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
+  private store: SyncStore | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
     private readonly windowService: WindowManagementService,
     private readonly adapter: ChromeTabAdapter,
   ) {}
+
+  private async initStore(): Promise<void> {
+    if (this.store) return;
+    this.store = await startSyncStore({
+      rules: [],
+      grouping: {
+        byWindow: false,
+        numWindowsToKeep: 2,
+        ungroupSingleTab: false,
+      },
+    });
+  }
 
   private stateHash(
     tabs: Tab[],
@@ -55,22 +68,6 @@ export default class TabGroupingController {
     });
   }
 
-  async groupByWindow(tabs: Tab[]): Promise<Map<WindowId, Tab[]>> {
-    const map = new Map<WindowId, Tab[]>();
-    for (const tab of tabs) {
-      if (!tab.windowId) {
-        console.warn(
-          `[W7] Tab ${tab.id} (${tab.url}) has no windowId — left in place`,
-        );
-        continue;
-      }
-      const wid = asWindowId(tab.windowId);
-      if (!map.has(wid)) map.set(wid, []);
-      map.get(wid)!.push(tab);
-    }
-    return map;
-  }
-
   private async captureBrowserState(): Promise<BrowserState> {
     const [tabs, groups] = await Promise.all([
       this.adapter.getNormalTabs(),
@@ -82,85 +79,12 @@ export default class TabGroupingController {
     };
   }
 
-  async processGrouping(
-    allTabs: Tab[],
-    windowTabs: Tab[],
-    groupMap: GroupMap,
-    managedGroupIds: Map<number, string>,
-    protectedMeta: ProtectedTabMetaMap,
-    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
-    windowId?: WindowId,
-  ): Promise<Result<void, Error>> {
-    try {
-      const groupsByTitle = new Map<string, GroupId>();
-      for (const [gid, g] of groupIdToGroup.entries()) {
-        const isCorrectWindow = !windowId || g.windowId === windowId;
-        if (isCorrectWindow && g.title) {
-          groupsByTitle.set(g.title, asGroupId(gid));
-        }
-      }
-
-      // Mandate: Use windowTabs (the INTENDED state) for the cache during planning.
-      // This ensures that reposition needs are calculated against where the tab SHOULD be.
-      const planningCache = new Map<TabId, Tab>(
-        windowTabs.map((t) => [asTabId(t.id)!, t]),
-      );
-
-      // Pipeline:
-      // 1. Virtual Mapping: Build initial group states based on intended tab distribution
-      const groupStates = this.service.buildGroupStates(
-        groupMap,
-        planningCache,
-        groupsByTitle,
-        managedGroupIds,
-      );
-
-      // 2. Reposition Needs: Calculate based on intended positions
-      const withReposition = this.service.calculateRepositionNeeds(
-        groupStates,
-        planningCache,
-        windowId,
-        managedGroupIds,
-      );
-
-      // 3. Plan Creation
-      const plan = this.service.createGroupPlan(
-        withReposition,
-        planningCache,
-        managedGroupIds,
-        windowId,
-      );
-
-      if (plan.states.length === 0 && plan.tabsToUngroup.length === 0) {
-        return { success: true, value: undefined };
-      }
-
-      // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
-      return this.adapter.executeGroupPlan(plan, protectedMeta, windowId, {
-        tabs: allTabs,
-        groups: Array.from(groupIdToGroup.values()),
-      });
-    } catch (err) {
-      return {
-        success: false,
-        error: err instanceof Error ? err : new Error(String(err)),
-      };
-    }
-  }
-
   private async loadConfiguration(): Promise<{
     rulesByDomain: RulesByDomain;
     config: GroupingConfig;
   } | null> {
-    const store: SyncStore = await startSyncStore({
-      rules: [],
-      grouping: {
-        byWindow: false,
-        numWindowsToKeep: 2,
-        ungroupSingleTab: false,
-      },
-    });
-    const state = await store.getState();
+    if (!this.store) await this.initStore();
+    const state = await this.store!.getState();
     if (!state?.rules || !state?.grouping) {
       console.error("Invalid store state:", state);
       return null;
@@ -261,19 +185,19 @@ export default class TabGroupingController {
     activeWindowId: number,
   ): Promise<void> {
     const windowMap = groupingConfig.byWindow
-      ? await this.groupByWindow(state.allTabs)
+      ? this.windowService.groupByWindow(state.allTabs)
       : new Map([[asWindowId(activeWindowId), state.allTabs]]);
 
-    for (const [wid, tabs] of windowMap) {
+    for (const [wid, scopedTabs] of windowMap) {
       const { protectedMeta, managedGroupIds } =
         this.service.identifyProtectedTabs(
-          tabs,
+          scopedTabs,
           state.groupIdToGroup,
           rulesByDomain,
         );
 
       const groupMap = this.service.buildGroupMap(
-        tabs,
+        scopedTabs,
         rulesByDomain,
         state.groupIdToGroup,
         protectedMeta,
@@ -281,13 +205,79 @@ export default class TabGroupingController {
 
       await this.processGrouping(
         state.allTabs,
-        tabs,
+        scopedTabs,
         groupMap,
         managedGroupIds,
         protectedMeta,
         state.groupIdToGroup,
         wid,
       );
+    }
+  }
+
+  async processGrouping(
+    allTabs: Tab[],
+    scopedTabs: Tab[],
+    groupMap: GroupMap,
+    managedGroupIds: Map<number, string>,
+    protectedMeta: ProtectedTabMetaMap,
+    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+    windowId?: WindowId,
+  ): Promise<Result<void, Error>> {
+    try {
+      const groupsByTitle = new Map<string, GroupId>();
+      for (const [gid, g] of groupIdToGroup.entries()) {
+        const isCorrectWindow = !windowId || g.windowId === windowId;
+        if (isCorrectWindow && g.title) {
+          groupsByTitle.set(g.title, asGroupId(gid));
+        }
+      }
+
+      // Mandate: Use scopedTabs (the INTENDED state) for the cache during planning.
+      // This ensures that reposition needs are calculated against where the tab SHOULD be.
+      const planningCache = new Map<TabId, Tab>(
+        scopedTabs.map((t) => [asTabId(t.id)!, t]),
+      );
+
+      // Pipeline:
+      // 1. Virtual Mapping: Build initial group states based on intended tab distribution
+      const groupStates = this.service.buildGroupStates(
+        groupMap,
+        planningCache,
+        groupsByTitle,
+        managedGroupIds,
+      );
+
+      // 2. Reposition Needs: Calculate based on intended positions
+      const withReposition = this.service.calculateRepositionNeeds(
+        groupStates,
+        planningCache,
+        windowId,
+        managedGroupIds,
+      );
+
+      // 3. Plan Creation
+      const plan = this.service.createGroupPlan(
+        withReposition,
+        planningCache,
+        managedGroupIds,
+        windowId,
+      );
+
+      if (plan.states.length === 0 && plan.tabsToUngroup.length === 0) {
+        return { success: true, value: undefined };
+      }
+
+      // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
+      return this.adapter.executeGroupPlan(plan, protectedMeta, windowId, {
+        tabs: allTabs,
+        groups: Array.from(groupIdToGroup.values()),
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
     }
   }
 
