@@ -4,9 +4,9 @@ Stop tab overload and reclaim your workspace with One-click Tab Manager, the hig
 
 Key Features to Boost Your Productivity:
 
-- 🧠 Smart Tab Grouping: Automatically organize tabs by domain or custom path rules. Turn a chaotic browser session into structured, manageable workspaces in seconds.
+- ⚡ Smart Tab Grouping: Automatically organize tabs by domain or custom path rules. Turn a chaotic browser session into structured, manageable workspaces in seconds.
 - 🧹 Global Deduplication: Instantly identify and close duplicate URLs across all open windows. Free up valuable system memory and reduce visual noise automatically.
-- 🪟 Window Consolidation: Easily merge scattered tabs into your primary windows. Our intelligent algorithm groups tabs by domain affinity to keep related projects together.
+- 📂 Window Consolidation: Easily merge scattered tabs into your primary windows. Our intelligent algorithm groups tabs by domain affinity to keep related projects together.
 - 🛡️ Manual Group Protection: Your custom-named groups stay intact. Our extension moves manual groups as cohesive blocks, ensuring your personal organization remains untouched.
 - 🚀 Zero-Flicker Performance: Built with atomic execution logic, One-click Tab Manager ensures smooth, jitter-free tab movements and optimal browser stability.
 - 🔗 Advanced Path-Based Rules: Define granular grouping by URL path, allowing you to separate different projects, repositories, or services hosted on the same domain.

@@ -290,67 +290,47 @@ export default class ChromeTabAdapter {
         }
       }
 
-      const freshTabs = new Map(snapshot.tabs.map((t) => [asTabId(t.id)!, t]));
-      const freshGroups = new Map(snapshot.groups.map((g) => [g.id, g]));
+      // Sort states by targetIndex descending to avoid index shifting
+      const sortedStates = [...plan.states].sort(
+        (a, b) => b.targetIndex - a.targetIndex,
+      );
 
-      for (const state of plan.states) {
-        // 1. Block Move Optimization (Still useful for performance, but no lazy checks)
+      // 1. Execute moves (groups then tabs in reverse order)
+      for (const state of sortedStates) {
+        // A. Move Groups
         if (state.groupId && (state.isExternal || state.tabIds.length >= 2)) {
-          const group = freshGroups.get(state.groupId as number);
-          if (group) {
-            const groupTabs = snapshot.tabs.filter(
-              (t) => t.groupId === state.groupId,
+          // Check if tabs are already correctly grouped and in the group
+          const group = snapshot.groups.find((g) => g.id === state.groupId);
+          const currentGroupTabs = snapshot.tabs.filter(
+            (t) => t.groupId === state.groupId,
+          );
+          const isFullMove =
+            group &&
+            currentGroupTabs.length === state.tabIds.length &&
+            state.tabIds.every((id) =>
+              currentGroupTabs.find((t) => asTabId(t.id) === id),
             );
-            const currentIds = new Set(groupTabs.map((t) => asTabId(t.id)));
-            const isMatch =
-              groupTabs.length === state.tabIds.length &&
-              state.tabIds.every((id) => currentIds.has(id));
 
-            if (isMatch) {
-              await runAtomicOperation(
-                () =>
-                  chrome.tabGroups.move(state.groupId as number, {
-                    windowId: targetWindowId,
-                    index: state.targetIndex,
-                  }),
-                snapshot.tabs,
-                this.RATE_DELAY,
-              );
-
-              // Queue title update for moved group
-              const targetTitle =
-                state.displayName ||
-                (state.isExternal ? "" : state.sourceDomain || "Managed Group");
-              titlesToUpdate.set(state.groupId as number, targetTitle);
-              continue;
-            }
-          }
-        }
-
-        // 2. Prepare for Move: Handle Ungrouping (only if target is NO GROUP)
-        if (
-          state.groupId === null &&
-          !(state.isExternal || state.tabIds.length >= 2)
-        ) {
-          const toUngroup = state.tabIds.filter((id) => {
-            const t = freshTabs.get(id);
-            return t && isGrouped(t);
-          });
-          if (toUngroup.length > 0) {
+          if (isFullMove) {
             await runAtomicOperation(
               () =>
-                chrome.tabs.ungroup(
-                  toUngroup.length === 1
-                    ? (toUngroup[0] as number)
-                    : (toUngroup as unknown as [number, ...number[]]),
-                ),
+                chrome.tabGroups.move(state.groupId as number, {
+                  windowId: targetWindowId,
+                  index: state.targetIndex,
+                }),
               snapshot.tabs,
               this.RATE_DELAY,
             );
+            titlesToUpdate.set(
+              state.groupId as number,
+              state.displayName ||
+                (state.isExternal ? "" : state.sourceDomain || "Managed Group"),
+            );
+            continue; // Skip individual tab moves for this group
           }
         }
 
-        // 3. Move Tabs (Atomic block)
+        // B. Move Tabs
         if (state.tabIds.length > 0) {
           await runAtomicOperation(
             () =>
@@ -362,8 +342,10 @@ export default class ChromeTabAdapter {
             this.RATE_DELAY,
           );
         }
+      }
 
-        // 4. Ensure Grouping & Title update only if needed
+      // 2. Ensure Grouping & Title updates
+      for (const state of sortedStates) {
         const shouldGroup =
           state.groupId !== null ||
           state.isExternal ||
@@ -397,48 +379,10 @@ export default class ChromeTabAdapter {
         }
       }
 
-      // Final Phase: Apply all collected title updates after layout is stable
+      // 3. Final Phase: Apply all collected title updates
       for (const [gid, title] of titlesToUpdate) {
-        const r = await retry(() =>
-          chrome.tabGroups.update(gid, { title, collapsed: false }),
-        );
-        if (!r.success)
-          console.warn(
-            `[Warning] Failed to update title for group ${gid}:`,
-            r.error,
-          );
-      }
-
-      // Mandate: Final cleanup pass to ungroup any groups that have only a single tab.
-      // This handles cases where groups were left with 1 tab after moves/evictions.
-      const finalState = await this.captureState();
-      const groupCounts = new Map<number, number>();
-      for (const t of finalState.tabs) {
-        if (isGrouped(t)) {
-          groupCounts.set(t.groupId!, (groupCounts.get(t.groupId!) || 0) + 1);
-        }
-      }
-
-      const toUngroupIds: number[] = [];
-      for (const t of finalState.tabs) {
-        if (!t.id || !isGrouped(t)) continue;
-        const tid = asTabId(t.id)!;
-        const isSingle = groupCounts.get(t.groupId!) === 1;
-
-        // Use the passed-in protectedMeta instead of recalculating
-        const isProtected = protectedMeta.has(tid);
-        if (isSingle && !isProtected) {
-          toUngroupIds.push(t.id);
-        }
-      }
-
-      if (toUngroupIds.length > 0) {
         await retry(() =>
-          chrome.tabs.ungroup(
-            toUngroupIds.length === 1
-              ? toUngroupIds[0]
-              : (toUngroupIds as [number, ...number[]]),
-          ),
+          chrome.tabGroups.update(gid, { title, collapsed: false }),
         );
       }
 
