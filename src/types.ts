@@ -66,6 +66,21 @@ export interface GroupPlan {
   readonly tabsToUngroup: readonly TabId[];
 }
 
+export interface MembershipPlan {
+  toUngroup: TabId[];
+  toGroup: { tabIds: TabId[]; groupId: GroupId | null; title: string }[];
+  targetWindowId: WindowId;
+}
+
+export type OrderUnit =
+  | { kind: "group"; groupId: GroupId; tabIds: TabId[]; targetIndex: number }
+  | { kind: "solo"; tabId: TabId; targetIndex: number };
+
+export interface OrderPlan {
+  desired: OrderUnit[];
+  toMove: OrderUnit[];
+}
+
 export interface ProtectedTabMeta {
   readonly title: string;
   readonly originalGroupId: number;
@@ -118,6 +133,12 @@ export function extractTabIds(tabs: Tab[]): TabId[] {
 
 export function isGrouped(tab: Tab): boolean {
   return tab.groupId != null && tab.groupId !== -1;
+}
+
+export function isInternalTab(tab: Tab): boolean {
+  if (!tab.url) return false;
+  const internalProtocols = ["chrome:", "about:", "edge:", "brave:"];
+  return internalProtocols.some((p) => tab.url!.startsWith(p));
 }
 
 export function validateRule(rule: any): rule is Rule {

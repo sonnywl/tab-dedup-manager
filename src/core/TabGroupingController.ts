@@ -3,6 +3,9 @@ import {
   GroupId,
   GroupMap,
   GroupingConfig,
+  MembershipPlan,
+  OrderPlan,
+  OrderUnit,
   ProtectedTabMetaMap,
   Result,
   RulesByDomain,
@@ -13,7 +16,9 @@ import {
   asGroupId,
   asTabId,
   asWindowId,
+  extractTabIds,
   isDefined,
+  isGrouped,
   validateRule,
 } from "../types.js";
 import {
@@ -22,30 +27,17 @@ import {
 } from "../utils/grouping.js";
 
 import ChromeTabAdapter from "./ChromeTabAdapter.js";
-import startSyncStore from "../utils/startSyncStore.js";
 
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
-  private store: SyncStore | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
     private readonly windowService: WindowManagementService,
     private readonly adapter: ChromeTabAdapter,
+    private readonly store: SyncStore,
   ) {}
-
-  private async initStore(): Promise<void> {
-    if (this.store) return;
-    this.store = await startSyncStore({
-      rules: [],
-      grouping: {
-        byWindow: false,
-        numWindowsToKeep: 2,
-        ungroupSingleTab: false,
-      },
-    });
-  }
 
   private stateHash(
     tabs: Tab[],
@@ -83,8 +75,7 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain;
     config: GroupingConfig;
   } | null> {
-    if (!this.store) await this.initStore();
-    const state = await this.store!.getState();
+    const state = await this.store.getState();
     if (!state?.rules || !state?.grouping) {
       console.error("Invalid store state:", state);
       return null;
@@ -125,6 +116,9 @@ export default class TabGroupingController {
       rulesByDomain,
       this.service,
     );
+    // Pre-sort internal browser pages to the start of each window
+    await this.adapter.moveInternalTabsToStart(remaining);
+
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(remaining);
     }
@@ -203,15 +197,17 @@ export default class TabGroupingController {
         protectedMeta,
       );
 
-      await this.processGrouping(
+      const res = await this.processGrouping(
         state.allTabs,
         scopedTabs,
         groupMap,
         managedGroupIds,
         protectedMeta,
         state.groupIdToGroup,
+        rulesByDomain,
         wid,
       );
+      if (!res.success) throw res.error;
     }
   }
 
@@ -222,25 +218,22 @@ export default class TabGroupingController {
     managedGroupIds: Map<number, string>,
     protectedMeta: ProtectedTabMetaMap,
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
-    windowId?: WindowId,
+    rulesByDomain: RulesByDomain,
+    windowId: WindowId,
   ): Promise<Result<void, Error>> {
     try {
       const groupsByTitle = new Map<string, GroupId>();
       for (const [gid, g] of groupIdToGroup.entries()) {
-        const isCorrectWindow = !windowId || g.windowId === windowId;
-        if (isCorrectWindow && g.title) {
+        if (g.windowId === windowId && g.title) {
           groupsByTitle.set(g.title, asGroupId(gid));
         }
       }
 
-      // Mandate: Use scopedTabs (the INTENDED state) for the cache during planning.
-      // This ensures that reposition needs are calculated against where the tab SHOULD be.
       const planningCache = new Map<TabId, Tab>(
         scopedTabs.map((t) => [asTabId(t.id)!, t]),
       );
 
-      // Pipeline:
-      // 1. Virtual Mapping: Build initial group states based on intended tab distribution
+      // Phase 2a: Membership
       const groupStates = this.service.buildGroupStates(
         groupMap,
         planningCache,
@@ -248,31 +241,93 @@ export default class TabGroupingController {
         managedGroupIds,
       );
 
-      // 2. Reposition Needs: Calculate based on intended positions
-      const withReposition = this.service.calculateRepositionNeeds(
+      const membershipPlan = this.service.buildMembershipPlan(
         groupStates,
         planningCache,
-        windowId,
-        managedGroupIds,
-      );
-
-      // 3. Plan Creation
-      const plan = this.service.createGroupPlan(
-        withReposition,
-        planningCache,
         managedGroupIds,
         windowId,
       );
 
-      if (plan.states.length === 0 && plan.tabsToUngroup.length === 0) {
-        return { success: true, value: undefined };
+      const memRes = await this.adapter.executeMembershipPlan(
+        membershipPlan,
+        allTabs,
+      );
+      if (!memRes.success) return memRes;
+
+      // Phase 2b: Ordering
+      // Re-capture state after membership changes
+      const freshState = await this.captureBrowserState();
+      const freshScopedTabs = freshState.allTabs.filter(
+        (t) => t.windowId === windowId,
+      );
+      const freshGroups = Array.from(freshState.groupIdToGroup.values()).filter(
+        (g) => g.windowId === windowId,
+      );
+      const freshTabCache = new Map<TabId, Tab>(
+        freshState.allTabs.map((t) => [asTabId(t.id)!, t]),
+      );
+
+      // Build desired OrderUnit[] from repositioned groupStates
+      // Use freshTabCache to get accurate current positions for needsReposition check
+      const withReposition = this.service.calculateRepositionNeeds(
+        groupStates,
+        freshTabCache,
+        windowId,
+        managedGroupIds,
+      );
+
+      const desired: OrderUnit[] = withReposition.map((s) => {
+        if (s.isExternal || s.tabIds.length >= 2) {
+          // Find the actual groupId in fresh state by title
+          const g = freshGroups.find((g) => g.title === s.displayName);
+          return {
+            kind: "group",
+            groupId: g ? asGroupId(g.id) : (s.groupId as GroupId),
+            tabIds: [...s.tabIds],
+            targetIndex: s.targetIndex!,
+          };
+        } else {
+          return {
+            kind: "solo",
+            tabId: s.tabIds[0],
+            targetIndex: s.targetIndex!,
+          };
+        }
+      });
+
+      // Build live OrderUnit[] from fresh snapshot tab order
+      const live: OrderUnit[] = [];
+      const seenGroups = new Set<number>();
+
+      for (const t of freshScopedTabs) {
+        if (isGrouped(t)) {
+          if (!seenGroups.has(t.groupId)) {
+            seenGroups.add(t.groupId);
+            const gTabs = freshScopedTabs.filter(
+              (gt) => gt.groupId === t.groupId,
+            );
+            live.push({
+              kind: "group",
+              groupId: asGroupId(t.groupId),
+              tabIds: extractTabIds(gTabs),
+              targetIndex: t.index, // Using current index for live units
+            });
+          }
+        } else {
+          live.push({
+            kind: "solo",
+            tabId: asTabId(t.id)!,
+            targetIndex: t.index, // Using current index for live units
+          });
+        }
       }
 
-      // 4. Surgical Execution: Still use the PHYSICAL snapshot (allTabs) for lazy checks and moves
-      return this.adapter.executeGroupPlan(plan, protectedMeta, windowId, {
-        tabs: allTabs,
-        groups: Array.from(groupIdToGroup.values()),
-      });
+      const orderPlan = this.service.buildOrderPlan(desired, live);
+      return this.adapter.executeOrderPlan(
+        orderPlan,
+        windowId,
+        freshScopedTabs,
+      );
     } catch (err) {
       return {
         success: false,

@@ -26,10 +26,10 @@ The application is structured into three distinct layers with all shared data st
 | Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                            |
 | Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                      |
 | Window Limit     | Optional `numWindowsToKeep`. Excess windows merge into high-affinity retained windows based on domain frequency. |
-| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Clustered Groups → Title/URL.   |
+| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL. |
 | Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.                      |
 | Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                |
-| Exclusions       | Always skip non-normal windows, internal pages (`chrome://`), and extension-owned pages.                         |
+| Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.    |
 
 ## Cleanup Logic (Global Priority)
 
@@ -37,6 +37,7 @@ Destructive operations are applied **globally** to the entire session before pha
 
 - **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list.
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
+- **Internal Page Pre-sort**: Moves internal browser pages (`edge://`, `chrome://`, etc.) to the start of each window to ensure they don't interleave with managed content.
 - **Global Single-Tab Ungroup** (Optional): Immediately ungroups any managed group that contains only one tab.
 
 ## Execution Flow (Unified Orchestration)

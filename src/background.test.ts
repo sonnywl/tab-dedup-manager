@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mkTab } from "./test-utils";
 import { TabGroupingService, WindowManagementService } from "./utils/grouping";
+import { asWindowId } from "./types";
 
 // ============================================================================
 // MOCKS
@@ -65,7 +66,14 @@ describe("TabGroupingController", () => {
     getNormalTabs: vi.fn().mockResolvedValue([]),
     deduplicateAllTabs: vi.fn().mockResolvedValue([]),
     cleanupTabsByRules: vi.fn().mockResolvedValue([]),
+    moveInternalTabsToStart: vi.fn().mockImplementation((tabs) => Promise.resolve(tabs)),
     executeGroupPlan: vi
+      .fn()
+      .mockResolvedValue({ success: true, value: undefined }),
+    executeMembershipPlan: vi
+      .fn()
+      .mockResolvedValue({ success: true, value: undefined }),
+    executeOrderPlan: vi
       .fn()
       .mockResolvedValue({ success: true, value: undefined }),
     updateBadge: vi.fn().mockResolvedValue(undefined),
@@ -78,8 +86,12 @@ describe("TabGroupingController", () => {
     const windowService = new WindowManagementService();
     const adapter = makeAdapterMock();
 
-    // @ts-ignore
-    controller = new TabGroupingController(service, windowService, adapter);
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      mockStore as any,
+    );
   });
 
   describe("execute()", () => {
@@ -113,8 +125,8 @@ describe("TabGroupingController", () => {
       const tabs1 = [mkTab(1, "a.com"), mkTab(2, "b.com")];
       const tabs2 = [mkTab(2, "b.com"), mkTab(1, "a.com")];
       const hash = (controller as any).stateHash.bind(controller);
-      expect(hash(tabs1, {}, { byWindow: false }, 1)).toBe(
-        hash(tabs2, {}, { byWindow: false }, 1),
+      expect(hash(tabs1, {}, { byWindow: false })).toBe(
+        hash(tabs2, {}, { byWindow: false }),
       );
     });
 
@@ -128,21 +140,11 @@ describe("TabGroupingController", () => {
         grouping: { byWindow: false },
       });
 
-      vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
-        states: [
-          {
-            tabIds: [1],
-            displayName: "a.com",
-            sourceDomain: "a.com",
-            targetIndex: 0,
-            isExternal: false,
-          },
-        ],
-        tabsToUngroup: [],
-      });
-
       await controller.execute();
-      expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
+      expect(
+        (controller as any).adapter.executeMembershipPlan,
+      ).toHaveBeenCalled();
+      expect((controller as any).adapter.executeOrderPlan).toHaveBeenCalled();
     });
 
     it("always calls chrome.tabs.move because lazy checks are removed", async () => {
@@ -324,9 +326,16 @@ describe("TabGroupingController", () => {
         (controller as any).service,
         "calculateRepositionNeeds",
       ).mockReturnValue([initialState]);
-      vi.spyOn((controller as any).service, "createGroupPlan").mockReturnValue({
-        states: [initialState],
-        tabsToUngroup: [],
+      vi.spyOn(
+        (controller as any).service,
+        "buildMembershipPlan",
+      ).mockReturnValue({
+        toUngroup: [],
+        toGroup: [{ tabIds: [1, 2], groupId: null, title: "a.com" }],
+      });
+      vi.spyOn((controller as any).service, "buildOrderPlan").mockReturnValue({
+        desired: [],
+        toMove: [],
       });
 
       await controller.processGrouping(
@@ -337,9 +346,13 @@ describe("TabGroupingController", () => {
         new Map(), // protectedMeta
         new Map(), // groupIdToGroup
         {}, // rulesByDomain
+        asWindowId(1),
       );
 
-      expect((controller as any).adapter.executeGroupPlan).toHaveBeenCalled();
+      expect(
+        (controller as any).adapter.executeMembershipPlan,
+      ).toHaveBeenCalled();
+      expect((controller as any).adapter.executeOrderPlan).toHaveBeenCalled();
     });
   });
 });

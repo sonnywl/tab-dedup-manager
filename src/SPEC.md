@@ -26,6 +26,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
   - **Resilience**: Implements a `retry` mechanism for all destructive or movement-based API calls.
   - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It executes the plan sequentially and uses `RATE_DELAY` (30ms) for Chrome stability.
+  - **Internal Page Management**: Now includes system/browser internal pages (`edge://`, `chrome://`, etc.) to manage their sorting and prevent them from interleaving with managed content.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
 ### 1.3 Application Layer (`src/core/TabGroupingController.ts`)
@@ -81,12 +82,13 @@ The extension ensures operations are both efficient and visually stable (minimiz
 
 The layout follows a deterministic order:
 
-1.  **Ignored Pinned**: Non-managed pinned tabs (e.g., internal pages) remain at the very front.
+1.  **Ignored Pinned**: Non-managed pinned tabs (e.g., system pages explicitly pinned by the user) remain at the very front.
 2.  **Managed Pinned**: Sorted by "Group vs Tab" (groups first), then "Protected vs Managed" (manual groups first), and finally by Stable ID.
 3.  **Managed Unpinned**:
-    - **Clustered**: Groups (2+ tabs or Manual groups) are placed before single managed tabs.
-    - **Sorted**: Within clusters, items are sorted by Title (lexicographical) and then URL/ID for stability.
-4.  **Ignored Unpinned**: Unmanaged unpinned tabs (PWAs, popups, internal pages) are naturally displaced to the end of the window.
+    - **Internal Pages**: Unpinned system pages (`edge://`, `chrome://`, etc.) are placed first, sorted alphabetically by host.
+    - **Clustered**: Groups (2+ tabs or Manual groups) are placed next.
+    - **Sorted**: Within clusters and individual tabs, items are sorted by Title (lexicographical) and then URL/ID for stability.
+4.  **Ignored Unpinned**: Unmanaged unpinned tabs (e.g., extension popups) are naturally displaced to the end of the window.
 
 ### 3.3 Grouping Threshold & Path Splitting
 
@@ -101,7 +103,7 @@ The layout follows a deterministic order:
 1.  **Trigger**: User clicks extension icon.
 2.  **Load Config**: Fetch rules and grouping settings from sync storage.
 3.  **Fingerprint**: `lastStateHash` check. Skip if identical.
-4.  **Clean**: Global deduplication (keeping the first occurrence in the tab list), auto-deletion, and optional single-tab ungrouping.
+4.  **Clean**: Global deduplication (keeping the first occurrence), auto-deletion, internal page pre-sorting, and optional single-tab ungrouping.
 5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
 6.  **Phase 2: Grouping Pass**:
     - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
@@ -135,4 +137,4 @@ The system is verified through a tiered testing approach:
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |
-| **Exclusions (Popups, PWAs, Internal)**     | `ChromeTabAdapter > excludes internal pages in getNormalTabs...`                   | **Verified** |
+| **Exclusions (Popups, PWAs)**               | `ChromeTabAdapter > getNormalTabs correctly filters...`                   | **Verified** |

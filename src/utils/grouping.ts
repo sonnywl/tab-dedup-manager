@@ -18,6 +18,7 @@ import {
   extractTabIds,
   isDefined,
   isGrouped,
+  isInternalTab,
 } from "../types.js";
 
 // ============================================================================
@@ -518,6 +519,13 @@ export class TabGroupingService {
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
+        const tA = tabCache.get(a.tabIds[0]);
+        const tB = tabCache.get(b.tabIds[0]);
+
+        const isInternalA = tA ? isInternalTab(tA) : false;
+        const isInternalB = tB ? isInternalTab(tB) : false;
+        if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
+
         const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
         const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
         if (isGroupA !== isGroupB) return isGroupB - isGroupA;
@@ -616,6 +624,141 @@ export class TabGroupingService {
     }
 
     return { states, tabsToUngroup };
+  }
+
+  buildMembershipPlan(
+    groupStates: GroupState[],
+    tabCache: ReadonlyMap<TabId, Tab>,
+    managedGroupIds: Map<number, string>,
+    windowId: WindowId,
+  ): MembershipPlan {
+    const toUngroup: TabId[] = [];
+    const toGroup: MembershipPlan["toGroup"] = [];
+
+    // Track which tabs belong to which group in the intended state
+    const groupToExpectedTabs = new Map<number, Set<TabId>>();
+    for (const s of groupStates) {
+      if (s.groupId !== null) {
+        if (!groupToExpectedTabs.has(s.groupId))
+          groupToExpectedTabs.set(s.groupId, new Set());
+        for (const id of s.tabIds) groupToExpectedTabs.get(s.groupId)!.add(id);
+      }
+    }
+
+    // 1. Identify tabs that need to be UNGROUPED
+    // A tab needs ungrouping if it's currently in a managed group but doesn't belong there in the plan
+    for (const tab of tabCache.values()) {
+      if (tab.windowId !== windowId) continue;
+      const tid = asTabId(tab.id);
+      const gid = tab.groupId;
+
+      if (tid && gid !== -1 && isDefined(gid)) {
+        if (managedGroupIds.has(gid)) {
+          const expected = groupToExpectedTabs.get(gid);
+          if (!expected || !expected.has(tid)) {
+            toUngroup.push(tid);
+          }
+        }
+      }
+    }
+
+    // 2. Identify groups that need to be (RE)CREATED or TITLED
+    // Any group in the plan with 2+ tabs (or external) needs a toGroup entry
+    for (const s of groupStates) {
+      if (s.isExternal || s.tabIds.length >= 2) {
+        toGroup.push({
+          tabIds: [...s.tabIds],
+          groupId: s.groupId,
+          title: s.displayName,
+        });
+      }
+    }
+
+    return { toUngroup, toGroup, targetWindowId: windowId };
+  }
+
+  buildOrderPlan(desired: OrderUnit[], liveUnits: OrderUnit[]): OrderPlan {
+    const liveKeys = liveUnits.map((u) => this.unitKey(u));
+    const desiredKeys = desired.map((u) => this.unitKey(u));
+
+    // Map each desired key to its current index in live state
+    const liveIndexMap = new Map<string, number>();
+    liveKeys.forEach((key, idx) => liveIndexMap.set(key, idx));
+
+    // Filter desired units to those that exist in the live snapshot for THIS window
+    // AND are at their correct absolute target position.
+    // If a unit is interleaved with unmanaged tabs, its targetIndex won't match its current index.
+    const indices: number[] = [];
+    const candidatesForLIS: number[] = []; // Indices in 'desired' list
+
+    desired.forEach((unit, dIdx) => {
+      const key = this.unitKey(unit);
+      const lIdx = liveIndexMap.get(key);
+      if (lIdx !== undefined) {
+        const liveUnit = liveUnits[lIdx];
+        // Mandate: A unit is only a candidate for staying (LIS) if its
+        // current absolute position matches its target absolute position.
+        // This ensures unmanaged tabs are displaced correctly to the end.
+        if (liveUnit.targetIndex === unit.targetIndex) {
+          indices.push(lIdx);
+          candidatesForLIS.push(dIdx);
+        }
+      }
+    });
+
+    // LIS algorithm to find the largest subset of units already in order
+    const lisSubsequenceIndices = this.calculateLIS(indices);
+    const inOrderKeys = new Set(
+      lisSubsequenceIndices.map((i) => desiredKeys[candidatesForLIS[i]]),
+    );
+
+    const toMove = desired.filter((u) => !inOrderKeys.has(this.unitKey(u)));
+
+    return {
+      desired,
+      toMove,
+    };
+  }
+
+  private unitKey(u: OrderUnit): string {
+    return u.kind === "group" ? `g:${u.groupId}` : `t:${u.tabId}`;
+  }
+
+  private calculateLIS(arr: number[]): number[] {
+    if (arr.length === 0) return [];
+
+    const tails: number[] = [];
+    const tailsIndices: number[] = [];
+    const prev = new Array(arr.length).fill(-1);
+
+    for (let i = 0; i < arr.length; i++) {
+      const x = arr[i];
+      let low = 0,
+        high = tails.length;
+      while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (tails[mid] < x) low = mid + 1;
+        else high = mid;
+      }
+
+      if (low < tails.length) {
+        tails[low] = x;
+        tailsIndices[low] = i;
+      } else {
+        tails.push(x);
+        tailsIndices.push(i);
+      }
+      prev[i] = low > 0 ? tailsIndices[low - 1] : -1;
+    }
+
+    // Backtrack to get the indices of the LIS
+    const res: number[] = [];
+    let curr = tailsIndices[tailsIndices.length - 1];
+    while (curr !== -1) {
+      res.push(curr);
+      curr = prev[curr];
+    }
+    return res.reverse();
   }
 }
 

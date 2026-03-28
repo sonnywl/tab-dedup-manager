@@ -35,6 +35,14 @@ const mockChrome = {
       currentTabs.forEach((t) => {
         if (tabIds.includes(t.id)) t.groupId = gid;
       });
+      if (!currentGroups.has(gid)) {
+        currentGroups.set(gid, {
+          id: gid,
+          title: "",
+          windowId:
+            currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
+        });
+      }
       return Promise.resolve(gid);
     }),
     ungroup: vi.fn().mockImplementation((ids) => {
@@ -628,7 +636,26 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -690,7 +717,26 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -754,7 +800,26 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -863,7 +928,26 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -915,7 +999,26 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1038,7 +1141,26 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1131,7 +1253,26 @@ describe("TabGrouping E2E Localhost & Ports Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 
@@ -1184,7 +1325,26 @@ describe("TabGrouping E2E Title Management Tests", () => {
     const service = new TabGroupingService();
     const windowService = new WindowManagementService();
     const adapter = new ChromeTabAdapter();
-    controller = new TabGroupingController(service, windowService, adapter);
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
     (controller as any).isProcessing = false;
     (controller as any).lastStateHash = null;
 

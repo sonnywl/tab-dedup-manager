@@ -344,4 +344,128 @@ describe("TabGroupingService - Comprehensive Logic Tests", () => {
       );
     });
   });
+
+  describe("Internal Pages Sorting", () => {
+    it("should sort internal pages to the start of unpinned section", () => {
+      const rulesByDomain: RulesByDomain = {
+        "google.com": { domain: "google.com" },
+      };
+
+      const tabs = [
+        mkTab(1, "https://google.com/1", 101),
+        mkTab(2, "https://google.com/2", 101),
+        mkTab(3, "edge://settings/appearance", -1, 2),
+        mkTab(4, "edge://extensions/", -1, 3),
+        mkTab(5, "https://bing.com/1", -1, 4),
+      ];
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const managedGroupIds = new Map([[101, "google.com"]]);
+
+      const groupMap = service.buildGroupMap(tabs, rulesByDomain);
+      const states = service.buildGroupStates(
+        groupMap,
+        cache,
+        new Map(),
+        managedGroupIds,
+      );
+
+      const repositioned = service.calculateRepositionNeeds(states, cache);
+
+      // Check titles/domains of the repositioned states
+      // Alphabetical sort by URL host: "extensions" < "settings"
+      expect(repositioned[0].displayName).toBe("extensions");
+      expect(repositioned[1].displayName).toBe("settings");
+      expect(repositioned[2].displayName).toBe("google.com");
+      expect(repositioned[3].displayName).toBe("bing.com");
+
+      // Verify target indices
+      expect(repositioned[0].targetIndex).toBe(0);
+      expect(repositioned[1].targetIndex).toBe(1);
+      expect(repositioned[2].targetIndex).toBe(2);
+      expect(repositioned[3].targetIndex).toBe(4);
+    });
+
+    it("should sort pinned tabs BEFORE unpinned internal pages", () => {
+      const rulesByDomain: RulesByDomain = {};
+
+      const tabs = [
+        mkTab(1, "https://google.com/1", -1, 0, 1, true), // Pinned
+        mkTab(2, "edge://settings/appearance", -1, 1), // Unpinned Internal
+      ];
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const groupMap = service.buildGroupMap(tabs, rulesByDomain);
+      const states = service.buildGroupStates(groupMap, cache);
+      const repositioned = service.calculateRepositionNeeds(states, cache);
+
+      expect(repositioned[0].displayName).toBe("google.com"); // Pinned
+      expect(repositioned[1].displayName).toBe("settings"); // Internal Unpinned
+
+      expect(repositioned[0].targetIndex).toBe(0);
+      expect(repositioned[1].targetIndex).toBe(1);
+    });
+
+    it("should sort multiple internal pages alphabetically and handle hostless protocols (about:blank)", () => {
+      const rulesByDomain: RulesByDomain = {};
+
+      const tabs = [
+        mkTab(1, "edge://extensions", -1, 0),
+        mkTab(2, "edge://settings", -1, 1),
+        mkTab(3, "about:blank", -1, 2),
+      ];
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const groupMap = service.buildGroupMap(tabs, rulesByDomain);
+      const states = service.buildGroupStates(groupMap, cache);
+      const repositioned = service.calculateRepositionNeeds(states, cache);
+
+      // about:blank has no host, getDomain returns "other"
+      // extensions < other < settings (alphabetical)
+      expect(repositioned[0].displayName).toBe("extensions");
+      expect(repositioned[1].displayName).toBe("other");
+      expect(repositioned[2].displayName).toBe("settings");
+    });
+
+    it("should prioritize manual groups containing internal pages at the start", () => {
+      const rulesByDomain: RulesByDomain = {
+        "google.com": { domain: "google.com" },
+      };
+
+      const tabs = [
+        mkTab(1, "https://google.com/1", 101),
+        mkTab(2, "https://google.com/2", 101),
+        mkTab(3, "edge://settings", 500), // Manually grouped internal page
+      ];
+
+      const groupsMetadata = new Map([
+        [500, { id: 500, title: "My System Group" } as chrome.tabGroups.TabGroup],
+      ]);
+      const { protectedMeta } = service.identifyProtectedTabs(
+        tabs,
+        groupsMetadata,
+        rulesByDomain,
+      );
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const groupMap = service.buildGroupMap(
+        tabs,
+        rulesByDomain,
+        groupsMetadata,
+        protectedMeta,
+      );
+      const states = service.buildGroupStates(
+        groupMap,
+        cache,
+        new Map(),
+        new Map(),
+      );
+      const repositioned = service.calculateRepositionNeeds(states, cache);
+
+      // Manual group with internal page should be first
+      expect(repositioned[0].displayName).toBe("My System Group");
+      expect(repositioned[0].isExternal).toBe(true);
+      expect(repositioned[1].displayName).toBe("google.com");
+    });
+  });
 });

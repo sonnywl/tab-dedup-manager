@@ -1,13 +1,19 @@
 import {
   ConsolidationPlan,
+  GroupId,
   GroupPlan,
+  MembershipPlan,
+  OrderPlan,
   ProtectedTabMetaMap,
   Result,
   RulesByDomain,
   Tab,
   TabId,
+  WindowId,
   asTabId,
+  isDefined,
   isGrouped,
+  isInternalTab,
 } from "../types.js";
 import { TabGroupingService } from "../utils/grouping.js";
 
@@ -34,6 +40,7 @@ export async function retry<T>(
   fn: () => Promise<T>,
   maxAttempts = 3,
   delayMs = 100,
+  isRetriable: (err: Error) => boolean = () => true,
 ): Promise<Result<T, Error>> {
   let lastError: any;
   for (let i = 1; i <= maxAttempts; i++) {
@@ -41,11 +48,15 @@ export async function retry<T>(
       return { success: true, value: await fn() };
     } catch (err) {
       lastError = err;
-      if (i < maxAttempts) {
+      const error =
+        err instanceof Error ? err : new Error(String(err || "Retry failed"));
+      if (i < maxAttempts && isRetriable(error)) {
         console.warn(
           `[Retry] Attempt ${i}/${maxAttempts} failed, retrying in ${delayMs * i}ms...`,
         );
         await new Promise((r) => setTimeout(r, delayMs * i));
+      } else {
+        break;
       }
     }
   }
@@ -54,7 +65,7 @@ export async function retry<T>(
       ? lastError
       : new Error(String(lastError || "Retry failed"));
   console.error(
-    `[Retry] All ${maxAttempts} attempts failed. Final error:`,
+    `[Retry] All ${maxAttempts} attempts failed or non-retriable. Final error:`,
     finalError.message,
     finalError.stack,
   );
@@ -129,9 +140,9 @@ export default class ChromeTabAdapter {
         // Exclude the extension's OWN internal pages (options/popup)
         if (t.url.startsWith(selfBase)) return false;
 
-        // Exclude system/browser internal pages
-        const internalProtocols = ["chrome:", "about:", "edge:", "brave:"];
-        return !internalProtocols.some((p) => t.url!.startsWith(p));
+        // Mandate: DO NOT exclude system/browser internal pages anymore.
+        // We want to manage their sorting (to the front).
+        return true;
       });
     });
     if (!result.success) {
@@ -192,6 +203,43 @@ export default class ChromeTabAdapter {
     }
 
     return remaining;
+  }
+
+  async moveInternalTabsToStart(tabs: Tab[]): Promise<Tab[]> {
+    const windowMap = new Map<number, Tab[]>();
+    for (const tab of tabs) {
+      if (tab.windowId === undefined) continue;
+      if (!windowMap.has(tab.windowId)) windowMap.set(tab.windowId, []);
+      windowMap.get(tab.windowId)!.push(tab);
+    }
+
+    for (const [wid, wTabs] of windowMap.entries()) {
+      const internalUnpinned = wTabs.filter((t) => isInternalTab(t) && !t.pinned);
+      if (internalUnpinned.length === 0) continue;
+
+      // Stable sort by URL
+      internalUnpinned.sort((a, b) => (a.url || "").localeCompare(b.url || ""));
+
+      // Target starting index: after all pinned tabs in this window
+      const pinnedCount = wTabs.filter((t) => t.pinned).length;
+      let targetIndex = pinnedCount;
+
+      for (const tab of internalUnpinned) {
+        if (tab.id && tab.index !== targetIndex) {
+          const r = await retry(() =>
+            chrome.tabs.move(tab.id as number, { index: targetIndex }),
+          );
+          if (r.success) {
+            // Update local index to reflect move for subsequent iterations
+            tab.index = targetIndex;
+          }
+          await sleep(this.RATE_DELAY);
+        }
+        targetIndex++;
+      }
+    }
+
+    return tabs;
   }
 
   async ungroupSingleTabGroups(tabs: Tab[]): Promise<void> {
@@ -395,6 +443,131 @@ export default class ChromeTabAdapter {
     }
   }
 
+  async executeMembershipPlan(
+    plan: MembershipPlan,
+    snapshotTabs: Tab[],
+  ): Promise<Result<void, Error>> {
+    try {
+      // 1. Ungroup first
+      if (plan.toUngroup.length > 0) {
+        for (const batch of this.batch(plan.toUngroup)) {
+          await runAtomicOperation(
+            () =>
+              chrome.tabs.ungroup(
+                batch.length === 1
+                  ? (batch[0] as number)
+                  : (batch as unknown as [number, ...number[]]),
+              ),
+            snapshotTabs,
+            this.RATE_DELAY,
+          );
+        }
+      }
+
+      // 2. Group & Title
+      for (const entry of plan.toGroup) {
+        // Ensure all tabs are in the target window BEFORE grouping
+        // chrome.tabs.group fails if tabs are in different windows.
+        const needsMove = entry.tabIds
+          .map((id) => snapshotTabs.find((t) => asTabId(t.id) === id))
+          .filter(isDefined)
+          .filter((t) => t.windowId !== plan.targetWindowId);
+
+        if (needsMove.length > 0) {
+          await runAtomicOperation(
+            () =>
+              chrome.tabs.move(
+                needsMove.map((t) => t.id!),
+                { windowId: plan.targetWindowId, index: -1 },
+              ),
+            snapshotTabs,
+            this.RATE_DELAY,
+          );
+        }
+
+        const gid = await runAtomicOperation(
+          async () => {
+            const options: chrome.tabs.GroupOptions = {
+              tabIds:
+                entry.tabIds.length === 1
+                  ? (entry.tabIds[0] as number)
+                  : (entry.tabIds as unknown as [number, ...number[]]),
+            };
+            if (entry.groupId !== null) {
+              options.groupId = entry.groupId as number;
+            }
+            return chrome.tabs.group(options);
+          },
+          snapshotTabs,
+          this.RATE_DELAY,
+        );
+
+        if (entry.title) {
+          await retry(() =>
+            chrome.tabGroups.update(gid, {
+              title: entry.title,
+              collapsed: false,
+            }),
+          );
+        }
+      }
+
+      return { success: true, value: undefined };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
+  }
+
+  async executeOrderPlan(
+    plan: OrderPlan,
+    targetWindowId: WindowId,
+    snapshotTabs: Tab[],
+  ): Promise<Result<void, Error>> {
+    try {
+      // Execute moves in the order they should appear (Left to Right)
+      // This ensures that using targetIndex is stable and reliable.
+      for (const unit of plan.desired) {
+        const isToMove = plan.toMove.some((mu) => {
+          if (unit.kind === "group" && mu.kind === "group")
+            return unit.groupId === mu.groupId;
+          if (unit.kind === "solo" && mu.kind === "solo")
+            return unit.tabId === mu.tabId;
+          return false;
+        });
+
+        if (isToMove) {
+          await runAtomicOperation(
+            async () => {
+              if (unit.kind === "group") {
+                return chrome.tabGroups.move(unit.groupId as number, {
+                  windowId: targetWindowId,
+                  index: unit.targetIndex,
+                });
+              } else {
+                return chrome.tabs.move(unit.tabId as number, {
+                  windowId: targetWindowId,
+                  index: unit.targetIndex,
+                });
+              }
+            },
+            snapshotTabs,
+            this.RATE_DELAY,
+          );
+        }
+      }
+
+      return { success: true, value: undefined };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
+  }
+
   async updateBadge(service: TabGroupingService): Promise<void> {
     try {
       const tabs = await this.getNormalTabs();
@@ -419,7 +592,7 @@ export default class ChromeTabAdapter {
 
   private async captureState() {
     const [tabs, groups] = await Promise.all([
-      chrome.tabs.query({}),
+      this.getNormalTabs(),
       chrome.tabGroups.query({}),
     ]);
     return { tabs, groups };

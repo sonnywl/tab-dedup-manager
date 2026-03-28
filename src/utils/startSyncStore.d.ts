@@ -6,4 +6,6 @@ export interface SyncStore {
   onChange: (fn: (state: SyncStoreState, prevState: any) => void) => void;
 }
 
-export default function startSyncStore(defaultState?: Partial<SyncStoreState>): Promise<SyncStore>;
+export default function startSyncStore(
+  defaultState?: Partial<SyncStoreState>,
+): Promise<SyncStore>;
