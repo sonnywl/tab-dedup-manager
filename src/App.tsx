@@ -110,8 +110,8 @@ const GroupNameInput = React.memo(
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-500"
-        placeholder="Group name..."
-        aria-label="Group name"
+        placeholder={chrome.i18n.getMessage("groupNamePlaceholder")}
+        aria-label={chrome.i18n.getMessage("groupNameAriaLabel")}
       />
       <datalist id="group-names">
         {existingGroups.map((group) => (
@@ -131,30 +131,30 @@ const AddDomainForm = ({ onAdd }: { onAdd: (domain: string) => void }) => {
       onAdd(input);
       setInput("");
     } else if (input.trim()) {
-      alert("Please enter a valid domain (e.g., google.com or www.google.com)");
+      alert(chrome.i18n.getMessage("invalidDomainAlert"));
     }
   };
 
   return (
     <section className="bg-white rounded-lg shadow p-6 mb-6">
       <label className="block text-sm font-medium text-gray-700 mb-2">
-        Add Domain
+        {chrome.i18n.getMessage("addDomainLabel")}
       </label>
       <form className="flex gap-2" onSubmit={handleSubmit}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="example.com or www.example.com"
+          placeholder={chrome.i18n.getMessage("domainPlaceholder")}
           className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          aria-label="New domain URL"
+          aria-label={chrome.i18n.getMessage("domainAriaLabel")}
         />
         <button
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2 cursor-pointer transition-colors"
           type="submit"
         >
           <PlusIcon className="w-4 h-4" />
-          Add
+          {chrome.i18n.getMessage("addButton")}
         </button>
       </form>
     </section>
@@ -170,7 +170,7 @@ const GroupingSettings = ({
 }) => (
   <section className="bg-white rounded-lg shadow p-6 mb-6">
     <label className="block text-sm font-medium text-gray-700 mb-4">
-      Grouping Behavior
+      {chrome.i18n.getMessage("groupingBehaviorLabel")}
     </label>
     <div className="space-y-4">
       <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
@@ -187,7 +187,7 @@ const GroupingSettings = ({
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
           />
           <span className="text-sm text-gray-700">
-            Ungroup groups that only contain one tab
+            {chrome.i18n.getMessage("ungroupSingleTabLabel")}
           </span>
         </label>
       </div>
@@ -208,14 +208,14 @@ const GroupingSettings = ({
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
           />
           <span className="text-sm text-gray-700">
-            Keep tabs grouped per window (or limit number of windows)
+            {chrome.i18n.getMessage("keepTabsPerWindowLabel")}
           </span>
         </label>
       </div>
       {config.byWindow && (
         <div className="flex items-center gap-2 ml-6">
           <span className="text-sm text-gray-700">
-            Keep top windows by tab count:
+            {chrome.i18n.getMessage("keepTopWindowsLabel")}
           </span>
           <div className="flex items-center gap-1">
             <input
@@ -243,20 +243,20 @@ const GroupingSettings = ({
                 });
               }}
               className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Number of windows to keep"
+              aria-label={chrome.i18n.getMessage("keepTopWindowsLabel")}
             />
             <button
               disabled={typeof config.numWindowsToKeep !== "number"}
               onClick={() => onChange({ ...config, numWindowsToKeep: null })}
               className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
-              title="Clear window limit"
-              aria-label="Clear window limit"
+              title={chrome.i18n.getMessage("clearWindowLimitTooltip")}
+              aria-label={chrome.i18n.getMessage("clearWindowLimitTooltip")}
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
           </div>
           <span className="text-xs text-gray-500">
-            (Empty = retain all windows)
+            {chrome.i18n.getMessage("retainAllWindowsLabel")}
           </span>
         </div>
       )}
@@ -302,7 +302,7 @@ const RuleRow = React.memo(
               }
             }}
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-            aria-label={`Auto-delete tabs for ${rule.domain}`}
+            aria-label={chrome.i18n.getMessage("autoDeleteAriaLabel", [rule.domain])}
           />
         </td>
         <td className="px-6 py-4">
@@ -322,14 +322,14 @@ const RuleRow = React.memo(
                 });
               }}
               className="w-14 px-1 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-              aria-label="Split by url path segment index"
+              aria-label={chrome.i18n.getMessage("splitByPathAriaLabel")}
             />
             <button
               disabled={rule.splitByPath === null}
               onClick={() => onUpdate(rule.id!, { splitByPath: null })}
               className="text-gray-400 hover:text-gray-600 p-0.5 disabled:opacity-40"
-              title="Clear url path index"
-              aria-label="Clear url path index"
+              title={chrome.i18n.getMessage("clearPathIndexTooltip")}
+              aria-label={chrome.i18n.getMessage("clearPathIndexTooltip")}
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
@@ -347,7 +347,7 @@ const RuleRow = React.memo(
           <button
             onClick={() => onRemove(rule.id!)}
             className="text-red-600 hover:text-red-800 transition-colors p-1 rounded hover:bg-red-50"
-            aria-label={`Remove rule for ${rule.domain}`}
+            aria-label={chrome.i18n.getMessage("removeRuleAriaLabel", [rule.domain])}
           >
             <TrashIcon className="w-4 h-4" />
           </button>
@@ -377,7 +377,7 @@ export default function App() {
       const domain = url.hostname;
 
       if (rules.some((r) => r.domain === domain)) {
-        alert(`Rule for "${domain}" already exists.`);
+        alert(chrome.i18n.getMessage("ruleExistsAlert", [domain]));
         return;
       }
 
@@ -391,7 +391,7 @@ export default function App() {
       };
       updateRules([...rules, newRule]);
     } catch {
-      alert("Invalid URL or domain format. Please try again.");
+      alert(chrome.i18n.getMessage("invalidUrlAlert"));
     }
   };
 
@@ -408,10 +408,10 @@ export default function App() {
       <div className="max-w-6xl mx-auto">
         <header className="mb-8">
           <h1 className="text-3xl font-extrabold text-gray-900">
-            One-click Tab Dedup/Group Manager Options
+            {chrome.i18n.getMessage("optionsTitle")}
           </h1>
           <p className="text-gray-600 mt-2">
-            Configure how your tabs are automatically organized and cleaned up.
+            {chrome.i18n.getMessage("optionsDescription")}
           </p>
         </header>
 
@@ -422,11 +422,11 @@ export default function App() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold tracking-wider">
               <tr>
-                <th className="px-6 py-4 text-left">Domain</th>
-                <th className="px-6 py-4 text-left">Auto Delete</th>
-                <th className="px-6 py-4 text-left">Split URL</th>
-                <th className="px-6 py-4 text-left">Group Name</th>
-                <th className="px-6 py-4 text-left">Actions</th>
+                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("domainColumn")}</th>
+                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("autoDeleteColumn")}</th>
+                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("splitUrlColumn")}</th>
+                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("groupNameColumn")}</th>
+                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("actionsColumn")}</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -436,7 +436,7 @@ export default function App() {
                     colSpan={5}
                     className="px-6 py-12 text-center text-gray-400 italic"
                   >
-                    No domain rules configured yet.
+                    {chrome.i18n.getMessage("noRulesMessage")}
                   </td>
                 </tr>
               ) : (
@@ -456,7 +456,9 @@ export default function App() {
 
         <footer className="mt-8 text-center text-gray-400 text-xs flex flex-col gap-1">
           <div>
-            One-click Tab Dedup/Group Manager &copy; {new Date().getFullYear()}
+            {chrome.i18n.getMessage("copyrightText", [
+              new Date().getFullYear().toString(),
+            ])}
           </div>
           <div>v{chrome.runtime.getManifest().version}</div>
         </footer>

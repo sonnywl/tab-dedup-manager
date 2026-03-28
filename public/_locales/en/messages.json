@@ -1,0 +1,150 @@
+{
+  "appName": {
+    "message": "One-click Tab Dedup/Group Manager",
+    "description": "The name of the extension."
+  },
+  "appDescription": {
+    "message": "Efficiently deduplicate and group your tabs with one click.",
+    "description": "The description of the extension."
+  },
+  "actionTitle": {
+    "message": "Tab Dedup Manager",
+    "description": "The title shown when hovering over the extension icon."
+  },
+  "optionsTitle": {
+    "message": "One-click Tab Dedup/Group Manager Options",
+    "description": "Title of the options page."
+  },
+  "optionsDescription": {
+    "message": "Configure how your tabs are automatically organized and cleaned up.",
+    "description": "Description of the options page."
+  },
+  "groupNamePlaceholder": {
+    "message": "Group name...",
+    "description": "Placeholder for group name input."
+  },
+  "groupNameAriaLabel": {
+    "message": "Group name",
+    "description": "Aria label for group name input."
+  },
+  "addDomainLabel": {
+    "message": "Add Domain",
+    "description": "Label for adding a new domain."
+  },
+  "domainPlaceholder": {
+    "message": "example.com or www.example.com",
+    "description": "Placeholder for domain input."
+  },
+  "domainAriaLabel": {
+    "message": "New domain URL",
+    "description": "Aria label for domain input."
+  },
+  "addButton": {
+    "message": "Add",
+    "description": "Text for the Add button."
+  },
+  "groupingBehaviorLabel": {
+    "message": "Grouping Behavior",
+    "description": "Label for the grouping behavior section."
+  },
+  "ungroupSingleTabLabel": {
+    "message": "Ungroup groups that only contain one tab",
+    "description": "Checkbox label for ungrouping single tab groups."
+  },
+  "keepTabsPerWindowLabel": {
+    "message": "Keep tabs grouped per window (or limit number of windows)",
+    "description": "Checkbox label for window-scoped grouping."
+  },
+  "keepTopWindowsLabel": {
+    "message": "Keep top windows by tab count:",
+    "description": "Label for limiting number of windows."
+  },
+  "clearWindowLimitTooltip": {
+    "message": "Clear window limit",
+    "description": "Tooltip for clearing window limit."
+  },
+  "retainAllWindowsLabel": {
+    "message": "(Empty = retain all windows)",
+    "description": "Subtext explaining empty window limit."
+  },
+  "invalidDomainAlert": {
+    "message": "Please enter a valid domain (e.g., google.com or www.google.com)",
+    "description": "Alert message for invalid domain input."
+  },
+  "domainColumn": {
+    "message": "Domain",
+    "description": "Table header for Domain column."
+  },
+  "autoDeleteColumn": {
+    "message": "Auto Delete",
+    "description": "Table header for Auto-Delete column."
+  },
+  "splitUrlColumn": {
+    "message": "Split URL",
+    "description": "Table header for Split URL column."
+  },
+  "groupNameColumn": {
+    "message": "Group Name",
+    "description": "Table header for Group Name column."
+  },
+  "actionsColumn": {
+    "message": "Actions",
+    "description": "Table header for Actions column."
+  },
+  "noRulesMessage": {
+    "message": "No domain rules configured yet.",
+    "description": "Message shown when there are no rules."
+  },
+  "ruleExistsAlert": {
+    "message": "Rule for \"$DOMAIN$\" already exists.",
+    "description": "Alert message when a rule for a domain already exists.",
+    "placeholders": {
+      "domain": {
+        "content": "$1",
+        "example": "google.com"
+      }
+    }
+  },
+  "invalidUrlAlert": {
+    "message": "Invalid URL or domain format. Please try again.",
+    "description": "Alert message for generic invalid URL/domain."
+  },
+  "autoDeleteAriaLabel": {
+    "message": "Auto-delete tabs for $DOMAIN$",
+    "description": "Aria label for auto-delete checkbox.",
+    "placeholders": {
+      "domain": {
+        "content": "$1",
+        "example": "google.com"
+      }
+    }
+  },
+  "splitByPathAriaLabel": {
+    "message": "Split by url path segment index",
+    "description": "Aria label for split by path input."
+  },
+  "clearPathIndexTooltip": {
+    "message": "Clear url path index",
+    "description": "Tooltip for clearing path index."
+  },
+  "removeRuleAriaLabel": {
+    "message": "Remove rule for $DOMAIN$",
+    "description": "Aria label for remove rule button.",
+    "placeholders": {
+      "domain": {
+        "content": "$1",
+        "example": "google.com"
+      }
+    }
+  },
+  "copyrightText": {
+    "message": "One-click Tab Dedup/Group Manager \u00A9 $YEAR$",
+    "description": "Copyright text in footer.",
+    "placeholders": {
+      "year": {
+        "content": "$1",
+        "example": "2024"
+      }
+    }
+  }
+}
