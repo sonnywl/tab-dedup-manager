@@ -85,45 +85,46 @@ export class TabGroupingService {
   ): boolean {
     if (!title) return true; // Scavenge unnamed groups as managed
 
-    const rule = rulesByDomain[domain];
-    const base = rule?.groupName || domain;
-    const { title: expected } = this.getGroupKey(domain, url, rulesByDomain);
-
     const t = title.toLowerCase();
-    const e = expected.toLowerCase();
     const d = domain.toLowerCase();
-    const b = base.toLowerCase();
 
-    // 1. Exact match with current rule, default domain, or base name (case-insensitive)
-    if (t === e || t === d || t === b) return true;
+    // 1. Early exit: Check for exact domain match or common prefix/suffix variants
+    if (t === d || t === `www.${d}`) return true;
 
-    // 2. Exact match with domain including www. prefix
-    if (t === `www.${d}`) return true;
+    const rule = rulesByDomain[domain];
+    const base = (rule?.groupName || domain).toLowerCase();
 
-    // 3. Collision-resolved variants (e.g. "google.com - Search")
-    // These occur when multiple domains map to the same base name
+    // 2. Base name match (case-insensitive)
+    if (t === base || t === `www.${base}`) return true;
+
+    // 3. Expected title from current rule match
+    const { title: expected } = this.getGroupKey(domain, url, rulesByDomain);
+    const e = expected.toLowerCase();
+    if (t === e) return true;
+
+    // 4. Collision-resolved variants (e.g. "google.com - Search")
     if (
       t.endsWith(` - ${e}`) ||
       t.endsWith(` - ${d}`) ||
-      t.endsWith(` - ${b}`)
+      t.endsWith(` - ${base}`)
     ) {
       return true;
     }
 
-    // 4. Split-path variants (e.g. "github.com/microsoft")
+    // 5. Split-path variants (e.g. "github.com/microsoft")
     if (t.includes(" - ")) {
       if (
         t.endsWith(` - ${d}`) ||
-        t.endsWith(` - ${b}`) ||
+        t.endsWith(` - ${base}`) ||
         t.endsWith(` - www.${d}`) ||
-        t.endsWith(` - www.${b}`)
+        t.endsWith(` - www.${base}`)
       )
         return true;
       if (
         t.startsWith(`${d} - `) ||
-        t.startsWith(`${b} - `) ||
+        t.startsWith(`${base} - `) ||
         t.startsWith(`www.${d} - `) ||
-        t.startsWith(`www.${b} - `)
+        t.startsWith(`www.${base} - `)
       )
         return true;
     }
@@ -131,9 +132,9 @@ export class TabGroupingService {
     if (t.includes("/")) {
       if (
         t.startsWith(`${d}/`) ||
-        t.startsWith(`${b}/`) ||
+        t.startsWith(`${base}/`) ||
         t.startsWith(`www.${d}/`) ||
-        t.startsWith(`www.${b}/`)
+        t.startsWith(`www.${base}/`)
       )
         return true;
     }
