@@ -26,6 +26,41 @@ expect.extend(matchers);
 
 // Mock chrome API
 const mockChrome = {
+  i18n: {
+    getMessage: vi.fn((key, placeholders) => {
+      const messages: { [key: string]: string } = {
+        optionsTitle: "One-click Tab Dedup/Group Manager Options",
+        noRulesMessage: "No domain rules configured yet.",
+        domainPlaceholder: "example.com or www.example.com",
+        addButton: "Add",
+        groupNamePlaceholder: "Group name...",
+        groupNameAriaLabel: "Group name",
+        domainAriaLabel: "New domain URL",
+        addDomainLabel: "Add Domain",
+        groupingBehaviorLabel: "Grouping Behavior",
+        ungroupSingleTabLabel: "Ungroup groups that only contain one tab",
+        keepTabsPerWindowLabel:
+          "Keep tabs grouped per window (or limit number of windows)",
+        keepTopWindowsLabel: "Number of windows to keep",
+        clearWindowLimitTooltip: "Clear window limit",
+        retainAllWindowsLabel: "(Empty = retain all windows)",
+        autoDeleteAriaLabel: "Auto-delete tabs for $DOMAIN$",
+        splitByPathAriaLabel: "Split by url path segment index",
+        clearPathIndexTooltip: "Clear url path index",
+        removeRuleAriaLabel: "Remove rule for $DOMAIN$",
+      };
+      let message = messages[key] || key;
+      if (placeholders) {
+        const p = Array.isArray(placeholders) ? placeholders : [placeholders];
+        p.forEach((val, i) => {
+          // Simplistic placeholder replacement for $DOMAIN$, $1, etc.
+          message = message.replace(/\$[A-Z0-9_]+\$/, val);
+          message = message.replace(`$${i + 1}`, val);
+        });
+      }
+      return message;
+    }),
+  },
   runtime: {
     getManifest: vi.fn().mockReturnValue({ version: "1.0.0" }),
   },
@@ -281,11 +316,11 @@ describe("App Component", () => {
     await user.type(groupInput, "Search Engine");
 
     await waitFor(() => {
-      // normalizeRule removes spaces, so it should be "SearchEngine"
+      // normalizeRule trims, but does NOT remove internal spaces
       expect(mockStore.setState).toHaveBeenLastCalledWith(
         expect.objectContaining({
           rules: [
-            expect.objectContaining({ id: "1", groupName: "SearchEngine" }),
+            expect.objectContaining({ id: "1", groupName: "Search Engine" }),
           ],
         }),
       );

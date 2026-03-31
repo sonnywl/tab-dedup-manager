@@ -26,7 +26,7 @@ if (!("browser" in self)) self.browser = self.chrome;
 const localStorage = browser.storage.local;
 
 const get = async (key) => {
-  const state = (await (!key || !key.length))
+  const state = (!key || !key.length)
     ? localStorage.get(null)
     : localStorage.get(key);
   return state || {};

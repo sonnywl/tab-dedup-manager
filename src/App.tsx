@@ -9,7 +9,7 @@ import startSyncStore from "./utils/startSyncStore";
 function normalizeRule(rule: Rule): Rule {
   return {
     ...rule,
-    groupName: rule.groupName?.trim() || undefined,
+    groupName: rule.groupName || undefined,
   };
 }
 
@@ -18,23 +18,11 @@ function useSyncStore() {
     rules: [],
     grouping: { byWindow: false, ungroupSingleTab: false },
   });
-
-  const syncToStore = useCallback(async (newState: SyncStoreState) => {
-    const { setState } = await startSyncStore({
-      rules: [],
-      grouping: {
-        byWindow: false,
-        numWindowsToKeep: 2,
-        ungroupSingleTab: false,
-      },
-    });
-    setStateInternal(newState);
-    await setState(newState);
-  }, []);
+  const [store, setStore] = useState<any>(null);
 
   useEffect(() => {
     const init = async () => {
-      const { getState } = await startSyncStore({
+      const s = await startSyncStore({
         rules: [],
         grouping: {
           byWindow: false,
@@ -42,7 +30,8 @@ function useSyncStore() {
           ungroupSingleTab: false,
         },
       });
-      const data = await getState();
+      setStore(s);
+      const data = await s.getState();
       const validRules = (data.rules || []).filter(validateRule);
       setStateInternal({
         rules: validRules,
@@ -51,6 +40,15 @@ function useSyncStore() {
     };
     init();
   }, []);
+
+  const syncToStore = useCallback(
+    async (newState: SyncStoreState) => {
+      if (!store) return;
+      setStateInternal(newState);
+      await store.setState(newState);
+    },
+    [store],
+  );
 
   const updateRules = useCallback(
     (newRules: Rule[]) => {
