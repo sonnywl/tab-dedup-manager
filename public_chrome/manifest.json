@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "__MSG_appName__",
+  "name": "",
   "default_locale": "en",
   "version": "0.6.9",
-  "description": "__MSG_appDescription__",
+  "description": "",
   "options_ui": {
     "page": "index.html",
     "open_in_tab": true
@@ -23,5 +23,9 @@
     "type": "module"
   },
   "incognito": "split",
-  "permissions": ["storage", "tabs", "tabGroups"]
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups"
+  ]
 }

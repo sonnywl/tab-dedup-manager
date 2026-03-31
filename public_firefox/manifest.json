@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "__MSG_appName__",
+  "name": "",
   "default_locale": "en",
   "version": "0.6.9",
-  "description": "__MSG_appDescription__",
+  "description": "",
   "options_ui": {
     "page": "index.html",
     "open_in_tab": true
@@ -17,7 +17,9 @@
       "id": "tab_dedup_manager@time_current.com",
       "update_url": "https://sea-lion-app-i977g.ondigitalocean.app/updates.json",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -28,9 +30,15 @@
     "default_title": "__MSG_actionTitle__"
   },
   "background": {
-    "scripts": ["assets/background.js"],
+    "scripts": [
+      "assets/background.js"
+    ],
     "type": "module"
   },
   "incognito": "split",
-  "permissions": ["storage", "tabs", "tabGroups"]
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups"
+  ]
 }

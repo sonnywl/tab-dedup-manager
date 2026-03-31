@@ -1,14 +1,6 @@
 {
-  "appName": {
-    "message": "One-click Tab Dedup/Group Manager",
-    "description": "The name of the extension."
-  },
-  "appDescription": {
-    "message": "Efficiently deduplicate and group your tabs with one click.",
-    "description": "The description of the extension."
-  },
   "actionTitle": {
-    "message": "Tab Dedup Manager",
+    "message": "One-click Tab Dedup Manager",
     "description": "The title shown when hovering over the extension icon."
   },
   "optionsTitle": {
