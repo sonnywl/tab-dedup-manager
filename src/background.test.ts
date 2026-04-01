@@ -66,10 +66,10 @@ describe("TabGroupingController", () => {
     getNormalTabs: vi.fn().mockResolvedValue([]),
     deduplicateAllTabs: vi.fn().mockResolvedValue([]),
     cleanupTabsByRules: vi.fn().mockResolvedValue([]),
-    moveInternalTabsToStart: vi.fn().mockImplementation((tabs) => Promise.resolve(tabs)),
-    executeGroupPlan: vi
+    moveInternalTabsToStart: vi
       .fn()
-      .mockResolvedValue({ success: true, value: undefined }),
+      .mockImplementation((tabs) => Promise.resolve(tabs)),
+    ungroupSingleTabGroups: vi.fn().mockResolvedValue(undefined),
     executeMembershipPlan: vi
       .fn()
       .mockResolvedValue({ success: true, value: undefined }),
@@ -147,124 +147,6 @@ describe("TabGroupingController", () => {
       expect((controller as any).adapter.executeOrderPlan).toHaveBeenCalled();
     });
 
-    it("always calls chrome.tabs.move because lazy checks are removed", async () => {
-      const tab = mkTab(1, "a.com", -1, 5, 1);
-      const plan: any = {
-        states: [
-          {
-            tabIds: [1],
-            displayName: "a.com",
-            sourceDomain: "a.com",
-            targetIndex: 5,
-            isExternal: false,
-            groupId: null,
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      const adapter = new ChromeTabAdapter();
-      const snapshot = { tabs: [tab], groups: [] };
-
-      await adapter.executeGroupPlan(
-        plan,
-        new Map(),
-        1, // targetWindowId
-        snapshot, // snapshotOverride
-      );
-
-      expect(mockChrome.tabs.move).toHaveBeenCalled();
-    });
-
-    it("does NOT skip move if windowId is different", async () => {
-      const tab = mkTab(1, "a.com", -1, 5, 2);
-      const plan: any = {
-        states: [
-          {
-            tabIds: [1],
-            displayName: "a.com",
-            sourceDomain: "a.com",
-            targetIndex: 5,
-            isExternal: false,
-            groupId: null,
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      const adapter = new ChromeTabAdapter();
-      const snapshot = { tabs: [tab], groups: [] };
-
-      await adapter.executeGroupPlan(
-        plan,
-        new Map(),
-        1, // targetWindowId
-        snapshot, // snapshotOverride
-      );
-
-      expect(mockChrome.tabs.move).toHaveBeenCalled();
-    });
-
-    it("falls back to 'Managed Group' if both displayName and sourceDomain are missing in executeGroupPlan", async () => {
-      const plan: any = {
-        states: [
-          {
-            tabIds: [1, 2],
-            displayName: "", // Missing
-            sourceDomain: "", // Missing
-            targetIndex: 0,
-            collapsed: false,
-            isExternal: false,
-            groupId: null, // New group
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      const adapter = new ChromeTabAdapter();
-      mockChrome.tabs.group.mockResolvedValue(1000);
-      const snapshot = {
-        tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")],
-        groups: [],
-      };
-
-      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
-
-      expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(
-        1000,
-        expect.objectContaining({ title: "Managed Group" }),
-      );
-    });
-
-    it("respects the architectural delay (TAB_UPDATE_DELAY) before updating group title", async () => {
-      const plan: any = {
-        states: [
-          {
-            tabIds: [1, 2],
-            displayName: "Delayed Title",
-            sourceDomain: "a.com",
-            targetIndex: 0,
-            collapsed: false,
-            isExternal: false,
-            groupId: null,
-          },
-        ],
-        tabsToUngroup: [],
-      };
-
-      const adapter = new ChromeTabAdapter();
-      mockChrome.tabs.group.mockResolvedValue(1000);
-      const snapshot = {
-        tabs: [mkTab(1, "a.com"), mkTab(2, "b.com")],
-        groups: [],
-      };
-
-      await adapter.executeGroupPlan(plan, new Map(), 1, snapshot);
-
-      // We expect a delay of AT LEAST 50ms per the TAB_UPDATE_DELAY constant
-      expect(mockChrome.tabGroups.update).toHaveBeenCalled();
-    });
-
     it("is idempotent: second execution does nothing after reaching stable state", async () => {
       // Setup stable state
       const tab1 = mkTab(1, "google.com", 10, 0, 1);
@@ -291,19 +173,19 @@ describe("TabGroupingController", () => {
       });
 
       // Reset mock tracking
-      (controller as any).adapter.executeGroupPlan.mockClear();
+      (controller as any).adapter.executeMembershipPlan.mockClear();
+      (controller as any).adapter.executeOrderPlan.mockClear();
 
-      // Trigger 1: Should calculate hash and run once if hash changed from previous test,
-      // but let's assume it runs once.
+      // Trigger 1: Should run once if hash changed
       await controller.execute();
-      const firstRunCalls = (controller as any).adapter.executeGroupPlan.mock
-        .calls.length;
+      const firstRunCalls = (controller as any).adapter.executeMembershipPlan
+        .mock.calls.length;
 
       // Trigger 2: Should skip entirely due to lastStateHash check
       await controller.execute();
 
       expect(
-        (controller as any).adapter.executeGroupPlan.mock.calls.length,
+        (controller as any).adapter.executeMembershipPlan.mock.calls.length,
       ).toBe(firstRunCalls);
     });
   });
@@ -340,16 +222,7 @@ describe("TabGroupingController", () => {
         toMove: [],
       });
 
-      await controller.processGrouping(
-        [tab1, tab2],
-        [tab1, tab2],
-        new Map(),
-        new Map(),
-        new Map(), // protectedMeta
-        new Map(), // groupIdToGroup
-        {}, // rulesByDomain
-        asWindowId(1),
-      );
+      await controller.processGrouping(asWindowId(1), {});
 
       expect(
         (controller as any).adapter.executeMembershipPlan,
@@ -384,31 +257,6 @@ describe("ChromeTabAdapter", () => {
     const unique = await adapter.deduplicateAllTabs(tabs);
     expect(unique.length).toBe(1);
     expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
-  });
-
-  describe("executeGroupPlan()", () => {
-    it("ungroups tabs listed in tabsToUngroup", async () => {
-      const plan: any = {
-        states: [],
-        tabsToUngroup: [99],
-      };
-      const tab99 = mkTab(99, "intruder.com", 101);
-      mockChrome.tabs.query.mockResolvedValue([tab99]);
-
-      await adapter.executeGroupPlan(plan, new Map(), undefined, {
-        tabs: [tab99],
-        groups: [
-          {
-            id: 101,
-            title: "intruder",
-            windowId: 1,
-            collapsed: false,
-            color: "blue",
-          } as any,
-        ],
-      });
-      expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith(99);
-    });
   });
 });
 

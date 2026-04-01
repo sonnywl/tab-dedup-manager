@@ -25,7 +25,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Key Characteristics**:
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
   - **Resilience**: Implements a `retry` mechanism for all destructive or movement-based API calls.
-  - **Surgical Execution**: `executeGroupPlan` is the single point of contact for side-effects (ungroup, move, group, title). It executes the plan sequentially and uses `RATE_DELAY` (30ms) for Chrome stability.
+  - **Surgical Execution**: Side-effects are split into `executeMembershipPlan` (grouping/ungrouping) and `executeOrderPlan` (positioning/sorting). Both use `RATE_DELAY` (30ms) for Chrome stability.
   - **Internal Page Management**: Now includes system/browser internal pages (`edge://`, `chrome://`, etc.) to manage their sorting and prevent them from interleaving with managed content.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
@@ -107,10 +107,9 @@ The layout follows a deterministic order:
 5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
 6.  **Phase 2: Grouping Pass**:
     - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
-    - **States**: `buildGroupStates` creates the virtual target state.
-    - **Needs**: `calculateRepositionNeeds` determines which tabs/groups actually need physical movement or title updates.
-    - **Plan**: `createGroupPlan` generates declarative instructions (ungroup, move, group).
-    - **Execute**: `executeGroupPlan` performs physical changes atomically, including a final single-tab ungrouping pass.
+    - **Membership**: `executeMembershipPlan` performs surgical grouping/ungrouping.
+    - **Reality Check**: Recaptures state to get fresh group IDs and current positions.
+    - **Ordering**: `executeOrderPlan` performs absolute positioning and internal group sorting in one atomic pass.
 
 ---
 
@@ -137,4 +136,4 @@ The system is verified through a tiered testing approach:
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |
-| **Exclusions (Popups, PWAs)**               | `ChromeTabAdapter > getNormalTabs correctly filters...`                   | **Verified** |
+| **Exclusions (Popups, PWAs)**               | `ChromeTabAdapter > getNormalTabs correctly filters...`                            | **Verified** |

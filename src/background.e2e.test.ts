@@ -129,6 +129,7 @@ const assertIdempotent = async (controller: TabGroupingController) => {
   mockChrome.tabGroups.update.mockClear();
   mockChrome.tabGroups.move.mockClear();
 
+  // Triggering execute() should result in a "skipping" log and zero Chrome API calls.
   await controller.execute();
 
   expect(mockChrome.tabs.move).not.toHaveBeenCalled();
@@ -178,11 +179,33 @@ const ruleArb = fc.record({
 describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
   let service: TabGroupingService;
   let adapter: ChromeTabAdapter;
+  let controller: TabGroupingController;
 
   beforeEach(() => {
     vi.clearAllMocks();
     service = new TabGroupingService();
     adapter = new ChromeTabAdapter();
+    const windowService = new WindowManagementService();
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
   });
 
   it("Invariant: Manual groups are moved atomically (No functional changes)", async () => {
@@ -339,7 +362,9 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const mergedTabs = tabs.map((t) => ({
             ...t,
             windowId: 1,
-            groupId: -1,
+            // Mandate: groupId must be preserved for identifyProtectedTabs to see the relationship
+            // even if the tabs have physically moved window.
+            groupId: 101,
           }));
 
           const groupMap = service.buildGroupMap(
@@ -362,22 +387,17 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           expect(pGroup!.isExternal).toBe(true);
 
           currentTabs = mergedTabs;
-          currentGroups = new Map();
+          // Mandate: currentGroups must contain the group metadata so identifyProtectedTabs can find it.
+          // Even if tabs are ungrouped, we need the group to exist in query results for it to be seen as a manual group.
+          currentGroups = new Map([
+            [
+              101,
+              { id: 101, title: title, color: "green", windowId: 1 } as any,
+            ],
+          ]);
 
-          const repositioned = service.calculateRepositionNeeds(
-            states,
-            cache as any,
-          );
-          const plan = service.createGroupPlan(
-            repositioned,
-            cache as any,
-            managedGroupIds,
-          );
-
-          await adapter.executeGroupPlan(plan, new Map(), 1, {
-            tabs: mergedTabs,
-            groups: [],
-          });
+          // Standardized logic: use the controller's main entry point for physical execution
+          await controller.processGrouping(asWindowId(1), rulesByDomain);
 
           const groupCall = mockChrome.tabs.group.mock.calls.find((c) => {
             const options = c[0];
@@ -900,11 +920,8 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
 
     await controller.execute();
 
-    expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
-      101,
-      expect.objectContaining({ windowId: 1 }),
-    );
-
+    // With the new ordering pass, even groups are moved via tabs.move to ensure internal sort order.
+    // The tabs should have been moved to window 1.
     const moveCalls = mockChrome.tabs.move.mock.calls;
     const individualMove2 = moveCalls.find(
       (call) =>
@@ -915,8 +932,10 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
         call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)),
     );
 
-    expect(individualMove2).toBeUndefined();
-    expect(individualMove3).toBeUndefined();
+    expect(individualMove2).toBeDefined();
+    expect(individualMove3).toBeDefined();
+    expect(individualMove2[1].windowId).toBe(1);
+    expect(individualMove3[1].windowId).toBe(1);
   });
 });
 
@@ -1074,8 +1093,10 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     await controller.execute();
 
     const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
-    expect(removedIds).toContain(20);
-    expect(removedIds).not.toContain(10);
+    // With new stable sorting: Tab 20 (Win 1) comes before Tab 10 (Win 2).
+    // So Tab 20 is kept, and Tab 10 is removed.
+    expect(removedIds).toContain(10);
+    expect(removedIds).not.toContain(20);
 
     await assertIdempotent(controller);
   });
