@@ -214,6 +214,7 @@ export class TabGroupingService {
       let groupKey: string = "";
       let displayName: string = "";
       let groupId: GroupId | null = null;
+      let collapsed = false;
 
       const meta = tabId ? protectedTabMeta.get(tabId) : undefined;
       if (meta) {
@@ -221,6 +222,11 @@ export class TabGroupingService {
         groupKey = `external::${meta.originalGroupId}`;
         displayName = meta.title;
         groupId = asGroupId(meta.originalGroupId);
+
+        const group = groupIdToGroup?.get(meta.originalGroupId);
+        if (group) {
+          collapsed = group.collapsed;
+        }
       } else if (tabId && isGrouped(tab) && groupIdToGroup) {
         const group = groupIdToGroup.get(tab.groupId!);
         const groupTitle = group?.title || "";
@@ -237,6 +243,7 @@ export class TabGroupingService {
           // This ensures that path-segment intruders are seen as needing to move to their OWN group
           if (groupTitle.toLowerCase() === title.toLowerCase()) {
             groupId = asGroupId(tab.groupId!);
+            collapsed = group?.collapsed || false;
           }
         }
       }
@@ -257,6 +264,7 @@ export class TabGroupingService {
               domains: new Set([...existing.domains, domain]),
               isExternal,
               groupId: groupId || existing.groupId,
+              collapsed: collapsed || existing.collapsed,
             }
           : {
               tabs: [tab],
@@ -264,6 +272,7 @@ export class TabGroupingService {
               domains: new Set([domain]),
               isExternal,
               groupId,
+              collapsed,
             },
       );
     }
@@ -293,6 +302,7 @@ export class TabGroupingService {
       domains,
       isExternal,
       groupId: entryGroupId,
+      collapsed,
     } of groupMap.values()) {
       const valid = extractTabIds(tabs)
         .map((id) => tabCache.get(id))
@@ -310,6 +320,7 @@ export class TabGroupingService {
         sourceDomain,
         tabIds: extractTabIds(valid),
         groupId: entryGroupId || null,
+        collapsed: collapsed || false,
         needsReposition: false,
         isExternal,
       });
@@ -340,6 +351,7 @@ export class TabGroupingService {
           ...existing,
           tabIds: [...existing.tabIds, ...s.tabIds],
           groupId: existing.groupId || s.groupId,
+          collapsed: existing.collapsed || s.collapsed,
         });
       } else {
         merged.set(key, s);
@@ -601,6 +613,7 @@ export class TabGroupingService {
           displayName: s.displayName,
           sourceDomain: s.sourceDomain,
           targetIndex: s.targetIndex ?? 0,
+          collapsed: s.collapsed,
           isExternal: s.isExternal,
           groupId: s.groupId,
           needsTitleUpdate: s.needsTitleUpdate,
@@ -671,6 +684,7 @@ export class TabGroupingService {
           tabIds: [...s.tabIds],
           groupId: s.groupId,
           title: s.displayName,
+          collapsed: s.collapsed,
         });
       }
     }

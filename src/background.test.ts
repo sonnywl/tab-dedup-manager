@@ -213,6 +213,7 @@ describe("TabGroupingController", () => {
             displayName: "", // Missing
             sourceDomain: "", // Missing
             targetIndex: 0,
+            collapsed: false,
             isExternal: false,
             groupId: null, // New group
           },
@@ -243,6 +244,7 @@ describe("TabGroupingController", () => {
             displayName: "Delayed Title",
             sourceDomain: "a.com",
             targetIndex: 0,
+            collapsed: false,
             isExternal: false,
             groupId: null,
           },
@@ -451,4 +453,72 @@ describe("validateRule", () => {
 
   it("accepts minimal valid rule", () =>
     expect(valid({ domain: "a.com" })).toBe(true));
+});
+
+describe("Collapse state persistence", () => {
+  let service: TabGroupingService;
+  let adapter: ChromeTabAdapter;
+
+  beforeEach(() => {
+    service = new TabGroupingService();
+    adapter = new ChromeTabAdapter();
+    // mockChrome is already stubbed globally in this file
+  });
+
+  it("should preserve collapsed state in MembershipPlan", () => {
+    const tabs = [mkTab(1, "google.com/a", 101), mkTab(2, "google.com/b", 101)];
+    const groupIdToGroup = new Map([
+      [
+        101,
+        { id: 101, title: "google.com", collapsed: true, windowId: 1 } as any,
+      ],
+    ]);
+    const rulesByDomain = {};
+
+    const groupMap = service.buildGroupMap(tabs, rulesByDomain, groupIdToGroup);
+    const tabCache = new Map(tabs.map((t) => [t.id as TabId, t]));
+    const managedGroupIds = new Map([[101, "google.com"]]);
+
+    const groupStates = service.buildGroupStates(
+      groupMap,
+      tabCache,
+      new Map(),
+      managedGroupIds,
+    );
+
+    expect(groupStates[0].collapsed).toBe(true);
+
+    const plan = service.buildMembershipPlan(
+      groupStates,
+      tabCache,
+      managedGroupIds,
+      asWindowId(1),
+    );
+
+    expect(plan.toGroup[0].collapsed).toBe(true);
+  });
+
+  it("should apply collapsed state in executeMembershipPlan", async () => {
+    const plan: any = {
+      toUngroup: [],
+      toGroup: [
+        {
+          tabIds: [1, 2],
+          groupId: 101,
+          title: "google.com",
+          collapsed: true,
+        },
+      ],
+      targetWindowId: 1,
+    };
+
+    mockChrome.tabs.group.mockResolvedValue(101);
+
+    await adapter.executeMembershipPlan(plan, []);
+
+    expect(mockChrome.tabGroups.update).toHaveBeenCalledWith(101, {
+      title: "google.com",
+      collapsed: true,
+    });
+  });
 });

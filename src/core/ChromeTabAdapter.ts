@@ -314,7 +314,7 @@ export default class ChromeTabAdapter {
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
   ): Promise<Result<void, Error>> {
     const snapshot = snapshotOverride || (await this.captureState());
-    const titlesToUpdate = new Map<number, string>();
+    const titlesToUpdate = new Map<number, { title: string; collapsed: boolean }>();
 
     try {
       // 0. Ungroup tabs explicitly requested
@@ -369,11 +369,12 @@ export default class ChromeTabAdapter {
               snapshot.tabs,
               this.RATE_DELAY,
             );
-            titlesToUpdate.set(
-              state.groupId as number,
-              state.displayName ||
+            titlesToUpdate.set(state.groupId as number, {
+              title:
+                state.displayName ||
                 (state.isExternal ? "" : state.sourceDomain || "Managed Group"),
-            );
+              collapsed: state.collapsed,
+            });
             continue; // Skip individual tab moves for this group
           }
         }
@@ -417,7 +418,10 @@ export default class ChromeTabAdapter {
                 (state.isExternal ? "" : state.sourceDomain || "Managed Group");
 
               if (targetTitle || state.groupId === null) {
-                titlesToUpdate.set(gid, targetTitle || "Managed Group");
+                titlesToUpdate.set(gid, {
+                  title: targetTitle || "Managed Group",
+                  collapsed: state.collapsed,
+                });
               }
               return gid;
             },
@@ -428,9 +432,12 @@ export default class ChromeTabAdapter {
       }
 
       // 3. Final Phase: Apply all collected title updates
-      for (const [gid, title] of titlesToUpdate) {
+      for (const [gid, meta] of titlesToUpdate) {
         await retry(() =>
-          chrome.tabGroups.update(gid, { title, collapsed: false }),
+          chrome.tabGroups.update(gid, {
+            title: meta.title,
+            collapsed: meta.collapsed,
+          }),
         );
       }
 
@@ -506,7 +513,14 @@ export default class ChromeTabAdapter {
           await retry(() =>
             chrome.tabGroups.update(gid, {
               title: entry.title,
-              collapsed: false,
+              collapsed: entry.collapsed,
+            }),
+          );
+        } else {
+          // Even if no title update, we might need to update collapsed state if it's a new group
+          await retry(() =>
+            chrome.tabGroups.update(gid, {
+              collapsed: entry.collapsed,
             }),
           );
         }

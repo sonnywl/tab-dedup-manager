@@ -38,6 +38,7 @@ export interface GroupMapEntry {
   readonly domains: ReadonlySet<Domain>;
   readonly isExternal?: boolean;
   readonly groupId?: GroupId | null;
+  readonly collapsed?: boolean;
 }
 
 export type GroupMap = Map<string, GroupMapEntry>;
@@ -47,6 +48,7 @@ export interface GroupState {
   readonly sourceDomain: string;
   readonly tabIds: readonly TabId[];
   readonly groupId: GroupId | null;
+  readonly collapsed: boolean;
   readonly needsReposition: boolean;
   readonly needsTitleUpdate?: boolean;
   readonly isExternal?: boolean;
@@ -59,6 +61,7 @@ export interface GroupPlan {
     displayName: string;
     sourceDomain: string;
     targetIndex: number;
+    collapsed: boolean;
     isExternal?: boolean;
     groupId?: GroupId | null;
     needsTitleUpdate?: boolean;
@@ -68,7 +71,12 @@ export interface GroupPlan {
 
 export interface MembershipPlan {
   toUngroup: TabId[];
-  toGroup: { tabIds: TabId[]; groupId: GroupId | null; title: string }[];
+  toGroup: {
+    tabIds: TabId[];
+    groupId: GroupId | null;
+    title: string;
+    collapsed: boolean;
+  }[];
   targetWindowId: WindowId;
 }
 
