@@ -65,6 +65,14 @@ export default class TabGroupingController {
       this.adapter.getNormalTabs(),
       chrome.tabGroups.query({}),
     ]);
+
+    // Mandate: Ensure tabs are sorted by windowId and index for stable processing
+    tabs.sort((a, b) => {
+      if (a.windowId !== b.windowId)
+        return (a.windowId || 0) - (b.windowId || 0);
+      return a.index - b.index;
+    });
+
     return {
       allTabs: tabs,
       groupIdToGroup: new Map(groups.map((g) => [g.id, g])),
@@ -182,151 +190,95 @@ export default class TabGroupingController {
       ? this.windowService.groupByWindow(state.allTabs)
       : new Map([[asWindowId(activeWindowId), state.allTabs]]);
 
-    for (const [wid, scopedTabs] of windowMap) {
-      const { protectedMeta, managedGroupIds } =
-        this.service.identifyProtectedTabs(
-          scopedTabs,
-          state.groupIdToGroup,
-          rulesByDomain,
-        );
-
-      const groupMap = this.service.buildGroupMap(
-        scopedTabs,
-        rulesByDomain,
-        state.groupIdToGroup,
-        protectedMeta,
-      );
-
-      const res = await this.processGrouping(
-        state.allTabs,
-        scopedTabs,
-        groupMap,
-        managedGroupIds,
-        protectedMeta,
-        state.groupIdToGroup,
-        rulesByDomain,
-        wid,
-      );
+    for (const [wid] of windowMap) {
+      const res = await this.processGrouping(wid, rulesByDomain);
       if (!res.success) throw res.error;
     }
   }
 
-  async processGrouping(
-    allTabs: Tab[],
-    scopedTabs: Tab[],
-    groupMap: GroupMap,
-    managedGroupIds: Map<number, string>,
-    protectedMeta: ProtectedTabMetaMap,
-    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
-    rulesByDomain: RulesByDomain,
+  /**
+   * Encapsulates the core transformation pipeline from raw tabs to grouping logic context.
+   */
+  private async getGroupingContext(
     windowId: WindowId,
+    rulesByDomain: RulesByDomain,
+  ) {
+    const state = await this.captureBrowserState();
+    const scopedTabs = state.allTabs.filter((t) => t.windowId === windowId);
+    const { protectedMeta, managedGroupIds } =
+      this.service.identifyProtectedTabs(
+        scopedTabs,
+        state.groupIdToGroup,
+        rulesByDomain,
+      );
+
+    const groupMap = this.service.buildGroupMap(
+      scopedTabs,
+      rulesByDomain,
+      state.groupIdToGroup,
+      protectedMeta,
+    );
+
+    const tabCache = new Map<TabId, Tab>(
+      state.allTabs.map((t) => [asTabId(t.id)!, t]),
+    );
+
+    const groupStates = this.service.buildGroupStates(
+      groupMap,
+      tabCache,
+      undefined,
+      managedGroupIds,
+    );
+
+    return {
+      allTabs: state.allTabs,
+      scopedTabs,
+      groupStates,
+      managedGroupIds,
+      tabCache,
+    };
+  }
+
+  async processGrouping(
+    windowId: WindowId,
+    rulesByDomain: RulesByDomain,
   ): Promise<Result<void, Error>> {
     try {
-      const groupsByTitle = new Map<string, GroupId>();
-      for (const [gid, g] of groupIdToGroup.entries()) {
-        if (g.windowId === windowId && g.title) {
-          groupsByTitle.set(g.title, asGroupId(gid));
-        }
-      }
-
-      const planningCache = new Map<TabId, Tab>(
-        scopedTabs.map((t) => [asTabId(t.id)!, t]),
-      );
-
       // Phase 2a: Membership
-      const groupStates = this.service.buildGroupStates(
-        groupMap,
-        planningCache,
-        groupsByTitle,
-        managedGroupIds,
-      );
-
+      // We start by calculating the memberships based on the current reality
+      const pre = await this.getGroupingContext(windowId, rulesByDomain);
       const membershipPlan = this.service.buildMembershipPlan(
-        groupStates,
-        planningCache,
-        managedGroupIds,
+        pre.groupStates,
+        pre.tabCache,
+        pre.managedGroupIds,
         windowId,
       );
 
       const memRes = await this.adapter.executeMembershipPlan(
         membershipPlan,
-        allTabs,
+        pre.allTabs,
       );
       if (!memRes.success) return memRes;
 
-      // Phase 2b: Ordering
-      // Re-capture state after membership changes
-      const freshState = await this.captureBrowserState();
-      const freshScopedTabs = freshState.allTabs.filter(
-        (t) => t.windowId === windowId,
-      );
-      const freshGroups = Array.from(freshState.groupIdToGroup.values()).filter(
-        (g) => g.windowId === windowId,
-      );
-      const freshTabCache = new Map<TabId, Tab>(
-        freshState.allTabs.map((t) => [asTabId(t.id)!, t]),
-      );
+      // Phase 2b: Ordering (The "Reality Check" way)
+      // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
+      const fresh = await this.getGroupingContext(windowId, rulesByDomain);
 
-      // Build desired OrderUnit[] from repositioned groupStates
-      // Use freshTabCache to get accurate current positions for needsReposition check
-      const withReposition = this.service.calculateRepositionNeeds(
-        groupStates,
-        freshTabCache,
+      const repositionStates = this.service.calculateRepositionNeeds(
+        fresh.groupStates,
+        fresh.tabCache,
         windowId,
-        managedGroupIds,
+        fresh.managedGroupIds,
       );
 
-      const desired: OrderUnit[] = withReposition.map((s) => {
-        if (s.isExternal || s.tabIds.length >= 2) {
-          // Find the actual groupId in fresh state by title
-          const g = freshGroups.find((g) => g.title === s.displayName);
-          return {
-            kind: "group",
-            groupId: g ? asGroupId(g.id) : (s.groupId as GroupId),
-            tabIds: [...s.tabIds],
-            targetIndex: s.targetIndex!,
-          };
-        } else {
-          return {
-            kind: "solo",
-            tabId: s.tabIds[0],
-            targetIndex: s.targetIndex!,
-          };
-        }
-      });
-
-      // Build live OrderUnit[] from fresh snapshot tab order
-      const live: OrderUnit[] = [];
-      const seenGroups = new Set<number>();
-
-      for (const t of freshScopedTabs) {
-        if (isGrouped(t)) {
-          if (!seenGroups.has(t.groupId)) {
-            seenGroups.add(t.groupId);
-            const gTabs = freshScopedTabs.filter(
-              (gt) => gt.groupId === t.groupId,
-            );
-            live.push({
-              kind: "group",
-              groupId: asGroupId(t.groupId),
-              tabIds: extractTabIds(gTabs),
-              targetIndex: t.index, // Using current index for live units
-            });
-          }
-        } else {
-          live.push({
-            kind: "solo",
-            tabId: asTabId(t.id)!,
-            targetIndex: t.index, // Using current index for live units
-          });
-        }
-      }
+      const desired = this.service.mapToOrderUnits(repositionStates);
+      const live = this.service.getLiveUnits(fresh.scopedTabs);
 
       const orderPlan = this.service.buildOrderPlan(desired, live);
       return this.adapter.executeOrderPlan(
         orderPlan,
         windowId,
-        freshScopedTabs,
+        fresh.scopedTabs,
       );
     } catch (err) {
       return {

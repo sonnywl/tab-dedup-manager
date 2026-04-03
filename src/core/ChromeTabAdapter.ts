@@ -214,7 +214,9 @@ export default class ChromeTabAdapter {
     }
 
     for (const [wid, wTabs] of windowMap.entries()) {
-      const internalUnpinned = wTabs.filter((t) => isInternalTab(t) && !t.pinned);
+      const internalUnpinned = wTabs.filter(
+        (t) => isInternalTab(t) && !t.pinned,
+      );
       if (internalUnpinned.length === 0) continue;
 
       // Stable sort by URL
@@ -314,7 +316,10 @@ export default class ChromeTabAdapter {
     snapshotOverride?: { tabs: Tab[]; groups: chrome.tabGroups.TabGroup[] },
   ): Promise<Result<void, Error>> {
     const snapshot = snapshotOverride || (await this.captureState());
-    const titlesToUpdate = new Map<number, { title: string; collapsed: boolean }>();
+    const titlesToUpdate = new Map<
+      number,
+      { title: string; collapsed: boolean }
+    >();
 
     try {
       // 0. Ungroup tabs explicitly requested
@@ -556,7 +561,9 @@ export default class ChromeTabAdapter {
           await runAtomicOperation(
             async () => {
               if (unit.kind === "group") {
-                return chrome.tabGroups.move(unit.groupId as number, {
+                // Mandate: Use tabs.move with an array of tabIds to both move the group
+                // AND enforce the internal sorting of its tabs in one atomic pass.
+                return chrome.tabs.move(unit.tabIds as number[], {
                   windowId: targetWindowId,
                   index: unit.targetIndex,
                 });

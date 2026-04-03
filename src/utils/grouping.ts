@@ -735,6 +735,51 @@ export class TabGroupingService {
     };
   }
 
+  mapToOrderUnits(states: GroupState[]): OrderUnit[] {
+    return states.map((s) => {
+      if (s.isExternal || s.tabIds.length >= 2) {
+        return {
+          kind: "group",
+          groupId: s.groupId as GroupId,
+          tabIds: [...s.tabIds],
+          targetIndex: s.targetIndex ?? 0,
+        };
+      }
+      return {
+        kind: "solo",
+        tabId: s.tabIds[0],
+        targetIndex: s.targetIndex ?? 0,
+      };
+    });
+  }
+
+  getLiveUnits(tabs: Tab[]): OrderUnit[] {
+    const live: OrderUnit[] = [];
+    const seenGroups = new Set<number>();
+
+    for (const t of tabs) {
+      if (isGrouped(t)) {
+        if (!seenGroups.has(t.groupId)) {
+          seenGroups.add(t.groupId);
+          const gTabs = tabs.filter((gt) => gt.groupId === t.groupId);
+          live.push({
+            kind: "group",
+            groupId: asGroupId(t.groupId),
+            tabIds: extractTabIds(gTabs),
+            targetIndex: t.index,
+          });
+        }
+      } else {
+        live.push({
+          kind: "solo",
+          tabId: asTabId(t.id)!,
+          targetIndex: t.index,
+        });
+      }
+    }
+    return live;
+  }
+
   private unitKey(u: OrderUnit): string {
     return u.kind === "group" ? `g:${u.groupId}` : `t:${u.tabId}`;
   }
