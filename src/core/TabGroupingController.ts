@@ -1,24 +1,15 @@
 import {
   BrowserState,
-  GroupId,
-  GroupMap,
   GroupingConfig,
-  MembershipPlan,
-  OrderPlan,
-  OrderUnit,
-  ProtectedTabMetaMap,
   Result,
   RulesByDomain,
   SyncStore,
   Tab,
   TabId,
   WindowId,
-  asGroupId,
   asTabId,
   asWindowId,
-  extractTabIds,
   isDefined,
-  isGrouped,
   validateRule,
 } from "../types.js";
 import {
@@ -41,8 +32,7 @@ export default class TabGroupingController {
 
   private stateHash(
     tabs: Tab[],
-    rulesByDomain: RulesByDomain,
-    config: GroupingConfig,
+    groups: Map<number, chrome.tabGroups.TabGroup>,
   ): string {
     return JSON.stringify({
       tabs: [...tabs]
@@ -55,8 +45,13 @@ export default class TabGroupingController {
           index: t.index,
           pinned: t.pinned,
         })),
-      rules: rulesByDomain,
-      config,
+      groups: Array.from(groups.values())
+        .sort((a, b) => a.id - b.id)
+        .map((g) => ({
+          id: g.id,
+          title: g.title,
+          collapsed: g.collapsed,
+        })),
     });
   }
 
@@ -204,7 +199,19 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain,
   ) {
     const state = await this.captureBrowserState();
+    return this.buildGroupingContext(state, windowId, rulesByDomain);
+  }
+
+  /**
+   * Pure logic transformation from a known browser state to grouping context.
+   */
+  private buildGroupingContext(
+    state: BrowserState,
+    windowId: WindowId,
+    rulesByDomain: RulesByDomain,
+  ) {
     const scopedTabs = state.allTabs.filter((t) => t.windowId === windowId);
+
     const { protectedMeta, managedGroupIds } =
       this.service.identifyProtectedTabs(
         scopedTabs,
@@ -220,7 +227,7 @@ export default class TabGroupingController {
     );
 
     const tabCache = new Map<TabId, Tab>(
-      state.allTabs.map((t) => [asTabId(t.id)!, t]),
+      scopedTabs.map((t) => [asTabId(t.id)!, t]),
     );
 
     const groupStates = this.service.buildGroupStates(
@@ -288,6 +295,34 @@ export default class TabGroupingController {
     }
   }
 
+  async updateBadge(): Promise<void> {
+    try {
+      const config = await this.loadConfiguration();
+      if (!config) return;
+      const { rulesByDomain } = config;
+
+      const state = await this.captureBrowserState();
+      const total = state.allTabs.length;
+      if (total === 0) {
+        await this.adapter.updateBadge(0);
+        return;
+      }
+
+      const affectedIds = new Set<TabId>();
+
+      this.service
+        .getDuplicateTabIds(state.allTabs)
+        .forEach((id) => affectedIds.add(id));
+      this.service
+        .getAutoDeleteTabIds(state.allTabs, rulesByDomain)
+        .forEach((id) => affectedIds.add(id));
+
+      await this.adapter.updateBadge(affectedIds.size);
+    } catch (err) {
+      console.warn("Failed to calculate affected tabs for badge:", err);
+    }
+  }
+
   async execute(): Promise<void> {
     if (this.isProcessing) return;
     this.isProcessing = true;
@@ -304,7 +339,7 @@ export default class TabGroupingController {
         return;
       }
 
-      const hash = this.stateHash(state.allTabs, rulesByDomain, groupingConfig);
+      const hash = this.stateHash(state.allTabs, state.groupIdToGroup);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
         return;
@@ -333,8 +368,7 @@ export default class TabGroupingController {
       const finalState = await this.captureBrowserState();
       this.lastStateHash = this.stateHash(
         finalState.allTabs,
-        rulesByDomain,
-        groupingConfig,
+        finalState.groupIdToGroup,
       );
     } catch (err) {
       console.warn("Execute error:", err);

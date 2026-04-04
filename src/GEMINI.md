@@ -55,7 +55,7 @@ Destructive operations are applied **globally** to the entire session before pha
 
 ## Learnings & Best Practices
 
-- **Zero-Flicker Merging:** Never move tabs pre-emptively. Wait for the final plan and use `chrome.tabs.move` to perform window transitions and index placement simultaneously.
+- **Group-Block Stability:** Prefer moving entire groups using `chrome.tabGroups.move` to preserve metadata and minimize visual disruption, as opposed to moving individual tabs.
 - **Window-Scoped Coordinates:** Chrome indices are per-window. Repositioning logic must be `targetWindowId` aware to prevent index conflicts during global merges.
 - **Atomic Manual Groups:** Move external groups as cohesive blocks using `chrome.tabGroups.move` to preserve their internal order and metadata.
 - **Snapshot Re-use:** Pass browser snapshots (`tabs` and `groups` arrays) between methods to avoid redundant `chrome.tabs.query` calls.

@@ -1,9 +1,10 @@
-import TabGroupingController from "./core/TabGroupingController.js";
+import ChromeTabAdapter, { debounce } from "./core/ChromeTabAdapter.js";
 import {
   TabGroupingService,
   WindowManagementService,
 } from "./utils/grouping.js";
-import ChromeTabAdapter, { debounce } from "./core/ChromeTabAdapter.js";
+
+import TabGroupingController from "./core/TabGroupingController.js";
 import startSyncStore from "./utils/startSyncStore.js";
 
 async function init() {
@@ -27,15 +28,14 @@ async function init() {
       store,
     );
 
-    const debouncedUpdateBadge = debounce(
-      () => adapter.updateBadge(service),
-      300,
-    );
+    const debouncedUpdateBadge = debounce(() => controller.updateBadge(), 300);
+
+    // Initial update
+    debouncedUpdateBadge();
 
     chrome.action.onClicked.addListener(() => controller.execute());
     chrome.tabs.onCreated.addListener(debouncedUpdateBadge);
     chrome.tabs.onRemoved.addListener(debouncedUpdateBadge);
-    chrome.tabs.onUpdated.addListener(debouncedUpdateBadge);
   } catch (err) {
     console.error("Fatal initialization error:", err);
   }

@@ -57,10 +57,9 @@ The extension ensures operations are both efficient and visually stable (minimiz
 | **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                       |
 | **Atomic Planning**      | Domain      | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality. |
 
-### 2.2 Unified Global Merging (Zero-Flicker)
+### 2.2 Group-Block Stability
 
-- **Old Approach**: Move all tabs to active window first (reshuffle), then sort (reshuffle again).
-- **Optimized Approach**: No pre-emptive moves. Tabs stay in their original windows until the final plan is executed. `chrome.tabs.move` handles both window transition and index placement in **one single API call** per block.
+- **Approach**: To minimize visual disruption and preserve group metadata, the extension prefers moving entire groups as cohesive blocks using `chrome.tabGroups.move`. Individual tabs are positioned using `chrome.tabs.move`.
 
 ---
 
@@ -109,7 +108,7 @@ The layout follows a deterministic order:
     - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
     - **Membership**: `executeMembershipPlan` performs surgical grouping/ungrouping.
     - **Reality Check**: Recaptures state to get fresh group IDs and current positions.
-    - **Ordering**: `executeOrderPlan` performs absolute positioning and internal group sorting in one atomic pass.
+    - **Ordering**: `executeOrderPlan` performs absolute positioning using `tabGroups.move` for groups and `tabs.move` for individual tabs.
 
 ---
 

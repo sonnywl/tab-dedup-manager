@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { TabGroupingService } from "./grouping";
-import { asDomain, RulesByDomain } from "../types";
+import { asDomain, asWindowId, RulesByDomain } from "../types";
 
 describe("TabGroupingService.isInternalTitle", () => {
   let service: TabGroupingService;
@@ -139,7 +139,6 @@ describe("TabGroupingService.calculateRepositionNeeds", () => {
     // Current Live State: b.com is at index 0, a.com is at index 1
     const tab1 = mkTab(1, "https://a.com", 10, 1);
     const tab2 = mkTab(2, "https://b.com", 10, 0);
-    const tabs = [tab1, tab2];
     const tabCache = new Map([
       [1, tab1],
       [2, tab2],
@@ -159,7 +158,7 @@ describe("TabGroupingService.calculateRepositionNeeds", () => {
     const results = service.calculateRepositionNeeds(
       groupStates,
       tabCache as any,
-      1,
+      asWindowId(1),
       managedGroupIds,
     );
 
@@ -170,7 +169,6 @@ describe("TabGroupingService.calculateRepositionNeeds", () => {
   it("should NOT flag a group if order and position are correct", () => {
     const tab1 = mkTab(1, "https://a.com", 10, 0);
     const tab2 = mkTab(2, "https://b.com", 10, 1);
-    const tabs = [tab1, tab2];
     const tabCache = new Map([
       [1, tab1],
       [2, tab2],
@@ -190,7 +188,7 @@ describe("TabGroupingService.calculateRepositionNeeds", () => {
     const results = service.calculateRepositionNeeds(
       groupStates,
       tabCache as any,
-      1,
+      asWindowId(1),
       managedGroupIds,
     );
 

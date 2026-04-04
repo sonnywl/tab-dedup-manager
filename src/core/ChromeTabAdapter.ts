@@ -1,10 +1,7 @@
 import {
   ConsolidationPlan,
-  GroupId,
-  GroupPlan,
   MembershipPlan,
   OrderPlan,
-  ProtectedTabMetaMap,
   Result,
   RulesByDomain,
   Tab,
@@ -12,9 +9,9 @@ import {
   WindowId,
   asTabId,
   isDefined,
-  isGrouped,
   isInternalTab,
 } from "../types.js";
+
 import { TabGroupingService } from "../utils/grouping.js";
 
 // ============================================================================
@@ -42,7 +39,7 @@ export async function retry<T>(
   delayMs = 100,
   isRetriable: (err: Error) => boolean = () => true,
 ): Promise<Result<T, Error>> {
-  let lastError: any;
+  let lastError: unknown;
   for (let i = 1; i <= maxAttempts; i++) {
     try {
       return { success: true, value: await fn() };
@@ -99,7 +96,7 @@ export async function runAtomicOperation<T>(
   delayMs: number,
 ): Promise<T> {
   const res = await retry(operation);
-  if (!res.success) {
+  if (res.success === false) {
     console.error(
       "Atomic operation failed, triggering rollback. Error:",
       res.error.message,
@@ -112,12 +109,12 @@ export async function runAtomicOperation<T>(
   return res.value;
 }
 
-function validateTab(tab: any): tab is Tab {
+function validateTab(tab: unknown): tab is Tab {
   return (
     typeof tab === "object" &&
     tab !== null &&
-    (tab.id === undefined || typeof tab.id === "number") &&
-    (tab.url === undefined || typeof tab.url === "string")
+    ("id" in tab && (tab.id === undefined || typeof tab.id === "number")) &&
+    ("url" in tab && (tab.url === undefined || typeof tab.url === "string"))
   );
 }
 
@@ -145,7 +142,7 @@ export default class ChromeTabAdapter {
         return true;
       });
     });
-    if (!result.success) {
+    if (result.success === false) {
       console.error("Failed to get tabs:", result.error);
       return [];
     }
@@ -169,8 +166,11 @@ export default class ChromeTabAdapter {
     }
 
     for (const batch of this.batch(dupes)) {
-      const r = await retry(() => chrome.tabs.remove(batch as number[]));
-      if (!r.success) console.warn("Failed to remove duplicates:", r.error);
+      const r = await retry(async () => {
+        await chrome.tabs.remove(batch as number[]);
+      });
+      if (r.success === false)
+        console.warn("Failed to remove duplicates:", r.error);
       await sleep(this.RATE_DELAY);
     }
 
@@ -197,8 +197,11 @@ export default class ChromeTabAdapter {
     }
 
     for (const batch of this.batch(toDelete)) {
-      const r = await retry(() => chrome.tabs.remove(batch as number[]));
-      if (!r.success) console.warn("Failed to auto-delete:", r.error);
+      const r = await retry(async () => {
+        await chrome.tabs.remove(batch as number[]);
+      });
+      if (r.success === false)
+        console.warn("Failed to auto-delete:", r.error);
       await sleep(this.RATE_DELAY);
     }
 
@@ -213,7 +216,7 @@ export default class ChromeTabAdapter {
       windowMap.get(tab.windowId)!.push(tab);
     }
 
-    for (const [wid, wTabs] of windowMap.entries()) {
+    for (const [_, wTabs] of windowMap.entries()) {
       const internalUnpinned = wTabs.filter(
         (t) => isInternalTab(t) && !t.pinned,
       );
@@ -263,11 +266,11 @@ export default class ChromeTabAdapter {
 
     for (const batch of this.batch(toUngroup)) {
       if (batch.length === 0) continue;
-      await retry(() =>
-        chrome.tabs.ungroup(
+      await retry(async () => {
+        await chrome.tabs.ungroup(
           batch.length === 1 ? batch[0] : (batch as [number, ...number[]]),
-        ),
-      );
+        );
+      });
       await sleep(this.RATE_DELAY);
     }
   }
@@ -324,12 +327,13 @@ export default class ChromeTabAdapter {
       if (plan.toUngroup.length > 0) {
         for (const batch of this.batch(plan.toUngroup)) {
           await runAtomicOperation(
-            () =>
-              chrome.tabs.ungroup(
+            async () => {
+              await chrome.tabs.ungroup(
                 batch.length === 1
                   ? (batch[0] as number)
                   : (batch as unknown as [number, ...number[]]),
-              ),
+              );
+            },
             snapshotTabs,
             this.RATE_DELAY,
           );
@@ -378,7 +382,10 @@ export default class ChromeTabAdapter {
         };
         if (entry.title) updateData.title = entry.title;
 
-        await retry(() => chrome.tabGroups.update(gid, updateData));
+        const res = await retry(async () => {
+          await chrome.tabGroups.update(gid, updateData);
+        });
+        if (res.success === false) throw res.error;
       }
     });
   }
@@ -401,14 +408,17 @@ export default class ChromeTabAdapter {
         if (isToMove) {
           await runAtomicOperation(
             async () => {
-              const ids =
-                unit.kind === "group"
-                  ? (unit.tabIds as number[])
-                  : [unit.tabId as number];
-              return chrome.tabs.move(ids, {
-                windowId: targetWindowId,
-                index: unit.targetIndex,
-              });
+              if (unit.kind === "group") {
+                await chrome.tabGroups.move(unit.groupId as number, {
+                  windowId: targetWindowId,
+                  index: unit.targetIndex,
+                });
+              } else {
+                await chrome.tabs.move(unit.tabId as number, {
+                  windowId: targetWindowId,
+                  index: unit.targetIndex,
+                });
+              }
             },
             snapshotTabs,
             this.RATE_DELAY,
@@ -418,10 +428,8 @@ export default class ChromeTabAdapter {
     });
   }
 
-  async updateBadge(service: TabGroupingService): Promise<void> {
+  async updateBadge(count: number): Promise<void> {
     try {
-      const tabs = await this.getNormalTabs();
-      const count = service.countDuplicates(tabs);
       if (count > 0) {
         chrome.action.setBadgeText({ text: count.toString() });
         chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
@@ -429,7 +437,7 @@ export default class ChromeTabAdapter {
         chrome.action.setBadgeText({ text: "" });
       }
     } catch (err) {
-      console.warn("Failed to update badge accurately:", err);
+      console.warn("Failed to update badge:", err);
     }
   }
 
@@ -438,13 +446,5 @@ export default class ChromeTabAdapter {
     for (let i = 0; i < arr.length; i += this.MAX_BATCH)
       out.push(arr.slice(i, i + this.MAX_BATCH) as T[]);
     return out;
-  }
-
-  private async captureState() {
-    const [tabs, groups] = await Promise.all([
-      this.getNormalTabs(),
-      chrome.tabGroups.query({}),
-    ]);
-    return { tabs, groups };
   }
 }

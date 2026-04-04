@@ -261,20 +261,22 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             states,
             cache as any,
           );
-          const plan = service.createGroupPlan(
+          const plan = service.buildMembershipPlan(
             withReposition,
             cache as any,
             managedGroupIds,
+            asWindowId(1), // Assume window 1 for generic check
           );
 
-          plan.tabsToUngroup.forEach((tid) => {
+          plan.toUngroup.forEach((tid) => {
             expect(protectedTabMeta.has(tid as any)).toBe(false);
           });
 
-          plan.states.forEach((ps) => {
-            if (ps.isExternal) {
+          plan.toGroup.forEach((ps) => {
+            const state = withReposition.find(s => s.tabIds.every(id => ps.tabIds.includes(id)) && s.tabIds.length === ps.tabIds.length);
+            if (state?.isExternal) {
               const meta = Array.from(protectedTabMeta.values()).find(
-                (m) => m.title === ps.displayName,
+                (m) => m.title === state.displayName,
               );
               if (meta) {
                 const expectedCount = tabs.filter(
@@ -520,16 +522,16 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           states,
           cache as any,
         );
-        const plan = service.createGroupPlan(
+        const plan = service.buildMembershipPlan(
           repositioned,
           cache as any,
           managedGroupIds,
+          asWindowId(windowId),
         );
 
-        plan.states.forEach((ps) => {
-          if (ps.displayName === "Custom Group") {
+        plan.toGroup.forEach((ps) => {
+          if (ps.title === "Custom Group") {
             expect(ps.tabIds).toHaveLength(3);
-            expect(ps.isExternal).toBe(true);
           }
         });
       }),
@@ -601,13 +603,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             asWindowId(activeWindowId),
           );
 
-          const plan = service.createGroupPlan(
-            withReposition,
-            cache as any,
-            managedGroupIds,
-            asWindowId(activeWindowId),
-          );
-
           withReposition.forEach((s) => {
             const stateTabs = s.tabIds.map((tid) => cache.get(tid));
             const hasCrossWindowTab = stateTabs.some(
@@ -617,10 +612,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             if (hasCrossWindowTab) {
               expect(s.needsReposition).toBe(true);
             }
-          });
-
-          plan.states.forEach((ps) => {
-            expect(ps.targetIndex).toBeDefined();
+            expect(s.targetIndex).toBeDefined();
           });
 
           const plannedTabIds = new Set(
@@ -920,8 +912,11 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
 
     await controller.execute();
 
-    // With the new ordering pass, even groups are moved via tabs.move to ensure internal sort order.
-    // The tabs should have been moved to window 1.
+    expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
+      101,
+      expect.objectContaining({ windowId: 1 }),
+    );
+
     const moveCalls = mockChrome.tabs.move.mock.calls;
     const individualMove2 = moveCalls.find(
       (call) =>
@@ -932,10 +927,8 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
         call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)),
     );
 
-    expect(individualMove2).toBeDefined();
-    expect(individualMove3).toBeDefined();
-    expect(individualMove2[1].windowId).toBe(1);
-    expect(individualMove3[1].windowId).toBe(1);
+    expect(individualMove2).toBeUndefined();
+    expect(individualMove3).toBeUndefined();
   });
 });
 

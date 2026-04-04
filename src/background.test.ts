@@ -1,10 +1,10 @@
-import TabGroupingController from "./core/TabGroupingController";
-import ChromeTabAdapter from "./core/ChromeTabAdapter";
+import { TabGroupingService, WindowManagementService } from "./utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import ChromeTabAdapter from "./core/ChromeTabAdapter";
+import TabGroupingController from "./core/TabGroupingController";
+import { TabId, asWindowId } from "./types";
 import { mkTab } from "./test-utils";
-import { TabGroupingService, WindowManagementService } from "./utils/grouping";
-import { asWindowId } from "./types";
 
 // ============================================================================
 // MOCKS
@@ -62,23 +62,27 @@ vi.mock("./utils/startSyncStore.js", () => ({ default: () => mockStore }));
 describe("TabGroupingController", () => {
   let controller: TabGroupingController;
 
-  const makeAdapterMock = (overrides: Record<string, any> = {}) => ({
-    getNormalTabs: vi.fn().mockResolvedValue([]),
-    deduplicateAllTabs: vi.fn().mockResolvedValue([]),
-    cleanupTabsByRules: vi.fn().mockResolvedValue([]),
-    moveInternalTabsToStart: vi
-      .fn()
-      .mockImplementation((tabs) => Promise.resolve(tabs)),
-    ungroupSingleTabGroups: vi.fn().mockResolvedValue(undefined),
-    executeMembershipPlan: vi
-      .fn()
-      .mockResolvedValue({ success: true, value: undefined }),
-    executeOrderPlan: vi
-      .fn()
-      .mockResolvedValue({ success: true, value: undefined }),
-    updateBadge: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  });
+  const makeAdapterMock = (overrides: Record<string, any> = {}) =>
+    ({
+      getNormalTabs: vi.fn().mockResolvedValue([]),
+      deduplicateAllTabs: vi.fn().mockResolvedValue([]),
+      cleanupTabsByRules: vi.fn().mockResolvedValue([]),
+      moveInternalTabsToStart: vi
+        .fn()
+        .mockImplementation((tabs) => Promise.resolve(tabs)),
+      ungroupSingleTabGroups: vi.fn().mockResolvedValue(undefined),
+      executeConsolidationPlan: vi
+        .fn()
+        .mockResolvedValue({ success: true, value: undefined }),
+      executeMembershipPlan: vi
+        .fn()
+        .mockResolvedValue({ success: true, value: undefined }),
+      executeOrderPlan: vi
+        .fn()
+        .mockResolvedValue({ success: true, value: undefined }),
+      updateBadge: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    }) as unknown as ChromeTabAdapter;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -125,8 +129,8 @@ describe("TabGroupingController", () => {
       const tabs1 = [mkTab(1, "a.com"), mkTab(2, "b.com")];
       const tabs2 = [mkTab(2, "b.com"), mkTab(1, "a.com")];
       const hash = (controller as any).stateHash.bind(controller);
-      expect(hash(tabs1, {}, { byWindow: false })).toBe(
-        hash(tabs2, {}, { byWindow: false }),
+      expect(hash(tabs1, new Map(), {}, { byWindow: false })).toBe(
+        hash(tabs2, new Map(), {}, { byWindow: false }),
       );
     });
 

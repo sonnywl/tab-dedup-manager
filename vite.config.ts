@@ -9,7 +9,7 @@ import tailwindcss from "@tailwindcss/vite";
 const aliases = [{ find: "utils", url: "./src/utils" }];
 
 // https://vitejs.dev/config/
-export default defineConfig((configEnv) => ({
+export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
   test: {
     environment: "jsdom",

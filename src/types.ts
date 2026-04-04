@@ -55,20 +55,6 @@ export interface GroupState {
   readonly targetIndex?: number;
 }
 
-export interface GroupPlan {
-  readonly states: ReadonlyArray<{
-    tabIds: readonly TabId[];
-    displayName: string;
-    sourceDomain: string;
-    targetIndex: number;
-    collapsed: boolean;
-    isExternal?: boolean;
-    groupId?: GroupId | null;
-    needsTitleUpdate?: boolean;
-  }>;
-  readonly tabsToUngroup: readonly TabId[];
-}
-
 export interface MembershipPlan {
   toUngroup: TabId[];
   toGroup: {

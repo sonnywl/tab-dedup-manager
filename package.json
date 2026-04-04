@@ -33,6 +33,7 @@
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
     "tailwindcss": "^4.2.2",
+    "typescript": "^6.0.2",
     "vite": "^7.3.1",
     "vitest": "^4.1.2"
   },
@@ -40,8 +41,7 @@
     "@heroicons/react": "^2.2.0",
     "@tanstack/react-table": "^8.21.3",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "typescript": "^5.9.3"
+    "react-dom": "^19.2.4"
   },
   "watch": {
     "build": {

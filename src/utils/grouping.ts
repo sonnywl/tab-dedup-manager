@@ -4,8 +4,11 @@ import {
   GroupId,
   GroupMap,
   GroupMapEntry,
-  GroupPlan,
   GroupState,
+  MembershipPlan,
+  OrderPlan,
+  OrderUnit,
+  ProtectedTabMeta,
   ProtectedTabMetaMap,
   RulesByDomain,
   Tab,
@@ -20,7 +23,6 @@ import {
   isGrouped,
   isInternalTab,
 } from "../types.js";
-
 // ============================================================================
 // CORE LOGIC (Domain Layer)
 // ============================================================================
@@ -279,16 +281,29 @@ export class TabGroupingService {
     return map;
   }
 
-  countDuplicates(tabs: Tab[]): number {
+  getDuplicateTabIds(tabs: Tab[]): Set<TabId> {
     const seen = new Set<string>();
-    let count = 0;
+    const dupes = new Set<TabId>();
     for (const tab of tabs) {
-      if (tab.url) {
-        if (seen.has(tab.url)) count++;
+      if (tab.url && tab.id) {
+        const tid = asTabId(tab.id)!;
+        if (seen.has(tab.url)) dupes.add(tid);
         else seen.add(tab.url);
       }
     }
-    return count;
+    return dupes;
+  }
+
+  getAutoDeleteTabIds(tabs: Tab[], rulesByDomain: RulesByDomain): Set<TabId> {
+    const toDelete = new Set<TabId>();
+    for (const tab of tabs) {
+      const domain = this.getDomain(tab.url);
+      const rule = rulesByDomain[domain];
+      if (rule?.autoDelete && tab.id) {
+        toDelete.add(asTabId(tab.id)!);
+      }
+    }
+    return toDelete;
   }
 
   private mapRawStates(
@@ -314,7 +329,8 @@ export class TabGroupingService {
 
       if (valid.length === 0) continue;
 
-      const sourceDomain = Array.from(domains)[0] || "other";
+      const domainsArray = Array.from(domains);
+      const sourceDomain = (domainsArray[0] as string) || "other";
       rawStates.push({
         displayName: isExternal ? displayName : displayName || sourceDomain,
         sourceDomain,
@@ -588,56 +604,6 @@ export class TabGroupingService {
     processStates(managedUnpinned);
 
     return results;
-  }
-
-  createGroupPlan(
-    groupStates: GroupState[],
-    tabCache: ReadonlyMap<TabId, Tab>,
-    managedGroupIds: Map<number, string> = new Map(),
-    windowId?: WindowId,
-  ): GroupPlan {
-    const states: GroupPlan["states"][number][] = [];
-
-    const groupToExpectedTabs = new Map<number, Set<TabId>>();
-    for (const s of groupStates) {
-      if (s.groupId !== null) {
-        if (!groupToExpectedTabs.has(s.groupId))
-          groupToExpectedTabs.set(s.groupId, new Set());
-        for (const id of s.tabIds) groupToExpectedTabs.get(s.groupId)!.add(id);
-      }
-
-      if (s.tabIds.length === 0) continue;
-      if (s.needsReposition || s.needsTitleUpdate) {
-        states.push({
-          tabIds: s.tabIds,
-          displayName: s.displayName,
-          sourceDomain: s.sourceDomain,
-          targetIndex: s.targetIndex ?? 0,
-          collapsed: s.collapsed,
-          isExternal: s.isExternal,
-          groupId: s.groupId,
-          needsTitleUpdate: s.needsTitleUpdate,
-        });
-      }
-    }
-
-    const tabsToUngroup: TabId[] = [];
-    for (const tab of tabCache.values()) {
-      if (windowId !== undefined && tab.windowId !== windowId) continue;
-
-      const tid = asTabId(tab.id);
-      const gid = tab.groupId;
-      if (tid && gid !== -1 && isDefined(gid)) {
-        if (managedGroupIds.has(gid)) {
-          const expected = groupToExpectedTabs.get(gid);
-          if (!expected || !expected.has(tid)) {
-            tabsToUngroup.push(tid);
-          }
-        }
-      }
-    }
-
-    return { states, tabsToUngroup };
   }
 
   buildMembershipPlan(
