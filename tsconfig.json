@@ -17,9 +17,9 @@
     /* Modern Defaults */
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
+    "types": ["chrome", "vite/client"],
     "paths": {
-      "utils/*": ["src/utils/*"]
+      "utils/*": ["./src/utils/*"]
     },
 
     /* Linting */
