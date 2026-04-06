@@ -135,8 +135,9 @@ export function isInternalTab(tab: Tab): boolean {
   return internalProtocols.some((p) => tab.url!.startsWith(p));
 }
 
-export function validateRule(rule: any): rule is Rule {
-  if (typeof rule !== "object" || rule === null) return false;
+export function validateRule(r: unknown): r is Rule {
+  if (typeof r !== "object" || r === null) return false;
+  const rule = r as Record<string, unknown>;
   if (typeof rule.domain !== "string" || rule.domain.length === 0) return false;
 
   if (rule.autoDelete != null && typeof rule.autoDelete !== "boolean")

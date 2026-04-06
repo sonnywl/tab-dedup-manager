@@ -1,8 +1,7 @@
-import { GroupingConfig, Rule, SyncStoreState, validateRule } from "./types";
+import { GroupingConfig, Rule, SyncStoreState, validateRule } from "@/types";
 import { PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-// @ts-ignore
 import startSyncStore from "./utils/startSyncStore";
 
 // FIX: normalize groupName "" → undefined before persisting to avoid empty string group keys
@@ -123,7 +122,7 @@ const GroupNameInput = React.memo(
 const AddDomainForm = ({ onAdd }: { onAdd: (domain: string) => void }) => {
   const [input, setInput] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.SubmitEvent) => {
     e.preventDefault();
     if (isValidInput(input)) {
       onAdd(input);
@@ -300,7 +299,9 @@ const RuleRow = React.memo(
               }
             }}
             className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
-            aria-label={chrome.i18n.getMessage("autoDeleteAriaLabel", [rule.domain])}
+            aria-label={chrome.i18n.getMessage("autoDeleteAriaLabel", [
+              rule.domain,
+            ])}
           />
         </td>
         <td className="px-6 py-4">
@@ -345,7 +346,9 @@ const RuleRow = React.memo(
           <button
             onClick={() => onRemove(rule.id!)}
             className="text-red-600 hover:text-red-800 transition-colors p-1 rounded hover:bg-red-50"
-            aria-label={chrome.i18n.getMessage("removeRuleAriaLabel", [rule.domain])}
+            aria-label={chrome.i18n.getMessage("removeRuleAriaLabel", [
+              rule.domain,
+            ])}
           >
             <TrashIcon className="w-4 h-4" />
           </button>
@@ -420,11 +423,21 @@ export default function App() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs font-semibold tracking-wider">
               <tr>
-                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("domainColumn")}</th>
-                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("autoDeleteColumn")}</th>
-                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("splitUrlColumn")}</th>
-                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("groupNameColumn")}</th>
-                <th className="px-6 py-4 text-left">{chrome.i18n.getMessage("actionsColumn")}</th>
+                <th className="px-6 py-4 text-left">
+                  {chrome.i18n.getMessage("domainColumn")}
+                </th>
+                <th className="px-6 py-4 text-left">
+                  {chrome.i18n.getMessage("autoDeleteColumn")}
+                </th>
+                <th className="px-6 py-4 text-left">
+                  {chrome.i18n.getMessage("splitUrlColumn")}
+                </th>
+                <th className="px-6 py-4 text-left">
+                  {chrome.i18n.getMessage("groupNameColumn")}
+                </th>
+                <th className="px-6 py-4 text-left">
+                  {chrome.i18n.getMessage("actionsColumn")}
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">

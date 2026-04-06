@@ -12,16 +12,6 @@ import {
 import App from "./App";
 import userEvent from "@testing-library/user-event";
 
-// Fix type errors for jest-dom matchers in Vitest
-import { TestingLibraryMatchers } from "@testing-library/jest-dom/matchers";
-declare module "vitest" {
-  interface Assertion<T = any> extends TestingLibraryMatchers<any, T> {}
-  interface AsymmetricMatchersContaining extends TestingLibraryMatchers<
-    any,
-    any
-  > {}
-}
-
 expect.extend(matchers);
 
 // Mock chrome API
@@ -286,7 +276,7 @@ describe("App Component", () => {
     await user.click(clearButton);
 
     await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(
+      expect(mockStore.setState).toHaveBeenLastCalledWith(
         expect.objectContaining({
           rules: [expect.objectContaining({ id: "1", splitByPath: null })],
         }),

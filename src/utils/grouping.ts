@@ -22,7 +22,7 @@ import {
   isDefined,
   isGrouped,
   isInternalTab,
-} from "../types.js";
+} from "@/types";
 // ============================================================================
 // CORE LOGIC (Domain Layer)
 // ============================================================================
@@ -36,6 +36,7 @@ export class TabGroupingService {
   getDomain(url: string | undefined): Domain {
     if (!url) return asDomain("other");
     try {
+      if (url.startsWith("file://")) return asDomain("local-file");
       const u = new URL(url);
       // Mandate: Use .host instead of .hostname to include significant ports (e.g. localhost:8000)
       return this.normalizeDomain(u.host);
@@ -114,19 +115,14 @@ export class TabGroupingService {
     }
 
     // 5. Split-path variants (e.g. "github.com/microsoft")
+    // Mandate: Only reclaim titles that follow the 'segment - base' or 'segment/base' pattern.
+    // We avoid 'base - segment' variants to protect user-named groups.
     if (t.includes(" - ")) {
       if (
         t.endsWith(` - ${d}`) ||
         t.endsWith(` - ${base}`) ||
         t.endsWith(` - www.${d}`) ||
         t.endsWith(` - www.${base}`)
-      )
-        return true;
-      if (
-        t.startsWith(`${d} - `) ||
-        t.startsWith(`${base} - `) ||
-        t.startsWith(`www.${d} - `) ||
-        t.startsWith(`www.${base} - `)
       )
         return true;
     }
@@ -243,7 +239,11 @@ export class TabGroupingService {
 
           // Mandate: Only inherit groupId if the title specifically matches what we expect for this tab
           // This ensures that path-segment intruders are seen as needing to move to their OWN group
-          if (groupTitle.toLowerCase() === title.toLowerCase()) {
+          // OR if the current group has NO title, we inherit it to allow for a rename (scavenge).
+          if (
+            groupTitle === "" ||
+            groupTitle.toLowerCase() === title.toLowerCase()
+          ) {
             groupId = asGroupId(tab.groupId!);
             collapsed = group?.collapsed || false;
           }
@@ -443,7 +443,7 @@ export class TabGroupingService {
 
       // Mandate: Managed pinned tabs are never grouped
       const firstTab = tabCache.get(s.tabIds[0]);
-      if (firstTab?.pinned) {
+      if (!s.isExternal && firstTab?.pinned) {
         groupId = null;
       }
 
@@ -548,16 +548,16 @@ export class TabGroupingService {
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
+        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
+        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
+
         const tA = tabCache.get(a.tabIds[0]);
         const tB = tabCache.get(b.tabIds[0]);
-
         const isInternalA = tA ? isInternalTab(tA) : false;
         const isInternalB = tB ? isInternalTab(tB) : false;
         if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
 
-        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
-        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
-        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
         return sortByUrl(a, b);
       });
 

@@ -17,8 +17,11 @@
     /* Modern Defaults */
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["chrome", "vite/client"],
+    "types": ["chrome", "vite/client", "@testing-library/jest-dom"],
     "paths": {
+      "@/*": ["./src/*"],
+      "@src/*": ["./src/*"],
+      "core/*": ["./src/core/*"],
       "utils/*": ["./src/utils/*"]
     },
 

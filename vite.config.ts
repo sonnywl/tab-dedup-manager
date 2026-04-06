@@ -7,8 +7,19 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 const aliases = [
-  { find: "core", url: "./src/core" },
-  { find: "utils", url: "./src/utils" },
+  {
+    find: "@src",
+    replacement: fileURLToPath(new URL("./src", import.meta.url)),
+  },
+  { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+  {
+    find: "core",
+    replacement: fileURLToPath(new URL("./src/core", import.meta.url)),
+  },
+  {
+    find: "utils",
+    replacement: fileURLToPath(new URL("./src/utils", import.meta.url)),
+  },
 ];
 
 // https://vitejs.dev/config/
@@ -16,12 +27,10 @@ export default defineConfig(() => ({
   plugins: [react(), tailwindcss()],
   test: {
     environment: "jsdom",
+    globals: true,
   },
   resolve: {
-    alias: aliases.reduce((acc: { [key: string]: string }, curr) => {
-      acc[curr.find] = fileURLToPath(new URL(curr.url, import.meta.url));
-      return acc;
-    }, {}),
+    alias: aliases,
   },
   build: {
     // sourcemap: true,

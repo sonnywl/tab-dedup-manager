@@ -10,9 +10,9 @@ import {
   asTabId,
   isDefined,
   isInternalTab,
-} from "../types.js";
+} from "@/types";
 
-import { TabGroupingService } from "../utils/grouping.js";
+import { TabGroupingService } from "../utils/grouping";
 
 // ============================================================================
 // UTILITIES
@@ -113,8 +113,10 @@ function validateTab(tab: unknown): tab is Tab {
   return (
     typeof tab === "object" &&
     tab !== null &&
-    ("id" in tab && (tab.id === undefined || typeof tab.id === "number")) &&
-    ("url" in tab && (tab.url === undefined || typeof tab.url === "string"))
+    "id" in tab &&
+    (tab.id === undefined || typeof tab.id === "number") &&
+    "url" in tab &&
+    (tab.url === undefined || typeof tab.url === "string")
   );
 }
 
@@ -200,8 +202,7 @@ export default class ChromeTabAdapter {
       const r = await retry(async () => {
         await chrome.tabs.remove(batch as number[]);
       });
-      if (r.success === false)
-        console.warn("Failed to auto-delete:", r.error);
+      if (r.success === false) console.warn("Failed to auto-delete:", r.error);
       await sleep(this.RATE_DELAY);
     }
 
@@ -247,18 +248,36 @@ export default class ChromeTabAdapter {
     return tabs;
   }
 
-  async ungroupSingleTabGroups(tabs: Tab[]): Promise<void> {
+  async ungroupSingleTabGroups(
+    tabs: Tab[],
+    service: TabGroupingService,
+    rulesByDomain: RulesByDomain,
+  ): Promise<void> {
     const groupCounts = new Map<number, number>();
+    const groupIds = new Set<number>();
     for (const tab of tabs) {
       if (tab.groupId !== -1 && tab.groupId !== undefined) {
         groupCounts.set(tab.groupId, (groupCounts.get(tab.groupId) || 0) + 1);
+        groupIds.add(tab.groupId);
       }
     }
+
+    const groups = await chrome.tabGroups.query({});
+    const groupIdToGroup = new Map(groups.map((g) => [g.id, g]));
+
+    const { managedGroupIds } = service.identifyProtectedTabs(
+      tabs,
+      groupIdToGroup,
+      rulesByDomain,
+    );
 
     const toUngroup: number[] = [];
     for (const tab of tabs) {
       if (tab.id && tab.groupId !== -1 && tab.groupId !== undefined) {
-        if (groupCounts.get(tab.groupId) === 1) {
+        if (
+          groupCounts.get(tab.groupId) === 1 &&
+          managedGroupIds.has(tab.groupId)
+        ) {
           toUngroup.push(tab.id);
         }
       }
@@ -360,7 +379,7 @@ export default class ChromeTabAdapter {
           );
         }
 
-        const gid = await runAtomicOperation(
+        await runAtomicOperation(
           async () => {
             const options: chrome.tabs.GroupOptions = {
               tabIds:
@@ -371,21 +390,18 @@ export default class ChromeTabAdapter {
             if (entry.groupId !== null) {
               options.groupId = entry.groupId as number;
             }
-            return chrome.tabs.group(options);
+            const gid = await chrome.tabs.group(options);
+
+            const updateData: chrome.tabGroups.UpdateProperties = {
+              collapsed: entry.collapsed,
+            };
+            if (entry.title) updateData.title = entry.title;
+
+            await chrome.tabGroups.update(gid, updateData);
           },
           snapshotTabs,
           this.RATE_DELAY,
         );
-
-        const updateData: chrome.tabGroups.UpdateProperties = {
-          collapsed: entry.collapsed,
-        };
-        if (entry.title) updateData.title = entry.title;
-
-        const res = await retry(async () => {
-          await chrome.tabGroups.update(gid, updateData);
-        });
-        if (res.success === false) throw res.error;
       }
     });
   }

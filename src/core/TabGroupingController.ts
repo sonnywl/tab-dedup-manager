@@ -11,13 +11,10 @@ import {
   asWindowId,
   isDefined,
   validateRule,
-} from "../types.js";
-import {
-  TabGroupingService,
-  WindowManagementService,
-} from "../utils/grouping.js";
+} from "@/types";
+import { TabGroupingService, WindowManagementService } from "utils/grouping";
 
-import ChromeTabAdapter from "./ChromeTabAdapter.js";
+import ChromeTabAdapter from "./ChromeTabAdapter";
 
 export default class TabGroupingController {
   private isProcessing = false;
@@ -123,7 +120,11 @@ export default class TabGroupingController {
     await this.adapter.moveInternalTabsToStart(remaining);
 
     if (config.ungroupSingleTab) {
-      await this.adapter.ungroupSingleTabGroups(remaining);
+      await this.adapter.ungroupSingleTabGroups(
+        remaining,
+        this.service,
+        rulesByDomain,
+      );
     }
   }
 
@@ -185,8 +186,12 @@ export default class TabGroupingController {
       ? this.windowService.groupByWindow(state.allTabs)
       : new Map([[asWindowId(activeWindowId), state.allTabs]]);
 
-    for (const [wid] of windowMap) {
-      const res = await this.processGrouping(wid, rulesByDomain);
+    for (const [wid, tabs] of windowMap) {
+      const res = await this.processGrouping(
+        wid,
+        rulesByDomain,
+        !groupingConfig.byWindow ? tabs : undefined,
+      );
       if (!res.success) throw res.error;
     }
   }
@@ -197,9 +202,15 @@ export default class TabGroupingController {
   private async getGroupingContext(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
+    overrideTabs?: Tab[],
   ) {
     const state = await this.captureBrowserState();
-    return this.buildGroupingContext(state, windowId, rulesByDomain);
+    return this.buildGroupingContext(
+      state,
+      windowId,
+      rulesByDomain,
+      overrideTabs,
+    );
   }
 
   /**
@@ -209,8 +220,10 @@ export default class TabGroupingController {
     state: BrowserState,
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
+    overrideTabs?: Tab[],
   ) {
-    const scopedTabs = state.allTabs.filter((t) => t.windowId === windowId);
+    const scopedTabs =
+      overrideTabs || state.allTabs.filter((t) => t.windowId === windowId);
 
     const { protectedMeta, managedGroupIds } =
       this.service.identifyProtectedTabs(
@@ -249,11 +262,16 @@ export default class TabGroupingController {
   async processGrouping(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
+    overrideTabs?: Tab[],
   ): Promise<Result<void, Error>> {
     try {
       // Phase 2a: Membership
       // We start by calculating the memberships based on the current reality
-      const pre = await this.getGroupingContext(windowId, rulesByDomain);
+      const pre = await this.getGroupingContext(
+        windowId,
+        rulesByDomain,
+        overrideTabs,
+      );
       const membershipPlan = this.service.buildMembershipPlan(
         pre.groupStates,
         pre.tabCache,
@@ -269,6 +287,8 @@ export default class TabGroupingController {
 
       // Phase 2b: Ordering (The "Reality Check" way)
       // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
+      // In global mode, Phase 2a has moved all tabs into the target window,
+      // so we don't need overrideTabs anymore for the reality check.
       const fresh = await this.getGroupingContext(windowId, rulesByDomain);
 
       const repositionStates = this.service.calculateRepositionNeeds(

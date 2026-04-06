@@ -1,11 +1,8 @@
-import ChromeTabAdapter, { debounce } from "./core/ChromeTabAdapter.js";
-import {
-  TabGroupingService,
-  WindowManagementService,
-} from "./utils/grouping.js";
+import ChromeTabAdapter, { debounce } from "core/ChromeTabAdapter";
+import { TabGroupingService, WindowManagementService } from "utils/grouping";
 
-import TabGroupingController from "./core/TabGroupingController.js";
-import startSyncStore from "./utils/startSyncStore.js";
+import TabGroupingController from "core/TabGroupingController";
+import startSyncStore from "utils/startSyncStore";
 
 async function init() {
   try {

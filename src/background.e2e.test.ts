@@ -1,11 +1,11 @@
-import TabGroupingController from "./core/TabGroupingController";
-import ChromeTabAdapter from "./core/ChromeTabAdapter";
-import { asTabId, asWindowId } from "./types";
 import { TabGroupingService, WindowManagementService } from "./utils/grouping";
+import { asTabId, asWindowId } from "@/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import ChromeTabAdapter from "./core/ChromeTabAdapter";
+import TabGroupingController from "./core/TabGroupingController";
 import fc from "fast-check";
-import { mkTab } from "./test-utils";
+import { mkTab } from "./core/test-utils";
 
 // ============================================================================
 // MOCKS & SETUP - MUST BE AT TOP
@@ -273,7 +273,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           });
 
           plan.toGroup.forEach((ps) => {
-            const state = withReposition.find(s => s.tabIds.every(id => ps.tabIds.includes(id)) && s.tabIds.length === ps.tabIds.length);
+            const state = withReposition.find(
+              (s) =>
+                s.tabIds.every((id) => ps.tabIds.includes(id)) &&
+                s.tabIds.length === ps.tabIds.length,
+            );
             if (state?.isExternal) {
               const meta = Array.from(protectedTabMeta.values()).find(
                 (m) => m.title === state.displayName,
@@ -1107,7 +1111,7 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
 
     currentTabs = tabs;
     currentGroups = new Map([
-      [101, { id: 101, title: "My Manual Group", windowId: 1 }],
+      [101, { id: 101, title: "shared.com", windowId: 1 }],
     ]);
 
     await controller.execute();
