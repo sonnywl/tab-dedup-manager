@@ -131,7 +131,15 @@ export function isGrouped(tab: Tab): boolean {
 
 export function isInternalTab(tab: Tab): boolean {
   if (!tab.url) return false;
-  const internalProtocols = ["chrome:", "about:", "edge:", "brave:"];
+  const internalProtocols = [
+    "chrome:",
+    "about:",
+    "edge:",
+    "brave:",
+    "file:",
+    "chrome-extension:",
+    "moz-extension:",
+  ];
   return internalProtocols.some((p) => tab.url!.startsWith(p));
 }
 

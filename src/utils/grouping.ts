@@ -548,15 +548,17 @@ export class TabGroupingService {
     const managedUnpinned = groupStates
       .filter((s) => !tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
-        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
-        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
-
         const tA = tabCache.get(a.tabIds[0]);
         const tB = tabCache.get(b.tabIds[0]);
         const isInternalA = tA ? isInternalTab(tA) : false;
         const isInternalB = tB ? isInternalTab(tB) : false;
+
+        // Mandate: Internal Pages -> Clustered Groups -> Title/URL
         if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
+
+        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
+        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
 
         return sortByUrl(a, b);
       });

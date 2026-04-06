@@ -314,7 +314,7 @@ describe("TabGroupingService", () => {
       expect(repositioned[1].displayName).toBe("z - example.com");
     });
 
-    it("should maintain hierarchy: Groups -> Stable Internal Pages -> Single Tabs", () => {
+    it("should maintain hierarchy: Internal Pages -> Groups -> Single Tabs", () => {
       const rulesByDomain: RulesByDomain = {
         "managed.com": { domain: "managed.com" },
       };
@@ -347,16 +347,16 @@ describe("TabGroupingService", () => {
       const states = service.buildGroupStates(groupMap, cache);
       const repositioned = service.calculateRepositionNeeds(states, cache);
 
-      // Sorting: managed.com (M) < My Group (M) < settings (Internal) < other.com (Solo)
-      expect(repositioned[0].displayName).toBe("managed.com");
-      expect(repositioned[1].displayName).toBe("My Group");
-      expect(repositioned[2].displayName).toBe("settings");
+      // Sorting: settings (Internal) < managed.com (M) < My Group (M) < other.com (Solo)
+      expect(repositioned[0].displayName).toBe("settings");
+      expect(repositioned[1].displayName).toBe("managed.com");
+      expect(repositioned[2].displayName).toBe("My Group");
       expect(repositioned[3].displayName).toBe("other.com");
     });
   });
 
   describe("Internal Pages Sorting", () => {
-    it("should sort internal pages to the start of the unpinned section (after groups)", () => {
+    it("should sort internal pages to the start of the unpinned section (before groups)", () => {
       const rulesByDomain: RulesByDomain = {};
 
       const tabs = [
@@ -379,10 +379,10 @@ describe("TabGroupingService", () => {
 
       const repositioned = service.calculateRepositionNeeds(states, cache);
 
-      // Managed Group "google.com" comes before internal pages
-      expect(repositioned[0].displayName).toBe("google.com");
-      expect(repositioned[1].displayName).toBe("extensions");
-      expect(repositioned[2].displayName).toBe("settings");
+      // Internal pages come before Managed Group "google.com"
+      expect(repositioned[0].displayName).toBe("extensions");
+      expect(repositioned[1].displayName).toBe("settings");
+      expect(repositioned[2].displayName).toBe("google.com");
     });
   });
 
