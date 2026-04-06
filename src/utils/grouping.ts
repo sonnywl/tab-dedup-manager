@@ -752,6 +752,52 @@ export class TabGroupingService {
     return u.kind === "group" ? `g:${u.groupId}` : `t:${u.tabId}`;
   }
 
+  // ============================================================================
+  // PERFORMANCE UTILITIES (Hashing)
+  // ============================================================================
+
+  /**
+   * High-performance 32-bit FNV-1a hash implementation.
+   * Optimized for zero-allocation state fingerprinting.
+   */
+  hashState(tabs: Tab[], groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>): string {
+    let h = 2166136261 >>> 0; // FNV offset basis
+
+    const update = (val: number) => {
+      h ^= val >>> 0;
+      h = Math.imul(h, 16777619);
+    };
+
+    const updateString = (str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        update(str.charCodeAt(i));
+      }
+    };
+
+    // 1. Stable Tab Hashing
+    const sortedTabs = [...tabs].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    for (const t of sortedTabs) {
+      update(t.id ?? 0);
+      update(t.groupId ?? -1);
+      update(t.index);
+      update(t.windowId ?? 0);
+      update(t.pinned ? 1 : 0);
+      updateString(t.url || "");
+    }
+
+    // 2. Stable Group Hashing
+    const sortedGroups = Array.from(groupIdToGroup.values()).sort(
+      (a, b) => a.id - b.id,
+    );
+    for (const g of sortedGroups) {
+      update(g.id);
+      update(g.collapsed ? 1 : 0);
+      updateString(g.title || "");
+    }
+
+    return (h >>> 0).toString(16);
+  }
+
   private calculateLIS(arr: number[]): number[] {
     if (arr.length === 0) return [];
 

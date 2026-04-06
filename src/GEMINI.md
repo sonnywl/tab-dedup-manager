@@ -9,15 +9,16 @@
 - **Clarification**: If a requested change or proposed behavior contradicts the established specifications (`SPEC.md`) or foundational rules (`GEMINI.md`), **proactively ask the user for clarity** before proceeding with implementation.
 - **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal). If too long return the current context and pass to a new agent.
 - **Clean Code Mandate**: Adhere strictly to the **Single Responsibility Principle (SRP)**. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and dependencies are injected. Remove dead code and redundant parameters immediately.
-- **Format** Always prettier format the code after changes
+- **Styling**: **Use Tailwind CSS** for all UI components. This project is built with Tailwind CSS; do not use Vanilla CSS or other frameworks.
+- **Format**: Always prettier format the code after changes.
 
 ## Architecture
 
 The application is structured into three distinct layers with all shared data structures consolidated in `src/types.ts`:
 
-1.  **Domain Layer (`src/utils/grouping.ts`):** Pure business logic. Side-effect free. Responsible for domain extraction, group mapping, repositioning needs, and window merging heuristics.
-2.  **Infrastructure Layer (`src/core/ChromeTabAdapter.ts`):** Encapsulates all Chrome API interactions and low-level utilities (retry, atomic operations). Implements surgical, window-aware execution.
-3.  **Application Layer (`src/core/TabGroupingController.ts`):** Unified orchestration. Manages state fingerprinting, process guarding, and high-level workflow. Uses **Dependency Injection** for all services and adapters.
+1.  **Domain Layer (`src/utils/grouping.ts`):** Pure business logic. Side-effect free. Responsible for domain extraction, group mapping, repositioning needs (via **Longest Increasing Subsequence** for visual stability), and window merging heuristics.
+2.  **Infrastructure Layer (`src/core/ChromeTabAdapter.ts`):** Encapsulates all Chrome API interactions and low-level utilities (**retry with backoff**, atomic operations). Implements surgical, window-aware execution with best-effort rollbacks.
+3.  **Application Layer (`src/core/TabGroupingController.ts`):** Unified orchestration. Manages **State Fingerprinting**, process guarding, and high-level workflow. Uses **Dependency Injection** for all services and adapters.
 
 ## Requirements & Invariants
 
@@ -25,7 +26,7 @@ The application is structured into three distinct layers with all shared data st
 | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                            |
 | Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                      |
-| Window Limit     | Optional `numWindowsToKeep`. Excess windows merge into high-affinity retained windows based on domain frequency. |
+| Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency. |
 | Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL. |
 | Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.                      |
 | Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                |
@@ -35,7 +36,7 @@ The application is structured into three distinct layers with all shared data st
 
 Destructive operations are applied **globally** to the entire session before phase 1.
 
-- **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list.
+- **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list (Win 1 > Win 2 ...).
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
 - **Internal Page Pre-sort**: Moves internal browser pages (`edge://`, `chrome://`, etc.) to the start of each window to ensure they don't interleave with managed content.
 - **Global Single-Tab Ungroup** (Optional): Immediately ungroups any managed group that contains only one tab.
@@ -47,10 +48,8 @@ Destructive operations are applied **globally** to the entire session before pha
 3.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping.
 4.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
 5.  **Phase 2: Grouping Pass**:
-    - **Identify**: Gather `protectedTabIds` from external groups.
-    - **Mapping**: Build virtual target state based on rules and proximity.
-    - **Planning**: Calculate physical `targetIndex` and title needs.
-    - **Execution**: Physical API calls (ungroup, move, group, title) performed atomically with stability delays.
+    - **Phase 2a: Membership**: Identify `protectedTabIds`, build `GroupMap`, and execute `MembershipPlan` (ungroup/group/title) on the current state.
+    - **Phase 2b: Ordering (Reality Check)**: Recapture fresh state to get actual indices and IDs, calculate reposition needs using LIS, and execute `OrderPlan` (absolute positioning).
     - **Cleanup**: Final pass to ensure no single-tab managed groups remain.
 
 ## Learnings & Best Practices
@@ -62,3 +61,4 @@ Destructive operations are applied **globally** to the entire session before pha
 - **Port-Aware Grouping:** Uses `url.host` instead of `url.hostname` to ensure different services on `localhost` (e.g., `:8000`, `:3000`) are grouped separately, improving developer workflow.
 - **Case-Insensitive Consolidation:** Always normalize path segments in group keys and perform a final case-insensitive merge pass on `GroupState` display names within their respective sections (Pinned/Unpinned). This prevents redundant groups when URLs have varying casing.
 - **Stability sorting**: Always include `(a.id ?? 0) - (b.id ?? 0)` as a fallback in sorts to prevent "jitter" when URLs are identical.
+- **ID Generation**: Use `crypto.randomUUID()` in the UI for unique rule IDs to avoid collisions during rapid edits.

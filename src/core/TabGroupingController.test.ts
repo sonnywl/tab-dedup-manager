@@ -122,10 +122,11 @@ describe("TabGroupingController", () => {
     });
 
     it("hash is order-stable", async () => {
-      const tabs1 = [mkTab(1, "a.com"), mkTab(2, "b.com")];
-      const tabs2 = [mkTab(2, "b.com"), mkTab(1, "a.com")];
-      const hash = (controller as any).stateHash.bind(controller);
-      expect(hash(tabs1, new Map())).toBe(hash(tabs2, new Map()));
+      const tabs1 = [mkTab(1, "https://a.com"), mkTab(2, "https://b.com")];
+      const tabs2 = [mkTab(2, "https://b.com"), mkTab(1, "https://a.com")];
+      const service = (controller as any).service;
+      const hash = (t: any[]) => service.hashState(t, new Map());
+      expect(hash(tabs1)).toBe(hash(tabs2));
     });
   });
 

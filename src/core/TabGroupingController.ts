@@ -19,6 +19,7 @@ import ChromeTabAdapter from "./ChromeTabAdapter";
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
+  private lastBadgeHash: string | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
@@ -26,31 +27,6 @@ export default class TabGroupingController {
     private readonly adapter: ChromeTabAdapter,
     private readonly store: SyncStore,
   ) {}
-
-  private stateHash(
-    tabs: Tab[],
-    groups: Map<number, chrome.tabGroups.TabGroup>,
-  ): string {
-    return JSON.stringify({
-      tabs: [...tabs]
-        .sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
-        .map((t) => ({
-          id: t.id,
-          url: t.url,
-          groupId: t.groupId,
-          windowId: t.windowId,
-          index: t.index,
-          pinned: t.pinned,
-        })),
-      groups: Array.from(groups.values())
-        .sort((a, b) => a.id - b.id)
-        .map((g) => ({
-          id: g.id,
-          title: g.title,
-          collapsed: g.collapsed,
-        })),
-    });
-  }
 
   private async captureBrowserState(): Promise<BrowserState> {
     const [tabs, groups] = await Promise.all([
@@ -317,11 +293,20 @@ export default class TabGroupingController {
 
   async updateBadge(): Promise<void> {
     try {
+      const state = await this.captureBrowserState();
+      const currentHash = this.service.hashState(
+        state.allTabs,
+        state.groupIdToGroup,
+      );
+
+      // Performance optimization: skip badge update if tab state hasn't changed
+      if (this.lastBadgeHash === currentHash) return;
+      this.lastBadgeHash = currentHash;
+
       const config = await this.loadConfiguration();
       if (!config) return;
       const { rulesByDomain } = config;
 
-      const state = await this.captureBrowserState();
       const total = state.allTabs.length;
       if (total === 0) {
         await this.adapter.updateBadge(0);
@@ -359,7 +344,7 @@ export default class TabGroupingController {
         return;
       }
 
-      const hash = this.stateHash(state.allTabs, state.groupIdToGroup);
+      const hash = this.service.hashState(state.allTabs, state.groupIdToGroup);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
         return;
@@ -386,7 +371,7 @@ export default class TabGroupingController {
 
       // 4. Finalize state hash
       const finalState = await this.captureBrowserState();
-      this.lastStateHash = this.stateHash(
+      this.lastStateHash = this.service.hashState(
         finalState.allTabs,
         finalState.groupIdToGroup,
       );
