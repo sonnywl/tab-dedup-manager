@@ -77,6 +77,7 @@ describe("TabGroupingController", () => {
         .fn()
         .mockResolvedValue({ success: true, value: undefined }),
       updateBadge: vi.fn().mockResolvedValue(undefined),
+      settle: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     }) as unknown as ChromeTabAdapter;
 
@@ -127,6 +128,78 @@ describe("TabGroupingController", () => {
       const service = (controller as any).service;
       const hash = (t: any[]) => service.hashState(t, new Map());
       expect(hash(tabs1)).toBe(hash(tabs2));
+    });
+  });
+
+  describe("updateBadge()", () => {
+    it("counts tabs needing grouping", async () => {
+      const tabs = [
+        mkTab(1, "https://google.com/1"),
+        mkTab(2, "https://google.com/2"),
+      ];
+      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
+      mockStore.getState.mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: true },
+      });
+
+      await controller.updateBadge();
+      expect((controller as any).adapter.updateBadge).toHaveBeenCalledWith(2);
+    });
+
+    it("counts tabs needing window move (global consolidation)", async () => {
+      const tabs = [
+        mkTab(1, "https://a.com/1", -1, 0, 1),
+        mkTab(2, "https://a.com/2", -1, 1, 2), // Different window
+      ];
+      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
+      mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+      mockStore.getState.mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: false }, // Global grouping moves all to active
+      });
+
+      await controller.updateBadge();
+      // Tab 2 moves to window 1 (+1)
+      // Tab 1 & 2 will be grouped together (+2)
+      // Total 2 affected tabs (Tab 1 and Tab 2)
+      expect((controller as any).adapter.updateBadge).toHaveBeenCalledWith(2);
+    });
+
+    it("counts duplicates and auto-deletes", async () => {
+      const tabs = [
+        mkTab(1, "https://google.com/1"),
+        mkTab(2, "https://google.com/1"), // Duplicate
+        mkTab(3, "https://trash.com/1"), // To delete
+      ];
+      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
+      mockStore.getState.mockResolvedValue({
+        rules: [{ domain: "trash.com", autoDelete: true }],
+        grouping: { byWindow: true },
+      });
+
+      await controller.updateBadge();
+      // Tab 2 (dupe) + Tab 3 (auto-delete) = 2
+      expect((controller as any).adapter.updateBadge).toHaveBeenCalledWith(2);
+    });
+
+    it("counts tabs needing ungrouping (single tab managed groups)", async () => {
+      const tabs = [
+        mkTab(1, "https://google.com/1", 101), // Only 1 tab in group 101
+      ];
+      const groups = [
+        { id: 101, title: "google.com", windowId: 1 } as any,
+      ];
+      (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
+      mockChrome.tabGroups.query.mockResolvedValue(groups);
+      mockStore.getState.mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: true },
+      });
+
+      await controller.updateBadge();
+      // Tab 1 is in a managed group but shouldn't be (threshold 2)
+      expect((controller as any).adapter.updateBadge).toHaveBeenCalledWith(1);
     });
   });
 

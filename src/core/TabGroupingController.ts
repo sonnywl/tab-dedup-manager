@@ -10,6 +10,7 @@ import {
   asTabId,
   asWindowId,
   isDefined,
+  isGrouped,
   validateRule,
 } from "@/types";
 import { TabGroupingService, WindowManagementService } from "utils/grouping";
@@ -261,6 +262,10 @@ export default class TabGroupingController {
       );
       if (!memRes.success) return memRes;
 
+      // Mandate: Settle browser layout before calculating ordering needs
+      // chrome.tabs.group operations can cause significant index shifts
+      await this.adapter.settle();
+
       // Phase 2b: Ordering (The "Reality Check" way)
       // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
       // In global mode, Phase 2a has moved all tabs into the target window,
@@ -303,24 +308,116 @@ export default class TabGroupingController {
       if (this.lastBadgeHash === currentHash) return;
       this.lastBadgeHash = currentHash;
 
-      const config = await this.loadConfiguration();
-      if (!config) return;
-      const { rulesByDomain } = config;
+      const configResult = await this.loadConfiguration();
+      if (!configResult) return;
+      const { rulesByDomain, config } = configResult;
 
-      const total = state.allTabs.length;
-      if (total === 0) {
+      const activeWindowId = await this.ensureActiveWindowId();
+      if (activeWindowId === undefined) {
         await this.adapter.updateBadge(0);
         return;
       }
 
       const affectedIds = new Set<TabId>();
 
-      this.service
-        .getDuplicateTabIds(state.allTabs)
-        .forEach((id) => affectedIds.add(id));
-      this.service
-        .getAutoDeleteTabIds(state.allTabs, rulesByDomain)
-        .forEach((id) => affectedIds.add(id));
+      // 1. Closures (Duplicates + Auto-Delete)
+      const dupes = this.service.getDuplicateTabIds(state.allTabs);
+      const autoDeletes = this.service.getAutoDeleteTabIds(
+        state.allTabs,
+        rulesByDomain,
+      );
+      dupes.forEach((id) => affectedIds.add(id));
+      autoDeletes.forEach((id) => affectedIds.add(id));
+
+      const toClose = new Set([...dupes, ...autoDeletes]);
+      const currentTabs = state.allTabs.filter(
+        (t) => !toClose.has(asTabId(t.id)!),
+      );
+
+      // 2. Consolidation / Window moves
+      if (config.byWindow && isDefined(config.numWindowsToKeep)) {
+        const { protectedMeta, managedGroupIds } =
+          this.service.identifyProtectedTabs(
+            currentTabs,
+            state.groupIdToGroup,
+            rulesByDomain,
+          );
+        const plan = this.windowService.createConsolidationPlan(
+          currentTabs,
+          config.numWindowsToKeep,
+          this.service,
+          protectedMeta,
+          managedGroupIds,
+        );
+        if (plan) {
+          plan.tabMoves.forEach((m) =>
+            m.tabIds.forEach((tid) => affectedIds.add(asTabId(tid)!)),
+          );
+          plan.groupMoves.forEach((m) => {
+            currentTabs
+              .filter((t) => t.groupId === m.groupId)
+              .forEach((t) => affectedIds.add(asTabId(t.id)!));
+          });
+        }
+      } else if (!config.byWindow) {
+        // Global consolidation
+        currentTabs.forEach((t) => {
+          if (t.windowId !== activeWindowId) {
+            affectedIds.add(asTabId(t.id)!);
+          }
+        });
+      }
+
+      // 3. Grouping Changes (Dry run)
+      const windowMap = config.byWindow
+        ? this.windowService.groupByWindow(currentTabs)
+        : new Map([[asWindowId(activeWindowId), currentTabs]]);
+
+      for (const [wid, tabs] of windowMap) {
+        const { protectedMeta, managedGroupIds } =
+          this.service.identifyProtectedTabs(
+            tabs,
+            state.groupIdToGroup,
+            rulesByDomain,
+          );
+        const groupMap = this.service.buildGroupMap(
+          tabs,
+          rulesByDomain,
+          state.groupIdToGroup,
+          protectedMeta,
+        );
+        const tabCache = new Map<TabId, Tab>(
+          tabs.map((t) => [asTabId(t.id)!, t]),
+        );
+        const groupStates = this.service.buildGroupStates(
+          groupMap,
+          tabCache,
+          undefined,
+          managedGroupIds,
+        );
+
+        for (const gs of groupStates) {
+          const willBeGrouped = gs.isExternal || gs.tabIds.length >= 2;
+          for (const tid of gs.tabIds) {
+            const tab = tabCache.get(tid);
+            if (!tab) continue;
+
+            const isCurrentlyGrouped = isGrouped(tab);
+
+            if (willBeGrouped !== isCurrentlyGrouped) {
+              affectedIds.add(tid);
+            } else if (willBeGrouped) {
+              // Same state. Check if same group.
+              if (gs.groupId === null) {
+                // New group. If tab is already in A group, it will be moved.
+                if (isCurrentlyGrouped) affectedIds.add(tid);
+              } else if (tab.groupId !== gs.groupId) {
+                affectedIds.add(tid);
+              }
+            }
+          }
+        }
+      }
 
       await this.adapter.updateBadge(affectedIds.size);
     } catch (err) {

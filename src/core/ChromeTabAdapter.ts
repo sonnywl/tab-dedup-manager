@@ -126,7 +126,15 @@ function validateTab(tab: unknown): tab is Tab {
 
 export default class ChromeTabAdapter {
   private readonly MAX_BATCH = 100;
-  private readonly RATE_DELAY = 30;
+  private readonly RATE_DELAY = 50;
+
+  /**
+   * Provides a window for the browser to settle its internal tab state (indices, group memberships)
+   * before the next phase of the grouping pipeline.
+   */
+  async settle(): Promise<void> {
+    await sleep(150);
+  }
 
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
