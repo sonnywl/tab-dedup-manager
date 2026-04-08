@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { TabGroupingService } from "./grouping";
 import fc from "fast-check";
-import { mkTab } from "../core/test-utils";
+import { mkTab } from "core/test-utils";
 
 describe("TabGroupingService", () => {
   let service: TabGroupingService;

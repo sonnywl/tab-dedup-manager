@@ -12,7 +12,7 @@ import {
   isInternalTab,
 } from "@/types";
 
-import { TabGroupingService } from "../utils/grouping";
+import { TabGroupingService } from "utils/grouping";
 
 // ============================================================================
 // UTILITIES
