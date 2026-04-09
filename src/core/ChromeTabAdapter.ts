@@ -459,10 +459,10 @@ export default class ChromeTabAdapter {
     });
   }
 
-  async updateBadge(count: number, modifiable: boolean): Promise<void> {
+  async updateBadge(text: string): Promise<void> {
     try {
-      chrome.action.setBadgeText({ text: count === 0 ? "" : count.toString() });
-      if (modifiable) {
+      chrome.action.setBadgeText({ text });
+      if (text !== "") {
         chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
       }
     } catch (err) {

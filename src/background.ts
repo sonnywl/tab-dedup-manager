@@ -33,6 +33,7 @@ async function init() {
     chrome.action.onClicked.addListener(() => controller.execute());
     chrome.tabs.onCreated.addListener(debouncedUpdateBadge);
     chrome.tabs.onRemoved.addListener(debouncedUpdateBadge);
+    chrome.tabs.onUpdated.addListener(debouncedUpdateBadge);
   } catch (err) {
     console.error("Fatal initialization error:", err);
   }

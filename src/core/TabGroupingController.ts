@@ -20,7 +20,6 @@ import ChromeTabAdapter from "./ChromeTabAdapter";
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
-  private lastBadgeHash: string | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
@@ -305,23 +304,17 @@ export default class TabGroupingController {
         state.groupIdToGroup,
       );
 
-      // Performance optimization: skip badge update if tab state hasn't changed
-      if (this.lastBadgeHash === currentHash) {
+      console.log(this.lastStateHash, currentHash);
+
+      // Identity check: skip if state matches the perfect "ideal" state from the last execution
+      if (this.lastStateHash === currentHash) {
+        await this.adapter.updateBadge("");
         return;
       }
-      this.lastBadgeHash = currentHash;
 
       const configResult = await this.loadConfiguration();
       if (!configResult) return;
       const { rulesByDomain } = configResult;
-
-      const activeWindowId = await this.ensureActiveWindowId();
-      if (activeWindowId === undefined) {
-        await this.adapter.updateBadge(0, false);
-        return;
-      }
-
-      const affectedIds = new Set<TabId>();
 
       // 1. Closures (Duplicates + Auto-Delete)
       const dupes = this.service.getDuplicateTabIds(state.allTabs);
@@ -329,10 +322,15 @@ export default class TabGroupingController {
         state.allTabs,
         rulesByDomain,
       );
-      dupes.forEach((id) => affectedIds.add(id));
-      autoDeletes.forEach((id) => affectedIds.add(id));
+      const closeCount = new Set([...dupes, ...autoDeletes]).size;
 
-      await this.adapter.updateBadge(affectedIds.size, affectedIds.size !== 0);
+      if (closeCount > 0) {
+        await this.adapter.updateBadge(closeCount.toString());
+      } else {
+        // We know something is off because currentHash !== lastStateHash,
+        // and it's not a closure. So it must be a sort or grouping change.
+        await this.adapter.updateBadge("!");
+      }
     } catch (err) {
       console.warn("Failed to calculate affected tabs for badge:", err);
     }
@@ -357,6 +355,7 @@ export default class TabGroupingController {
       const hash = this.service.hashState(state.allTabs, state.groupIdToGroup);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
+        this.updateBadge();
         return;
       }
 
