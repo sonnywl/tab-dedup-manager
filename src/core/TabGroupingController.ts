@@ -304,8 +304,6 @@ export default class TabGroupingController {
         state.groupIdToGroup,
       );
 
-      console.log(this.lastStateHash, currentHash);
-
       // Identity check: skip if state matches the perfect "ideal" state from the last execution
       if (this.lastStateHash === currentHash) {
         await this.adapter.updateBadge("");
@@ -355,7 +353,7 @@ export default class TabGroupingController {
       const hash = this.service.hashState(state.allTabs, state.groupIdToGroup);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
-        this.updateBadge();
+        this.adapter.updateBadge("");
         return;
       }
 
@@ -385,6 +383,7 @@ export default class TabGroupingController {
         finalState.allTabs,
         finalState.groupIdToGroup,
       );
+      this.adapter.updateBadge("");
     } catch (err) {
       console.warn("Execute error:", err);
     } finally {
