@@ -10,7 +10,6 @@ import {
   asTabId,
   isDefined,
 } from "@/types";
-
 import { TabGroupingService, isInternalTab } from "utils/grouping";
 
 // ============================================================================
@@ -460,13 +459,11 @@ export default class ChromeTabAdapter {
     });
   }
 
-  async updateBadge(count: number): Promise<void> {
+  async updateBadge(count: number, modifiable: boolean): Promise<void> {
     try {
-      if (count > 0) {
-        chrome.action.setBadgeText({ text: count.toString() });
+      chrome.action.setBadgeText({ text: count === 0 ? "" : count.toString() });
+      if (modifiable) {
         chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
-      } else {
-        chrome.action.setBadgeText({ text: "" });
       }
     } catch (err) {
       console.warn("Failed to update badge:", err);
