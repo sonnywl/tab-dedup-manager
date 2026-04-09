@@ -1,4 +1,5 @@
 import {
+  ConsolidationPlan,
   OrderUnit,
   ProtectedTabMetaMap,
   RulesByDomain,
@@ -11,9 +12,82 @@ import {
 } from "@/types";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { TabGroupingService } from "./grouping";
+import { TabGroupingService, WindowManagementService } from "./grouping";
 import fc from "fast-check";
 import { mkTab } from "core/test-utils";
+
+describe("WindowManagementService", () => {
+  let service: TabGroupingService;
+  let windowService: WindowManagementService;
+
+  beforeEach(() => {
+    service = new TabGroupingService();
+    windowService = new WindowManagementService();
+  });
+
+  describe("createConsolidationPlan", () => {
+    it("Global mode: consolidates all tabs to targetWindowId", () => {
+      const tabs = [
+        mkTab(1, "https://a.com", -1, 0, 1), // Win 1
+        mkTab(2, "https://b.com", -1, 0, 2), // Win 2
+      ];
+      const plan = windowService.createConsolidationPlan(
+        tabs,
+        1, // numWindowsToKeep
+        service,
+        new Map(),
+        new Map(),
+        asWindowId(1), // target
+      );
+
+      expect(plan?.tabMoves).toHaveLength(1);
+      expect(plan?.tabMoves[0].tabIds).toContain(2);
+      expect(plan?.tabMoves[0].windowId).toBe(1);
+    });
+
+    it("Per-window mode: respects numWindowsToKeep and targetWindowId", () => {
+      const tabs = [
+        mkTab(1, "https://a.com", -1, 0, 1), // Win 1 (target)
+        mkTab(2, "https://b.com", -1, 0, 2), // Win 2
+        mkTab(3, "https://c.com", -1, 0, 3), // Win 3
+        mkTab(4, "https://d.com", -1, 1, 3), // Win 3 (extra tab)
+      ];
+      // numWindowsToKeep = 2. Retained should be Win 3 (largest) and Win 1 (target).
+      const plan = windowService.createConsolidationPlan(
+        tabs,
+        2,
+        service,
+        new Map(),
+        new Map(),
+        asWindowId(1),
+      );
+
+      expect(plan?.tabMoves).toHaveLength(1);
+      expect(plan?.tabMoves[0].tabIds).toContain(2);
+      expect(plan?.tabMoves[0].windowId).toBe(3); // Should move to win 3 (highest affinity/size) or Win 1
+    });
+
+    it("Respects groups as blocks during consolidation", () => {
+      const tabs = [
+        mkTab(1, "https://a.com", -1, 0, 1), // Win 1 (target)
+        mkTab(2, "https://b.com", 100, 0, 2), // Win 2, Group 100
+        mkTab(3, "https://b.com", 100, 1, 2), // Win 2, Group 100
+      ];
+      const plan = windowService.createConsolidationPlan(
+        tabs,
+        1,
+        service,
+        new Map(),
+        new Map(),
+        asWindowId(1),
+      );
+
+      expect(plan?.groupMoves).toHaveLength(1);
+      expect(plan?.groupMoves[0].groupId).toBe(100);
+      expect(plan?.groupMoves[0].windowId).toBe(1);
+    });
+  });
+});
 
 describe("TabGroupingService", () => {
   let service: TabGroupingService;
@@ -213,6 +287,46 @@ describe("TabGroupingService", () => {
 
       expect(results[0].needsReposition).toBe(true);
       expect(results[0].targetIndex).toBe(0);
+    });
+
+    it("Global Mode: should flag solo tabs from other windows for movement into the target window", () => {
+      const tab1 = mkTab(1, "https://a.com", -1, 0, 1); // Win 1, index 0
+      const tab2 = mkTab(2, "https://b.com", -1, 0, 2); // Win 2, index 0
+
+      // In Global mode, tabCache contains tabs from ALL windows
+      const tabCache = new Map([
+        [asTabId(1)!, tab1],
+        [asTabId(2)!, tab2],
+      ]);
+
+      const groupStates: any[] = [
+        {
+          displayName: "a.com",
+          sourceDomain: "a.com",
+          tabIds: [asTabId(1)!],
+          groupId: null,
+          isExternal: false,
+        },
+        {
+          displayName: "b.com",
+          sourceDomain: "b.com",
+          tabIds: [asTabId(2)!],
+          groupId: null,
+          isExternal: false,
+        },
+      ];
+
+      // Target window is Window 1
+      const results = service.calculateRepositionNeeds(
+        groupStates,
+        tabCache,
+        asWindowId(1),
+        new Map(),
+      );
+
+      const state2 = results.find((s) => s.displayName === "b.com");
+      expect(state2?.needsReposition).toBe(true); // Should be true because it's in Window 2
+      expect(state2?.targetIndex).toBe(1);
     });
   });
 

@@ -118,11 +118,13 @@ export default class TabGroupingController {
     state: BrowserState,
     rulesByDomain: RulesByDomain,
     groupingConfig: GroupingConfig,
+    activeWindowId: number,
   ): Promise<BrowserState> {
-    if (
-      !groupingConfig.byWindow ||
-      !isDefined(groupingConfig.numWindowsToKeep)
-    ) {
+    const numToKeep = groupingConfig.byWindow
+      ? groupingConfig.numWindowsToKeep
+      : 1;
+
+    if (!isDefined(numToKeep)) {
       return state;
     }
 
@@ -135,10 +137,11 @@ export default class TabGroupingController {
 
     const plan = this.windowService.createConsolidationPlan(
       state.allTabs,
-      groupingConfig.numWindowsToKeep,
+      numToKeep,
       this.service,
       protectedMeta,
       managedGroupIds,
+      asWindowId(activeWindowId),
     );
 
     if (plan) {
@@ -163,11 +166,11 @@ export default class TabGroupingController {
       ? this.windowService.groupByWindow(state.allTabs)
       : new Map([[asWindowId(activeWindowId), state.allTabs]]);
 
-    for (const [wid, tabs] of windowMap) {
+    for (const [wid] of windowMap) {
       const res = await this.processGrouping(
         wid,
         rulesByDomain,
-        !groupingConfig.byWindow ? tabs : undefined,
+        !groupingConfig.byWindow,
       );
       if (!res.success) throw res.error;
     }
@@ -179,14 +182,14 @@ export default class TabGroupingController {
   private async getGroupingContext(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
-    overrideTabs?: Tab[],
+    isGlobal?: boolean,
   ) {
     const state = await this.captureBrowserState();
     return this.buildGroupingContext(
       state,
       windowId,
       rulesByDomain,
-      overrideTabs,
+      isGlobal,
     );
   }
 
@@ -197,10 +200,11 @@ export default class TabGroupingController {
     state: BrowserState,
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
-    overrideTabs?: Tab[],
+    isGlobal?: boolean,
   ) {
-    const scopedTabs =
-      overrideTabs || state.allTabs.filter((t) => t.windowId === windowId);
+    const scopedTabs = isGlobal
+      ? state.allTabs
+      : state.allTabs.filter((t) => t.windowId === windowId);
 
     const { protectedMeta, managedGroupIds } =
       this.service.identifyProtectedTabs(
@@ -239,7 +243,7 @@ export default class TabGroupingController {
   async processGrouping(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
-    overrideTabs?: Tab[],
+    isGlobal?: boolean,
   ): Promise<Result<void, Error>> {
     try {
       // Phase 2a: Membership
@@ -247,7 +251,7 @@ export default class TabGroupingController {
       const pre = await this.getGroupingContext(
         windowId,
         rulesByDomain,
-        overrideTabs,
+        isGlobal,
       );
       const membershipPlan = this.service.buildMembershipPlan(
         pre.groupStates,
@@ -268,9 +272,11 @@ export default class TabGroupingController {
 
       // Phase 2b: Ordering (The "Reality Check" way)
       // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
-      // In global mode, Phase 2a has moved all tabs into the target window,
-      // so we don't need overrideTabs anymore for the reality check.
-      const fresh = await this.getGroupingContext(windowId, rulesByDomain);
+      const fresh = await this.getGroupingContext(
+        windowId,
+        rulesByDomain,
+        isGlobal,
+      );
 
       const repositionStates = this.service.calculateRepositionNeeds(
         fresh.groupStates,
@@ -335,7 +341,9 @@ export default class TabGroupingController {
       );
 
       // 2. Consolidation / Window moves
-      if (config.byWindow && isDefined(config.numWindowsToKeep)) {
+      const numToKeep = config.byWindow ? config.numWindowsToKeep : 1;
+
+      if (isDefined(numToKeep)) {
         const { protectedMeta, managedGroupIds } =
           this.service.identifyProtectedTabs(
             currentTabs,
@@ -344,10 +352,11 @@ export default class TabGroupingController {
           );
         const plan = this.windowService.createConsolidationPlan(
           currentTabs,
-          config.numWindowsToKeep,
+          numToKeep,
           this.service,
           protectedMeta,
           managedGroupIds,
+          asWindowId(activeWindowId),
         );
         if (plan) {
           plan.tabMoves.forEach((m) =>
@@ -359,13 +368,6 @@ export default class TabGroupingController {
               .forEach((t) => affectedIds.add(asTabId(t.id)!));
           });
         }
-      } else if (!config.byWindow) {
-        // Global consolidation
-        currentTabs.forEach((t) => {
-          if (t.windowId !== activeWindowId) {
-            affectedIds.add(asTabId(t.id)!);
-          }
-        });
       }
 
       // 3. Grouping Changes (Dry run)
@@ -456,6 +458,7 @@ export default class TabGroupingController {
         state,
         rulesByDomain,
         groupingConfig,
+        activeWindowId,
       );
 
       // 3. Phase 2: Grouping Pass

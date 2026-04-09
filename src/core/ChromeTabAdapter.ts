@@ -9,10 +9,9 @@ import {
   WindowId,
   asTabId,
   isDefined,
-  isInternalTab,
 } from "@/types";
 
-import { TabGroupingService } from "utils/grouping";
+import { TabGroupingService, isInternalTab } from "utils/grouping";
 
 // ============================================================================
 // UTILITIES
@@ -139,13 +138,9 @@ export default class ChromeTabAdapter {
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
       const tabs = await chrome.tabs.query({ windowType: "normal" });
-      const selfBase = chrome.runtime.getURL(""); // e.g. chrome-extension://[id]/
 
       return tabs.filter((t) => {
         if (!validateTab(t) || !t.url) return false;
-
-        // Exclude the extension's OWN internal pages (options/popup)
-        if (t.url.startsWith(selfBase)) return false;
 
         // Mandate: DO NOT exclude system/browser internal pages anymore.
         // We want to manage their sorting (to the front).
@@ -322,6 +317,10 @@ export default class ChromeTabAdapter {
     return this.toResult(async () => {
       // 1. Move Groups
       for (const gm of plan.groupMoves) {
+        if (!isFinite(gm.groupId) || !isFinite(gm.windowId)) {
+          console.warn("[Consolidation] Skipping invalid group move:", gm);
+          continue;
+        }
         await runAtomicOperation(
           () =>
             chrome.tabGroups.move(gm.groupId, {
@@ -432,15 +431,24 @@ export default class ChromeTabAdapter {
         if (isToMove) {
           await runAtomicOperation(
             async () => {
+              const targetIndex = unit.targetIndex;
               if (unit.kind === "group") {
+                if (unit.groupId === null || !isFinite(unit.groupId)) {
+                  console.warn("[Order] Skipping invalid group move:", unit);
+                  return;
+                }
                 await chrome.tabGroups.move(unit.groupId as number, {
                   windowId: targetWindowId,
-                  index: unit.targetIndex,
+                  index: targetIndex,
                 });
               } else {
+                if (unit.tabId === null || !isFinite(unit.tabId)) {
+                  console.warn("[Order] Skipping invalid solo tab move:", unit);
+                  return;
+                }
                 await chrome.tabs.move(unit.tabId as number, {
                   windowId: targetWindowId,
-                  index: unit.targetIndex,
+                  index: targetIndex,
                 });
               }
             },

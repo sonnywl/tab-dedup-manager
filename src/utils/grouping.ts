@@ -21,11 +21,24 @@ import {
   extractTabIds,
   isDefined,
   isGrouped,
-  isInternalTab,
 } from "@/types";
 // ============================================================================
 // CORE LOGIC (Domain Layer)
 // ============================================================================
+
+export function isInternalTab(tab: Tab): boolean {
+  if (!tab.url) return false;
+  const internalProtocols = [
+    "chrome:",
+    "about:",
+    "edge:",
+    "brave:",
+    "file:",
+    "chrome-extension:",
+    "moz-extension:",
+  ];
+  return internalProtocols.some((p) => tab.url!.startsWith(p));
+}
 
 export class TabGroupingService {
   normalizeDomain(domain: string): Domain {
@@ -37,7 +50,15 @@ export class TabGroupingService {
     if (!url) return asDomain("other");
     try {
       if (url.startsWith("file://")) return asDomain("local-file");
+
       const u = new URL(url);
+      if (
+        u.protocol === "chrome-extension:" ||
+        u.protocol === "moz-extension:"
+      ) {
+        return asDomain(u.hostname || "extension");
+      }
+
       // Mandate: Use .host instead of .hostname to include significant ports (e.g. localhost:8000)
       return this.normalizeDomain(u.host);
     } catch {
@@ -523,10 +544,13 @@ export class TabGroupingService {
     managedGroupIds: Map<number, string> = new Map(),
   ): GroupState[] {
     let allTabs = Array.from(tabCache.values());
-    if (windowId !== undefined) {
-      allTabs = allTabs.filter((t) => t.windowId === windowId);
-    }
-    allTabs.sort((a, b) => a.index - b.index);
+
+    // Mandate: Stable and comprehensive sort for all candidate tabs
+    allTabs.sort((a, b) => {
+      if (a.windowId !== b.windowId)
+        return (a.windowId || 0) - (b.windowId || 0);
+      return a.index - b.index;
+    });
 
     const managed = new Set(groupStates.flatMap((s) => s.tabIds));
     const ignoredPinned = allTabs.filter(
@@ -704,21 +728,30 @@ export class TabGroupingService {
   }
 
   mapToOrderUnits(states: GroupState[]): OrderUnit[] {
-    return states.map((s) => {
-      if (s.isExternal || s.tabIds.length >= 2) {
-        return {
+    const units: OrderUnit[] = [];
+    for (const s of states) {
+      const isActuallyGrouped =
+        (s.isExternal || s.tabIds.length >= 2) && s.groupId !== null;
+
+      if (isActuallyGrouped) {
+        units.push({
           kind: "group",
           groupId: s.groupId as GroupId,
           tabIds: [...s.tabIds],
           targetIndex: s.targetIndex ?? 0,
-        };
+        });
+      } else {
+        // Treat as individual tabs
+        s.tabIds.forEach((tid, i) => {
+          units.push({
+            kind: "solo",
+            tabId: tid,
+            targetIndex: (s.targetIndex ?? 0) + i,
+          });
+        });
       }
-      return {
-        kind: "solo",
-        tabId: s.tabIds[0],
-        targetIndex: s.targetIndex ?? 0,
-      };
-    });
+    }
+    return units;
   }
 
   getLiveUnits(tabs: Tab[]): OrderUnit[] {
@@ -858,15 +891,30 @@ export class WindowManagementService {
     service: TabGroupingService,
     protectedTabMeta: ProtectedTabMetaMap,
     managedGroupIds: Map<number, string>,
+    targetWindowId: WindowId,
   ): ConsolidationPlan | null {
     const windowGroups = this.groupByWindow(tabs);
-    const entries = Array.from(windowGroups.entries()).sort(
-      (a, b) => b[1].length - a[1].length,
-    );
-    if (entries.length <= numWindowsToKeep) return null;
 
-    const retained = new Map(entries.slice(0, numWindowsToKeep));
-    const excess = entries.slice(numWindowsToKeep).flatMap((e) => e[1]);
+    // Mandate: targetWindowId (usually active) is ALWAYS the primary retained window.
+    const targetTabs = windowGroups.get(targetWindowId) || [];
+    const retained = new Map<WindowId, Tab[]>([[targetWindowId, targetTabs]]);
+
+    // If we can keep more than 1 window, pick the largest remaining ones.
+    const others = Array.from(windowGroups.entries())
+      .filter(([wid]) => wid !== targetWindowId)
+      .sort((a, b) => b[1].length - a[1].length);
+
+    for (let i = 0; i < numWindowsToKeep - 1 && i < others.length; i++) {
+      retained.set(others[i][0], others[i][1]);
+    }
+
+    const retainedIds = new Set(retained.keys());
+    const excess = tabs.filter(
+      (t) =>
+        t.windowId !== undefined && !retainedIds.has(asWindowId(t.windowId)),
+    );
+
+    if (excess.length === 0) return null;
 
     const mergePlan = this.calculateMergePlan(
       retained,
@@ -881,7 +929,7 @@ export class WindowManagementService {
 
     // Group the moving tabs by their CURRENT group to identify block moves
     for (const [wid, tabIds] of mergePlan) {
-      const targetWindowId = asWindowId(wid as number);
+      const targetWinId = asWindowId(wid as number);
       const movingTabs = tabs.filter(
         (t) => t.id && tabIds.includes(asTabId(t.id)!),
       );
@@ -902,16 +950,16 @@ export class WindowManagementService {
       for (const [gid, tIds] of groupToMovingTabs.entries()) {
         const allInGroup = tabs.filter((t) => t.groupId === gid);
         if (allInGroup.length === tIds.length) {
-          groupMoves.push({ groupId: gid, windowId: targetWindowId });
+          groupMoves.push({ groupId: gid, windowId: targetWinId });
         } else {
-          tabMoves.push({ tabIds: tIds, windowId: targetWindowId });
+          tabMoves.push({ tabIds: tIds, windowId: targetWinId });
         }
       }
 
       if (ungroupedMovingTabs.length > 0) {
         tabMoves.push({
           tabIds: ungroupedMovingTabs,
-          windowId: targetWindowId,
+          windowId: targetWinId,
         });
       }
     }
@@ -950,25 +998,18 @@ export class WindowManagementService {
     const groupToTabs = new Map<number, Tab[]>();
     const individualTabs: Tab[] = [];
 
+    // Group all tabs from excess windows by their current grouping status
     for (const tab of excessTabs) {
-      const tid = asTabId(tab.id);
-      const gid = tab.groupId;
-      const isProtected = tid ? protectedTabMeta.has(tid) : false;
-      const isManaged =
-        gid !== undefined && gid !== -1 && managedGroupIds.has(gid);
-
-      if (isProtected || isManaged) {
-        const effectiveGid = isProtected
-          ? protectedTabMeta.get(tid!)!.originalGroupId
-          : gid!;
-
-        if (!groupToTabs.has(effectiveGid)) groupToTabs.set(effectiveGid, []);
-        groupToTabs.get(effectiveGid)!.push(tab);
+      if (isGrouped(tab)) {
+        const gid = tab.groupId!;
+        if (!groupToTabs.has(gid)) groupToTabs.set(gid, []);
+        groupToTabs.get(gid)!.push(tab);
       } else {
         individualTabs.push(tab);
       }
     }
 
+    // Assign blocks (current groups) to retained windows based on domain affinity
     for (const gTabs of groupToTabs.values()) {
       const groupDomains = new Map<Domain, number>();
       for (const t of gTabs) {
@@ -996,6 +1037,7 @@ export class WindowManagementService {
       }
     }
 
+    // Assign solo tabs to retained windows based on domain affinity
     for (const tab of individualTabs) {
       const domain = service.getDomain(tab.url);
       let bestWid = defaultWid;

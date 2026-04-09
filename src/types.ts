@@ -129,20 +129,6 @@ export function isGrouped(tab: Tab): boolean {
   return tab.groupId != null && tab.groupId !== -1;
 }
 
-export function isInternalTab(tab: Tab): boolean {
-  if (!tab.url) return false;
-  const internalProtocols = [
-    "chrome:",
-    "about:",
-    "edge:",
-    "brave:",
-    "file:",
-    "chrome-extension:",
-    "moz-extension:",
-  ];
-  return internalProtocols.some((p) => tab.url!.startsWith(p));
-}
-
 export function validateRule(r: unknown): r is Rule {
   if (typeof r !== "object" || r === null) return false;
   const rule = r as Record<string, unknown>;
