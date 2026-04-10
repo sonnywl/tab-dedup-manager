@@ -91,7 +91,6 @@ async function bestEffortRollback(snapshotTabs: Tab[]): Promise<void> {
 export async function runAtomicOperation<T>(
   operation: () => Promise<T>,
   snapshotTabs: Tab[],
-  delayMs: number,
 ): Promise<T> {
   const res = await retry(operation);
   if (res.success === false) {
@@ -103,7 +102,6 @@ export async function runAtomicOperation<T>(
     await bestEffortRollback(snapshotTabs);
     throw res.error;
   }
-  await sleep(delayMs);
   return res.value;
 }
 
@@ -124,7 +122,6 @@ function validateTab(tab: unknown): tab is Tab {
 
 export default class ChromeTabAdapter {
   private readonly MAX_BATCH = 100;
-  private readonly RATE_DELAY = 50;
 
   /**
    * Provides a window for the browser to settle its internal tab state (indices, group memberships)
@@ -175,7 +172,6 @@ export default class ChromeTabAdapter {
       });
       if (r.success === false)
         console.warn("Failed to remove duplicates:", r.error);
-      await sleep(this.RATE_DELAY);
     }
 
     return unique;
@@ -205,7 +201,6 @@ export default class ChromeTabAdapter {
         await chrome.tabs.remove(batch as number[]);
       });
       if (r.success === false) console.warn("Failed to auto-delete:", r.error);
-      await sleep(this.RATE_DELAY);
     }
 
     return remaining;
@@ -241,7 +236,6 @@ export default class ChromeTabAdapter {
             // Update local index to reflect move for subsequent iterations
             tab.index = targetIndex;
           }
-          await sleep(this.RATE_DELAY);
         }
         targetIndex++;
       }
@@ -292,7 +286,6 @@ export default class ChromeTabAdapter {
           batch.length === 1 ? batch[0] : (batch as [number, ...number[]]),
         );
       });
-      await sleep(this.RATE_DELAY);
     }
   }
 
@@ -327,7 +320,6 @@ export default class ChromeTabAdapter {
               index: -1,
             }),
           snapshotTabs,
-          this.RATE_DELAY,
         );
       }
 
@@ -337,7 +329,6 @@ export default class ChromeTabAdapter {
           () =>
             chrome.tabs.move(tm.tabIds, { windowId: tm.windowId, index: -1 }),
           snapshotTabs,
-          this.RATE_DELAY,
         );
       }
     });
@@ -351,17 +342,13 @@ export default class ChromeTabAdapter {
       // 1. Ungroup first
       if (plan.toUngroup.length > 0) {
         for (const batch of this.batch(plan.toUngroup)) {
-          await runAtomicOperation(
-            async () => {
-              await chrome.tabs.ungroup(
-                batch.length === 1
-                  ? (batch[0] as number)
-                  : (batch as unknown as [number, ...number[]]),
-              );
-            },
-            snapshotTabs,
-            this.RATE_DELAY,
-          );
+          await runAtomicOperation(async () => {
+            await chrome.tabs.ungroup(
+              batch.length === 1
+                ? (batch[0] as number)
+                : (batch as unknown as [number, ...number[]]),
+            );
+          }, snapshotTabs);
         }
       }
 
@@ -381,33 +368,28 @@ export default class ChromeTabAdapter {
                 { windowId: plan.targetWindowId, index: -1 },
               ),
             snapshotTabs,
-            this.RATE_DELAY,
           );
         }
 
-        await runAtomicOperation(
-          async () => {
-            const options: chrome.tabs.GroupOptions = {
-              tabIds:
-                entry.tabIds.length === 1
-                  ? (entry.tabIds[0] as number)
-                  : (entry.tabIds as unknown as [number, ...number[]]),
-            };
-            if (entry.groupId !== null) {
-              options.groupId = entry.groupId as number;
-            }
-            const gid = await chrome.tabs.group(options);
+        await runAtomicOperation(async () => {
+          const options: chrome.tabs.GroupOptions = {
+            tabIds:
+              entry.tabIds.length === 1
+                ? (entry.tabIds[0] as number)
+                : (entry.tabIds as unknown as [number, ...number[]]),
+          };
+          if (entry.groupId !== null) {
+            options.groupId = entry.groupId as number;
+          }
+          const gid = await chrome.tabs.group(options);
 
-            const updateData: chrome.tabGroups.UpdateProperties = {
-              collapsed: entry.collapsed,
-            };
-            if (entry.title) updateData.title = entry.title;
+          const updateData: chrome.tabGroups.UpdateProperties = {
+            collapsed: entry.collapsed,
+          };
+          if (entry.title) updateData.title = entry.title;
 
-            await chrome.tabGroups.update(gid, updateData);
-          },
-          snapshotTabs,
-          this.RATE_DELAY,
-        );
+          await chrome.tabGroups.update(gid, updateData);
+        }, snapshotTabs);
       }
     });
   }
@@ -428,32 +410,28 @@ export default class ChromeTabAdapter {
         });
 
         if (isToMove) {
-          await runAtomicOperation(
-            async () => {
-              const targetIndex = unit.targetIndex;
-              if (unit.kind === "group") {
-                if (unit.groupId === null || !isFinite(unit.groupId)) {
-                  console.warn("[Order] Skipping invalid group move:", unit);
-                  return;
-                }
-                await chrome.tabGroups.move(unit.groupId as number, {
-                  windowId: targetWindowId,
-                  index: targetIndex,
-                });
-              } else {
-                if (unit.tabId === null || !isFinite(unit.tabId)) {
-                  console.warn("[Order] Skipping invalid solo tab move:", unit);
-                  return;
-                }
-                await chrome.tabs.move(unit.tabId as number, {
-                  windowId: targetWindowId,
-                  index: targetIndex,
-                });
+          await runAtomicOperation(async () => {
+            const targetIndex = unit.targetIndex;
+            if (unit.kind === "group") {
+              if (unit.groupId === null || !isFinite(unit.groupId)) {
+                console.warn("[Order] Skipping invalid group move:", unit);
+                return;
               }
-            },
-            snapshotTabs,
-            this.RATE_DELAY,
-          );
+              await chrome.tabGroups.move(unit.groupId as number, {
+                windowId: targetWindowId,
+                index: targetIndex,
+              });
+            } else {
+              if (unit.tabId === null || !isFinite(unit.tabId)) {
+                console.warn("[Order] Skipping invalid solo tab move:", unit);
+                return;
+              }
+              await chrome.tabs.move(unit.tabId as number, {
+                windowId: targetWindowId,
+                index: targetIndex,
+              });
+            }
+          }, snapshotTabs);
         }
       }
     });

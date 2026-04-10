@@ -25,7 +25,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 - **Key Characteristics**:
   - **Normal Window Enforcement**: All operations are restricted to `windowType: "normal"`.
   - **Resilience**: Implements a `retry` mechanism for all destructive or movement-based API calls.
-  - **Surgical Execution**: Side-effects are split into `executeMembershipPlan` (grouping/ungrouping) and `executeOrderPlan` (positioning/sorting). Both use `RATE_DELAY` (30ms) for Chrome stability.
+  - **Surgical Execution**: Side-effects are split into `executeMembershipPlan` (grouping/ungrouping) and `executeOrderPlan` (positioning/sorting).
   - **Internal Page Management**: Now includes system/browser internal pages (`edge://`, `chrome://`, etc.) to manage their sorting and prevent them from interleaving with managed content.
   - **API Efficiency**: Re-uses browser snapshots passed from the application layer to avoid redundant `chrome.tabs.query` calls.
 
