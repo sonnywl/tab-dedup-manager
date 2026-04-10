@@ -49,18 +49,14 @@ export default class TabGroupingController {
   private async loadConfiguration(): Promise<{
     rulesByDomain: RulesByDomain;
     config: GroupingConfig;
-  } | null> {
+  }> {
     const state = await this.store.getState();
-    if (!state?.rules || !state?.grouping) {
-      console.error("Invalid store state:", state);
-      return null;
-    }
+    const rules = state?.rules ?? [];
+    const grouping = state?.grouping ?? {};
 
-    const valid = state.rules.filter(validateRule);
-    if (valid.length !== state.rules.length)
-      console.warn(
-        `Filtered ${state.rules.length - valid.length} invalid rules`,
-      );
+    const valid = rules.filter(validateRule);
+    if (valid.length !== rules.length)
+      console.warn(`Filtered ${rules.length - valid.length} invalid rules`);
 
     const rulesByDomain: RulesByDomain = {};
     for (const r of valid) {
@@ -73,9 +69,9 @@ export default class TabGroupingController {
     return {
       rulesByDomain,
       config: {
-        byWindow: state.grouping.byWindow,
-        numWindowsToKeep: state.grouping.numWindowsToKeep,
-        ungroupSingleTab: state.grouping.ungroupSingleTab,
+        byWindow: grouping.byWindow,
+        numWindowsToKeep: grouping.numWindowsToKeep,
+        ungroupSingleTab: grouping.ungroupSingleTab,
       },
     };
   }
@@ -259,10 +255,6 @@ export default class TabGroupingController {
       );
       if (!memRes.success) return memRes;
 
-      // Mandate: Settle browser layout before calculating ordering needs
-      // chrome.tabs.group operations can cause significant index shifts
-      await this.adapter.settle();
-
       // Phase 2b: Ordering (The "Reality Check" way)
       // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
       const fresh = await this.getGroupingContext(
@@ -334,7 +326,10 @@ export default class TabGroupingController {
   }
 
   async execute(): Promise<void> {
-    if (this.isProcessing) return;
+    if (this.isProcessing) {
+      console.warn("Tab grouping in progress");
+      return;
+    }
     this.isProcessing = true;
 
     try {
@@ -346,10 +341,11 @@ export default class TabGroupingController {
         return;
       }
 
-      this.adapter.updateBadge("", "#FFFFE0");
-      const activeWindowId = await this.ensureActiveWindowId();
-      const config = await this.loadConfiguration();
-      if (!config) return;
+      this.adapter.updateBadge("O", "#FFD700");
+      const [activeWindowId, config] = await Promise.all([
+        this.ensureActiveWindowId(),
+        this.loadConfiguration(),
+      ]);
       const { rulesByDomain, config: groupingConfig } = config;
 
       // 1. Cleanup & Refresh

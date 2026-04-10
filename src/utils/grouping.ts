@@ -793,7 +793,10 @@ export class TabGroupingService {
    * High-performance 32-bit FNV-1a hash implementation.
    * Optimized for zero-allocation state fingerprinting.
    */
-  hashState(tabs: Tab[], groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>): string {
+  hashState(
+    tabs: Tab[],
+    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+  ): string {
     let h = 2166136261 >>> 0; // FNV offset basis
 
     const update = (val: number) => {

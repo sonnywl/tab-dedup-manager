@@ -77,7 +77,6 @@ describe("TabGroupingController", () => {
         .fn()
         .mockResolvedValue({ success: true, value: undefined }),
       updateBadge: vi.fn().mockResolvedValue(undefined),
-      settle: vi.fn().mockResolvedValue(undefined),
       ...overrides,
     }) as unknown as ChromeTabAdapter;
 

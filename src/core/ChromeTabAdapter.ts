@@ -27,10 +27,6 @@ export function debounce<T extends (...args: any[]) => any>(
   };
 }
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 export async function retry<T>(
   fn: () => Promise<T>,
   maxAttempts = 3,
@@ -122,14 +118,6 @@ function validateTab(tab: unknown): tab is Tab {
 
 export default class ChromeTabAdapter {
   private readonly MAX_BATCH = 100;
-
-  /**
-   * Provides a window for the browser to settle its internal tab state (indices, group memberships)
-   * before the next phase of the grouping pipeline.
-   */
-  async settle(): Promise<void> {
-    await sleep(150);
-  }
 
   async getNormalTabs(): Promise<Tab[]> {
     const result = await retry(async () => {
