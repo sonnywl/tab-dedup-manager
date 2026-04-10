@@ -10,7 +10,6 @@ import {
   asTabId,
   asWindowId,
   isDefined,
-  isGrouped,
   validateRule,
 } from "@/types";
 import { TabGroupingService, WindowManagementService } from "utils/grouping";
@@ -104,13 +103,13 @@ export default class TabGroupingController {
     }
   }
 
-  private async ensureActiveWindowId(): Promise<number | undefined> {
+  private async ensureActiveWindowId(): Promise<number> {
     const activeWindow = await chrome.windows.getCurrent();
     if (activeWindow.type === "normal" && activeWindow.id !== undefined) {
       return activeWindow.id;
     }
     const allWindows = await chrome.windows.getAll({ windowTypes: ["normal"] });
-    return allWindows[0]?.id;
+    return allWindows[0]?.id as number;
   }
 
   private async runConsolidationPhase(
@@ -339,17 +338,7 @@ export default class TabGroupingController {
     this.isProcessing = true;
 
     try {
-      const config = await this.loadConfiguration();
-      if (!config) return;
-      const { rulesByDomain, config: groupingConfig } = config;
-
       let state = await this.captureBrowserState();
-      const activeWindowId = await this.ensureActiveWindowId();
-      if (activeWindowId === undefined) {
-        console.warn("No normal windows found to group tabs in.");
-        return;
-      }
-
       const hash = this.service.hashState(state.allTabs, state.groupIdToGroup);
       if (this.lastStateHash === hash) {
         console.log("No state changes, skipping...");
@@ -357,10 +346,16 @@ export default class TabGroupingController {
         return;
       }
 
+      this.adapter.updateBadge("", "#FFFFE0");
+      const activeWindowId = await this.ensureActiveWindowId();
+      const config = await this.loadConfiguration();
+      if (!config) return;
+      const { rulesByDomain, config: groupingConfig } = config;
+
       // 1. Cleanup & Refresh
       await this.prepareTabs(state.allTabs, rulesByDomain, groupingConfig);
-      state = await this.captureBrowserState();
 
+      state = await this.captureBrowserState();
       // 2. Phase 1: Window Consolidation
       state = await this.runConsolidationPhase(
         state,

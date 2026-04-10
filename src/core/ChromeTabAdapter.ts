@@ -437,11 +437,14 @@ export default class ChromeTabAdapter {
     });
   }
 
-  async updateBadge(text: string): Promise<void> {
+  async updateBadge(
+    text: string,
+    color: string | undefined = "#9688F1",
+  ): Promise<void> {
     try {
       chrome.action.setBadgeText({ text });
       if (text !== "") {
-        chrome.action.setBadgeBackgroundColor({ color: "#9688F1" });
+        chrome.action.setBadgeBackgroundColor({ color });
       }
     } catch (err) {
       console.warn("Failed to update badge:", err);
