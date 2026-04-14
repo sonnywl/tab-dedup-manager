@@ -172,8 +172,8 @@ describe("TabGroupingService", () => {
     const domain = asDomain("google.com");
     const rules: RulesByDomain = {};
 
-    it("should return true for empty title (scavenge mode)", () => {
-      expect(service.isInternalTitle("", domain, undefined, rules)).toBe(true);
+    it("should return false for empty title (manual mode)", () => {
+      expect(service.isInternalTitle("", domain, undefined, rules)).toBe(false);
     });
 
     it("should return true for exact domain match (case-insensitive)", () => {
@@ -396,14 +396,26 @@ describe("TabGroupingService", () => {
       expect(states[0].groupId).toBe(asGroupId(100));
     });
 
-    it("should INHERIT the groupId from an unnamed group to allow renaming instead of recreating", () => {
+    it("should PROTECT unnamed groups instead of scavenging them", () => {
       const tab = mkTab(1, "https://google.com", 500);
       const groupIdToGroup = new Map([
         [500, { id: 500, title: "", collapsed: false } as any],
       ]);
 
-      const groupMap = service.buildGroupMap([tab], {}, groupIdToGroup);
-      const entry = groupMap.get("unpinned::google.com");
+      const { protectedMeta } = service.identifyProtectedTabs(
+        [tab],
+        groupIdToGroup,
+        {},
+      );
+
+      const groupMap = service.buildGroupMap(
+        [tab],
+        {},
+        groupIdToGroup,
+        protectedMeta,
+      );
+      const entry = groupMap.get("external::500");
+      expect(entry?.isExternal).toBe(true);
       expect(entry?.groupId).toBe(asGroupId(500));
     });
   });

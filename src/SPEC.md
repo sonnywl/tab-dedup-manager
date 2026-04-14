@@ -76,7 +76,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
   - It handles collision-resolved variants (e.g., "google.com - Search") and path-segment variants.
 - **Title Fallbacks**:
   - **Managed Groups**: Always have a title based on the rule or domain. If `splitByPath` is used, the title follows the `segment - base` or `segment/base` pattern.
-  - **Manual (External) Groups**: Allowed to remain unnamed or have custom titles; they are protected if their title does not match the managed patterns.
+  - **Manual (External) Groups**: Allowed to remain unnamed or have custom titles; they are protected if their title does not match the managed patterns. **Empty titles are explicitly treated as manual and protected.**
 - **Atomic Protection**: External groups move as cohesive blocks using `chrome.tabGroups.move`.
 
 ### 3.2 Stable Positioning Strategy

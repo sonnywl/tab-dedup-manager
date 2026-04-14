@@ -147,7 +147,7 @@ describe("TabGroupingController", () => {
       expect((controller as any).adapter.updateBadge).toHaveBeenCalledWith("!");
     });
 
-    it("clears badge when hash matches lastStateHash", async () => {
+    it("clears badge when hash matches lastFullStateHash", async () => {
       const tabs = [mkTab(1, "https://google.com/1")];
       (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
       mockStore.getState.mockResolvedValue({
@@ -155,9 +155,9 @@ describe("TabGroupingController", () => {
         grouping: { byWindow: true },
       });
 
-      // 1. First run sets lastStateHash
+      // 1. First run sets lastFullStateHash
       const hash = (controller as any).service.hashState(tabs, new Map());
-      (controller as any).lastStateHash = hash;
+      (controller as any).lastFullStateHash = hash;
 
       // 2. Second run should clear badge
       await controller.updateBadge();

@@ -107,7 +107,7 @@ export class TabGroupingService {
     url: string | undefined,
     rulesByDomain: RulesByDomain,
   ): boolean {
-    if (!title) return true; // Scavenge unnamed groups as managed
+    if (!title) return false; // Mandate: Unnamed groups are treated as manual/protected
 
     const t = title.toLowerCase();
     const d = domain.toLowerCase();
