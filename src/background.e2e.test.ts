@@ -1396,3 +1396,200 @@ describe("TabGrouping E2E Title Management Tests", () => {
     );
   });
 });
+
+describe("TabGrouping E2E skipCleanup Flag Tests", () => {
+  let controller: TabGroupingController;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    const store = {
+      getState: vi.fn().mockImplementation(async () => {
+        const rules = await mockChrome.storage.local.get("rules");
+        const grouping = await mockChrome.storage.local.get("grouping");
+        return {
+          rules: rules.rules || [],
+          grouping: grouping.grouping || {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+            processGroupOnChange: false,
+          },
+        };
+      }),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    currentTabs = [];
+    currentGroups = new Map();
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: skipCleanup: true prevents deduplication", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://dup.com/page", -1, 0, 1),
+      mkTab(2, "https://dup.com/page", -1, 1, 1),
+    ];
+    currentTabs = tabs;
+
+    await controller.execute({ skipCleanup: true });
+
+    // Deduplication would have called remove(2). Verify it was NOT called.
+    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+
+    // But it SHOULD still group them
+    expect(mockChrome.tabs.group).toHaveBeenCalled();
+    const t1 = currentTabs.find((t) => t.id === 1);
+    const t2 = currentTabs.find((t) => t.id === 2);
+    expect(t1.groupId).toBe(t2.groupId);
+    expect(t1.groupId).not.toBe(-1);
+  });
+
+  it("E2E: skipCleanup: true prevents auto-delete", async () => {
+    const rules = [{ domain: "trash.com", autoDelete: true }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [mkTab(1, "https://trash.com/ads")];
+    currentTabs = tabs;
+
+    await controller.execute({ skipCleanup: true });
+
+    // Auto-delete would have called remove(1). Verify it was NOT called.
+    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+  });
+
+  it("E2E: skipCleanup: false (default) performs deduplication and auto-delete", async () => {
+    const rules = [{ domain: "trash.com", autoDelete: true }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://trash.com/ads"),
+      mkTab(2, "https://dup.com/page"),
+      mkTab(3, "https://dup.com/page"),
+    ];
+    currentTabs = tabs;
+
+    await controller.execute(); // default skipCleanup: false
+
+    const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
+    expect(removedIds).toContain(1); // Auto-delete
+    expect(removedIds).toContain(3); // Deduplication
+  });
+
+  it("E2E: dual hashes correctly skip redundant runs while allowing manual cleanup", async () => {
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false },
+    });
+
+    const tabs = [
+      mkTab(1, "https://dup.com/page"),
+      mkTab(2, "https://dup.com/page"),
+    ];
+    currentTabs = tabs;
+
+    // 1. Auto-run (skips cleanup)
+    await controller.execute({ skipCleanup: true });
+    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+    expect(mockChrome.tabs.group).toHaveBeenCalled(); // Should have grouped them
+
+    // 2. Second Auto-run (should skip)
+    mockChrome.tabs.group.mockClear();
+    await controller.execute({ skipCleanup: true });
+    expect(mockChrome.tabs.group).not.toHaveBeenCalled();
+
+    // 3. Manual run (must clean up even if state hasn't changed since Step 1)
+    await controller.execute(); // default skipCleanup: false
+    const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
+    expect(removedIds).toContain(2);
+
+    // 4. Second Manual run (should skip because it's already clean)
+    mockChrome.tabs.remove.mockClear();
+    await controller.execute();
+    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("TabGrouping E2E processGroupOnChange Trigger Tests", () => {
+  let controller: TabGroupingController;
+  let store: any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const service = new TabGroupingService();
+    const windowService = new WindowManagementService();
+    const adapter = new ChromeTabAdapter();
+    store = {
+      getState: vi.fn(),
+    };
+    controller = new TabGroupingController(
+      service,
+      windowService,
+      adapter,
+      store as any,
+    );
+    (controller as any).isProcessing = false;
+    (controller as any).lastStateHash = null;
+
+    currentTabs = [];
+    currentGroups = new Map();
+    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
+    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
+  });
+
+  it("E2E: execute() is called with skipCleanup: true when processGroupOnChange is enabled", async () => {
+    // This test simulates the logic inside background.ts's handleTabChange
+    store.getState.mockResolvedValue({
+      rules: [],
+      grouping: { processGroupOnChange: true, byWindow: false },
+    });
+
+    const executeSpy = vi.spyOn(controller, "execute");
+
+    // Simulate background.ts handleTabChange logic:
+    const state = await store.getState();
+    if (state.grouping.processGroupOnChange) {
+      await controller.execute({ skipCleanup: true });
+    }
+
+    expect(executeSpy).toHaveBeenCalledWith({ skipCleanup: true });
+  });
+
+  it("E2E: execute() is NOT called when processGroupOnChange is disabled", async () => {
+    store.getState.mockResolvedValue({
+      rules: [],
+      grouping: { processGroupOnChange: false, byWindow: false },
+    });
+
+    const executeSpy = vi.spyOn(controller, "execute");
+
+    // Simulate background.ts handleTabChange logic:
+    const state = await store.getState();
+    if (state.grouping.processGroupOnChange) {
+      await controller.execute({ skipCleanup: true });
+    }
+
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
+});

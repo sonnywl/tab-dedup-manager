@@ -33,6 +33,7 @@ The code follows a strict layered architecture to ensure testability, maintainab
 
 - **Responsibility**: Orchestration, workflow management, and state fingerprinting.
 - **Unified Flow**: Treats both "Global" and "Per-Window" grouping as a single mapping operation. Global mode is simply a window map with one entry (the active window).
+- **Execution**: The `execute` method accepts an optional `skipCleanup` flag to bypass destructive global operations (deduplication, auto-delete) during automatic triggers.
 - **Dependency Injection**: Services and adapters are injected via the constructor, allowing for easy mocking in tests.
 - **Thinking -> Doing separation**: The logic is split into a pure pipeline (Thinking) and a surgical execution (Doing).
 - **Logical Efficiency**: Ensures exactly **two** full browser state captures per run (one for the fingerprint, one for the execution pass).
@@ -55,6 +56,7 @@ The extension ensures operations are both efficient and visually stable (minimiz
 | Mechanism                | Layer       | Scope  | Goal                                                                                                                   |
 | :----------------------- | :---------- | :----- | :--------------------------------------------------------------------------------------------------------------------- |
 | **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                       |
+| **Background Events**    | background  | Event  | **Automation**: Optional `processGroupOnChange` triggers `execute({ skipCleanup: true })` on tab create/remove/update. |
 | **Atomic Planning**      | Domain      | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality. |
 
 ### 2.2 Group-Block Stability
@@ -99,10 +101,10 @@ The layout follows a deterministic order:
 
 ## 4. Data Flow
 
-1.  **Trigger**: User clicks extension icon.
+1.  **Trigger**: User clicks extension icon OR background event (if `processGroupOnChange` enabled).
 2.  **Load Config**: Fetch rules and grouping settings from sync storage.
 3.  **Fingerprint**: `lastStateHash` check. Skip if identical.
-4.  **Clean**: Global deduplication (keeping the first occurrence), auto-deletion, internal page pre-sorting, and optional single-tab ungrouping.
+4.  **Clean**: Global deduplication, auto-deletion, internal page pre-sorting, and optional single-tab ungrouping. (Destructive steps skipped if triggered by background event).
 5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
 6.  **Phase 2: Grouping Pass**:
     - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
@@ -135,4 +137,5 @@ The system is verified through a tiered testing approach:
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |
+| **Background Sync**                         | `App Component > toggles processGroupOnChange checkbox`                            | **Verified** |
 | **Exclusions (Popups, PWAs)**               | `ChromeTabAdapter > getNormalTabs correctly filters...`                            | **Verified** |

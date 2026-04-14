@@ -26,15 +26,16 @@ The application is structured into three distinct layers with all shared data st
 | ---------------- | ---------------------------------------------------------------------------------------------------------------- |
 | Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                            |
 | Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                      |
+| Background Sync  | Optional `processGroupOnChange` (default: **false**). Automatically triggers grouping on tab create/remove.      |
 | Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency. |
 | Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL. |
-| Performance      | **State Fingerprinting**: Skip entire process if hash (Tabs + Rules + Config) is unchanged.                      |
+| Performance      | **State Fingerprinting**: Dual hashes (`lastFullStateHash` and `lastAutoStateHash`) ensure auto-runs skip redundant work while manual runs correctly proceed if cleanup is pending. |
 | Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                |
 | Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.    |
 
 ## Cleanup Logic (Global Priority)
 
-Destructive operations are applied **globally** to the entire session before phase 1.
+Destructive operations are applied **globally** to the entire session before phase 1. These are skipped if `skipCleanup: true` (e.g., during automatic background triggers).
 
 - **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list (Win 1 > Win 2 ...).
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
@@ -45,7 +46,7 @@ Destructive operations are applied **globally** to the entire session before pha
 
 1.  **Config**: Load current rules and grouping settings.
 2.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
-3.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping.
+3.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping (Skipped if `skipCleanup: true`).
 4.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
 5.  **Phase 2: Grouping Pass**:
     - **Phase 2a: Membership**: Identify `protectedTabIds`, build `GroupMap`, and execute `MembershipPlan` (ungroup/group/title) on the current state.

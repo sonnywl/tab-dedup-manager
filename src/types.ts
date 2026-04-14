@@ -23,6 +23,7 @@ export interface GroupingConfig {
   byWindow: boolean;
   numWindowsToKeep?: number | null | undefined;
   ungroupSingleTab?: boolean | null | undefined;
+  processGroupOnChange?: boolean | null | undefined;
 }
 
 export interface SyncStoreState {
@@ -141,6 +142,29 @@ export function validateRule(r: unknown): r is Rule {
   if (
     rule.splitByPath != null &&
     (typeof rule.splitByPath !== "number" || rule.splitByPath < 1)
+  )
+    return false;
+
+  return true;
+}
+
+export function validateGroupingConfig(c: unknown): c is GroupingConfig {
+  if (typeof c !== "object" || c === null) return false;
+  const config = c as Record<string, unknown>;
+  if (typeof config.byWindow !== "boolean") return false;
+  if (
+    config.numWindowsToKeep != null &&
+    typeof config.numWindowsToKeep !== "number"
+  )
+    return false;
+  if (
+    config.ungroupSingleTab != null &&
+    typeof config.ungroupSingleTab !== "boolean"
+  )
+    return false;
+  if (
+    config.processGroupOnChange != null &&
+    typeof config.processGroupOnChange !== "boolean"
   )
     return false;
 

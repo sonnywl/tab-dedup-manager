@@ -1,4 +1,10 @@
-import { GroupingConfig, Rule, SyncStoreState, validateRule } from "@/types";
+import {
+  GroupingConfig,
+  Rule,
+  SyncStoreState,
+  validateGroupingConfig,
+  validateRule,
+} from "@/types";
 import { PlusIcon, TrashIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -15,7 +21,11 @@ function normalizeRule(rule: Rule): Rule {
 function useSyncStore() {
   const [state, setStateInternal] = useState<SyncStoreState>({
     rules: [],
-    grouping: { byWindow: false, ungroupSingleTab: false },
+    grouping: {
+      byWindow: false,
+      ungroupSingleTab: false,
+      processGroupOnChange: false,
+    },
   });
   const [store, setStore] = useState<any>(null);
 
@@ -27,14 +37,24 @@ function useSyncStore() {
           byWindow: false,
           numWindowsToKeep: 2,
           ungroupSingleTab: false,
+          processGroupOnChange: false,
         },
       });
       setStore(s);
       const data = await s.getState();
       const validRules = (data.rules || []).filter(validateRule);
+      const validGrouping = validateGroupingConfig(data.grouping)
+        ? data.grouping
+        : {
+            byWindow: false,
+            numWindowsToKeep: 2,
+            ungroupSingleTab: false,
+            processGroupOnChange: false,
+          };
+
       setStateInternal({
         rules: validRules,
-        grouping: data.grouping || { byWindow: false, ungroupSingleTab: false },
+        grouping: validGrouping,
       });
     };
     init();
@@ -170,6 +190,24 @@ const GroupingSettings = ({
       {chrome.i18n.getMessage("groupingBehaviorLabel")}
     </label>
     <div className="space-y-4">
+      <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!config.processGroupOnChange}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                processGroupOnChange: e.target.checked,
+              })
+            }
+            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">
+            {chrome.i18n.getMessage("processGroupOnChangeLabel")}
+          </span>
+        </label>
+      </div>
       <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input

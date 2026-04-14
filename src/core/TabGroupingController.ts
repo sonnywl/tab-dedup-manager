@@ -19,6 +19,8 @@ import ChromeTabAdapter from "./ChromeTabAdapter";
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
+  private lastFullStateHash: string | null = null;
+  private lastAutoStateHash: string | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
@@ -80,23 +82,31 @@ export default class TabGroupingController {
     tabs: Tab[],
     rulesByDomain: RulesByDomain,
     config: GroupingConfig,
-  ): Promise<void> {
-    const unique = await this.adapter.deduplicateAllTabs(tabs);
-    const remaining = await this.adapter.cleanupTabsByRules(
-      unique,
-      rulesByDomain,
-      this.service,
-    );
+    skipCleanup?: boolean,
+  ): Promise<Tab[]> {
+    let currentTabs = tabs;
+
+    if (!skipCleanup) {
+      const unique = await this.adapter.deduplicateAllTabs(currentTabs);
+      currentTabs = await this.adapter.cleanupTabsByRules(
+        unique,
+        rulesByDomain,
+        this.service,
+      );
+    }
+
     // Pre-sort internal browser pages to the start of each window
-    await this.adapter.moveInternalTabsToStart(remaining);
+    await this.adapter.moveInternalTabsToStart(currentTabs);
 
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(
-        remaining,
+        currentTabs,
         this.service,
         rulesByDomain,
       );
     }
+
+    return currentTabs;
   }
 
   private async ensureActiveWindowId(): Promise<number> {
@@ -165,6 +175,7 @@ export default class TabGroupingController {
         wid,
         rulesByDomain,
         !groupingConfig.byWindow,
+        state,
       );
       if (!res.success) throw res.error;
     }
@@ -233,15 +244,15 @@ export default class TabGroupingController {
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
     isGlobal?: boolean,
+    state?: BrowserState,
   ): Promise<Result<void, Error>> {
     try {
       // Phase 2a: Membership
-      // We start by calculating the memberships based on the current reality
-      const pre = await this.getGroupingContext(
-        windowId,
-        rulesByDomain,
-        isGlobal,
-      );
+      // We start by calculating the memberships based on the provided state or fresh context
+      const pre = state
+        ? this.buildGroupingContext(state, windowId, rulesByDomain, isGlobal)
+        : await this.getGroupingContext(windowId, rulesByDomain, isGlobal);
+
       const membershipPlan = this.service.buildMembershipPlan(
         pre.groupStates,
         pre.tabCache,
@@ -295,8 +306,8 @@ export default class TabGroupingController {
         state.groupIdToGroup,
       );
 
-      // Identity check: skip if state matches the perfect "ideal" state from the last execution
-      if (this.lastStateHash === currentHash) {
+      // Identity check: skip if state matches the perfect "ideal" state from the last full execution
+      if (this.lastFullStateHash === currentHash) {
         await this.adapter.updateBadge("");
         return;
       }
@@ -325,7 +336,7 @@ export default class TabGroupingController {
     }
   }
 
-  async execute(): Promise<void> {
+  async execute(options?: { skipCleanup?: boolean }): Promise<void> {
     if (this.isProcessing) {
       console.warn("Tab grouping in progress");
       return;
@@ -333,14 +344,6 @@ export default class TabGroupingController {
     this.isProcessing = true;
 
     try {
-      let state = await this.captureBrowserState();
-      const hash = this.service.hashState(state.allTabs, state.groupIdToGroup);
-      if (this.lastStateHash === hash) {
-        console.log("No state changes, skipping...");
-        this.adapter.updateBadge("");
-        return;
-      }
-
       this.adapter.updateBadge("O", "#FFD700");
       const [activeWindowId, config] = await Promise.all([
         this.ensureActiveWindowId(),
@@ -348,10 +351,42 @@ export default class TabGroupingController {
       ]);
       const { rulesByDomain, config: groupingConfig } = config;
 
-      // 1. Cleanup & Refresh
-      await this.prepareTabs(state.allTabs, rulesByDomain, groupingConfig);
+      let state = await this.captureBrowserState();
+      const currentHash = this.service.hashState(
+        state.allTabs,
+        state.groupIdToGroup,
+      );
 
-      state = await this.captureBrowserState();
+      if (options?.skipCleanup) {
+        // Automatic: Skip if we match either last auto state OR last full state
+        if (
+          currentHash === this.lastAutoStateHash ||
+          currentHash === this.lastFullStateHash
+        ) {
+          console.log("No state changes (auto), skipping...");
+          this.adapter.updateBadge("");
+          return;
+        }
+      } else {
+        // Manual: Only skip if we match the last full (clean) state
+        if (currentHash === this.lastFullStateHash) {
+          console.log("No state changes (manual), skipping...");
+          this.adapter.updateBadge("");
+          return;
+        }
+      }
+
+      // 1. Cleanup & Refresh
+      const remainingTabs = await this.prepareTabs(
+        state.allTabs,
+        rulesByDomain,
+        groupingConfig,
+        options?.skipCleanup,
+      );
+
+      // Use the tabs returned by prepareTabs for the rest of the flow
+      state.allTabs = remainingTabs;
+
       // 2. Phase 1: Window Consolidation
       state = await this.runConsolidationPhase(
         state,
@@ -370,10 +405,18 @@ export default class TabGroupingController {
 
       // 4. Finalize state hash
       const finalState = await this.captureBrowserState();
-      this.lastStateHash = this.service.hashState(
+      const finalHash = this.service.hashState(
         finalState.allTabs,
         finalState.groupIdToGroup,
       );
+
+      this.lastStateHash = finalHash;
+      if (options?.skipCleanup) {
+        this.lastAutoStateHash = finalHash;
+      } else {
+        this.lastFullStateHash = finalHash;
+        this.lastAutoStateHash = finalHash;
+      }
       this.adapter.updateBadge("");
     } catch (err) {
       console.warn("Execute error:", err);

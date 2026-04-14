@@ -12,6 +12,7 @@ async function init() {
         byWindow: false,
         numWindowsToKeep: 2,
         ungroupSingleTab: false,
+        processGroupOnChange: false,
       },
     });
 
@@ -25,15 +26,25 @@ async function init() {
       store,
     );
 
-    const debouncedUpdateBadge = debounce(() => controller.updateBadge(), 300);
+    const handleTabChange = debounce(async () => {
+      try {
+        const state = await store.getState();
+        if (state.grouping?.processGroupOnChange) {
+          await controller.execute({ skipCleanup: true });
+        }
+        await controller.updateBadge();
+      } catch (err) {
+        console.error("Error in handleTabChange:", err);
+      }
+    }, 300);
 
     // Initial update
-    debouncedUpdateBadge();
+    handleTabChange();
 
     chrome.action.onClicked.addListener(() => controller.execute());
-    chrome.tabs.onCreated.addListener(debouncedUpdateBadge);
-    chrome.tabs.onRemoved.addListener(debouncedUpdateBadge);
-    chrome.tabs.onUpdated.addListener(debouncedUpdateBadge);
+    chrome.tabs.onCreated.addListener(handleTabChange);
+    chrome.tabs.onRemoved.addListener(handleTabChange);
+    chrome.tabs.onUpdated.addListener(handleTabChange);
   } catch (err) {
     console.error("Fatal initialization error:", err);
   }

@@ -51,6 +51,10 @@
     "message": "Keep tabs grouped per window (or limit number of windows)",
     "description": "Checkbox label for window-scoped grouping."
   },
+  "processGroupOnChangeLabel": {
+    "message": "Automatically group/dedup when tabs are created or removed",
+    "description": "Checkbox label for automatic grouping on tab changes."
+  },
   "keepTopWindowsLabel": {
     "message": "Keep top windows by tab count:",
     "description": "Label for limiting number of windows."
