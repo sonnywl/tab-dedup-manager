@@ -30,7 +30,7 @@ async function init() {
       try {
         const state = await store.getState();
         if (state.grouping?.processGroupOnChange) {
-          await controller.execute({ skipCleanup: true });
+          await controller.execute();
         }
         await controller.updateBadge();
       } catch (err) {

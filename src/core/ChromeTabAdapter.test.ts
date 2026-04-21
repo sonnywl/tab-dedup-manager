@@ -32,11 +32,10 @@ describe("ChromeTabAdapter", () => {
     });
   });
 
-  it("deduplicates tabs by URL", async () => {
-    const tabs = [mkTab(1, "https://u1.com"), mkTab(2, "https://u1.com")];
-    const unique = await adapter.deduplicateAllTabs(tabs);
-    expect(unique.length).toBe(1);
-    expect(mockChrome.tabs.remove).toHaveBeenCalledWith([2]);
+  it("removes tabs by ID in batches", async () => {
+    const tabIds = [1, 2, 3] as any;
+    await adapter.removeTabs(tabIds);
+    expect(mockChrome.tabs.remove).toHaveBeenCalledWith([1, 2, 3]);
   });
 
   it("should apply collapsed state in executeMembershipPlan", async () => {

@@ -61,11 +61,10 @@ describe("TabGroupingController", () => {
   const makeAdapterMock = (overrides: Record<string, any> = {}) =>
     ({
       getNormalTabs: vi.fn().mockResolvedValue([]),
-      deduplicateAllTabs: vi.fn().mockResolvedValue([]),
-      cleanupTabsByRules: vi.fn().mockResolvedValue([]),
+      removeTabs: vi.fn().mockResolvedValue(undefined),
       moveInternalTabsToStart: vi
         .fn()
-        .mockImplementation((tabs) => Promise.resolve(tabs)),
+        .mockImplementation((tabs) => Promise.resolve()),
       ungroupSingleTabGroups: vi.fn().mockResolvedValue(undefined),
       executeConsolidationPlan: vi
         .fn()
@@ -104,8 +103,6 @@ describe("TabGroupingController", () => {
     it("skips when state hash unchanged", async () => {
       const tabs = [mkTab(1, "google.com")];
       (controller as any).adapter.getNormalTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.deduplicateAllTabs.mockResolvedValue(tabs);
-      (controller as any).adapter.cleanupTabsByRules.mockResolvedValue(tabs);
       mockStore.getState.mockResolvedValue({
         rules: [],
         grouping: { byWindow: false },
@@ -156,7 +153,9 @@ describe("TabGroupingController", () => {
       });
 
       // 1. First run sets lastFullStateHash
-      const hash = (controller as any).service.hashState(tabs, new Map());
+      const hash = (controller as any).service.hashState(tabs, new Map(), [], {
+        byWindow: true,
+      });
       (controller as any).lastFullStateHash = hash;
 
       // 2. Second run should clear badge

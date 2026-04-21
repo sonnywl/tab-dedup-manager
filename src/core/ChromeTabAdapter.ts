@@ -138,63 +138,17 @@ export default class ChromeTabAdapter {
     return result.value;
   }
 
-  async deduplicateAllTabs(tabs: Tab[]): Promise<Tab[]> {
-    const seen = new Set<string>();
-    const unique: Tab[] = [];
-    const dupes: TabId[] = [];
-
-    for (const tab of tabs) {
-      if (tab.url && !seen.has(tab.url)) {
-        seen.add(tab.url);
-        unique.push(tab);
-      } else if (tab.id) {
-        dupes.push(asTabId(tab.id)!);
-      } else {
-        unique.push(tab);
-      }
-    }
-
-    for (const batch of this.batch(dupes)) {
+  async removeTabs(tabIds: TabId[]): Promise<void> {
+    for (const batch of this.batch(tabIds)) {
       const r = await retry(async () => {
         await chrome.tabs.remove(batch as number[]);
       });
       if (r.success === false)
-        console.warn("Failed to remove duplicates:", r.error);
+        console.warn(`Failed to remove ${batch.length} tabs:`, r.error);
     }
-
-    return unique;
   }
 
-  async cleanupTabsByRules(
-    tabs: Tab[],
-    rulesByDomain: RulesByDomain,
-    service: TabGroupingService,
-  ): Promise<Tab[]> {
-    const toDelete: TabId[] = [];
-    const remaining: Tab[] = [];
-
-    for (const tab of tabs) {
-      const domain = service.getDomain(tab.url);
-      const rule = rulesByDomain[domain];
-
-      if (rule?.autoDelete && tab.id) {
-        toDelete.push(asTabId(tab.id)!);
-      } else {
-        remaining.push(tab);
-      }
-    }
-
-    for (const batch of this.batch(toDelete)) {
-      const r = await retry(async () => {
-        await chrome.tabs.remove(batch as number[]);
-      });
-      if (r.success === false) console.warn("Failed to auto-delete:", r.error);
-    }
-
-    return remaining;
-  }
-
-  async moveInternalTabsToStart(tabs: Tab[]): Promise<Tab[]> {
+  async moveInternalTabsToStart(tabs: Tab[]): Promise<void> {
     const windowMap = new Map<number, Tab[]>();
     for (const tab of tabs) {
       if (tab.windowId === undefined) continue;
@@ -228,8 +182,6 @@ export default class ChromeTabAdapter {
         targetIndex++;
       }
     }
-
-    return tabs;
   }
 
   async ungroupSingleTabGroups(

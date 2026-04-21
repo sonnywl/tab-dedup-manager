@@ -1,9 +1,12 @@
 import {
   BrowserState,
+  GroupId,
   GroupingConfig,
   Result,
+  Rule,
   RulesByDomain,
   SyncStore,
+  SyncStoreState,
   Tab,
   TabId,
   WindowId,
@@ -16,6 +19,8 @@ import { TabGroupingService, WindowManagementService } from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
+const STABILITY_DELAY = 60; // ms to wait for Chrome to propagate moves/indices
+
 export default class TabGroupingController {
   private isProcessing = false;
   private lastStateHash: string | null = null;
@@ -26,10 +31,17 @@ export default class TabGroupingController {
     private readonly service: TabGroupingService,
     private readonly windowService: WindowManagementService,
     private readonly adapter: ChromeTabAdapter,
-    private readonly store: SyncStore,
+    private readonly store: SyncStore<SyncStoreState>,
   ) {}
 
-  private async captureBrowserState(): Promise<BrowserState> {
+  /**
+   * Refreshes the browser state, optionally waiting for Chrome's internal indices to stabilize.
+   */
+  private async refreshState(withDelay = false): Promise<BrowserState> {
+    if (withDelay) {
+      await new Promise((r) => setTimeout(r, STABILITY_DELAY));
+    }
+
     const [tabs, groups] = await Promise.all([
       this.adapter.getNormalTabs(),
       chrome.tabGroups.query({}),
@@ -57,56 +69,64 @@ export default class TabGroupingController {
     const grouping = state?.grouping ?? {};
 
     const valid = rules.filter(validateRule);
-    if (valid.length !== rules.length)
-      console.warn(`Filtered ${rules.length - valid.length} invalid rules`);
-
     const rulesByDomain: RulesByDomain = {};
     for (const r of valid) {
       if (r.domain.length > 0) {
-        const normalized = this.service.normalizeDomain(r.domain);
-        rulesByDomain[normalized] = r;
+        rulesByDomain[this.service.normalizeDomain(r.domain)] = r;
       }
     }
 
     return {
       rulesByDomain,
       config: {
-        byWindow: grouping.byWindow,
+        byWindow: !!grouping.byWindow,
         numWindowsToKeep: grouping.numWindowsToKeep,
-        ungroupSingleTab: grouping.ungroupSingleTab,
+        ungroupSingleTab: !!grouping.ungroupSingleTab,
+        processGroupOnChange: !!grouping.processGroupOnChange,
       },
     };
   }
 
-  private async prepareTabs(
-    tabs: Tab[],
+  /**
+   * Phase 0: Cleanup (Duplicates, Auto-Delete, Internal Pre-sort).
+   */
+  private async runCleanupPhase(
+    state: BrowserState,
     rulesByDomain: RulesByDomain,
     config: GroupingConfig,
-    skipCleanup?: boolean,
-  ): Promise<Tab[]> {
-    let currentTabs = tabs;
+    skipDestructive?: boolean,
+  ): Promise<BrowserState> {
+    let currentState = state;
+    let modified = false;
 
-    if (!skipCleanup) {
-      const unique = await this.adapter.deduplicateAllTabs(currentTabs);
-      currentTabs = await this.adapter.cleanupTabsByRules(
-        unique,
+    if (!skipDestructive) {
+      const dupes = this.service.getDuplicateTabIds(currentState.allTabs);
+      const autoDeletes = this.service.getAutoDeleteTabIds(
+        currentState.allTabs,
         rulesByDomain,
-        this.service,
       );
+      const toRemove = Array.from(new Set([...dupes, ...autoDeletes]));
+
+      if (toRemove.length > 0) {
+        await this.adapter.removeTabs(toRemove);
+        currentState = await this.refreshState(true);
+      }
     }
 
-    // Pre-sort internal browser pages to the start of each window
-    await this.adapter.moveInternalTabsToStart(currentTabs);
+    // Pre-sort internal browser pages (chrome:// etc.) to the start
+    await this.adapter.moveInternalTabsToStart(currentState.allTabs);
+    modified = true;
 
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(
-        currentTabs,
+        currentState.allTabs,
         this.service,
         rulesByDomain,
       );
+      modified = true;
     }
 
-    return currentTabs;
+    return modified ? this.refreshState(true) : currentState;
   }
 
   private async ensureActiveWindowId(): Promise<number> {
@@ -118,6 +138,9 @@ export default class TabGroupingController {
     return allWindows[0]?.id as number;
   }
 
+  /**
+   * Phase 1: Window Consolidation (Merge excess windows into retained targets).
+   */
   private async runConsolidationPhase(
     state: BrowserState,
     rulesByDomain: RulesByDomain,
@@ -128,9 +151,7 @@ export default class TabGroupingController {
       ? groupingConfig.numWindowsToKeep
       : 1;
 
-    if (!isDefined(numToKeep)) {
-      return state;
-    }
+    if (!isDefined(numToKeep)) return state;
 
     const { protectedMeta, managedGroupIds } =
       this.service.identifyProtectedTabs(
@@ -154,47 +175,42 @@ export default class TabGroupingController {
         state.allTabs,
       );
       if (!res.success) throw res.error;
-      return this.captureBrowserState();
+      return this.refreshState(true);
     }
 
     return state;
   }
 
+  /**
+   * Phase 2: Grouping Pass (Membership and Ordering).
+   */
   private async runGroupingPhase(
     state: BrowserState,
     rulesByDomain: RulesByDomain,
     groupingConfig: GroupingConfig,
     activeWindowId: number,
-  ): Promise<void> {
+  ): Promise<BrowserState> {
     const windowMap = groupingConfig.byWindow
       ? this.windowService.groupByWindow(state.allTabs)
       : new Map([[asWindowId(activeWindowId), state.allTabs]]);
 
+    let currentState = state;
     for (const [wid] of windowMap) {
       const res = await this.processGrouping(
         wid,
         rulesByDomain,
         !groupingConfig.byWindow,
-        state,
+        currentState,
       );
       if (!res.success) throw res.error;
+      currentState = res.value;
     }
+
+    return currentState;
   }
 
   /**
-   * Encapsulates the core transformation pipeline from raw tabs to grouping logic context.
-   */
-  private async getGroupingContext(
-    windowId: WindowId,
-    rulesByDomain: RulesByDomain,
-    isGlobal?: boolean,
-  ) {
-    const state = await this.captureBrowserState();
-    return this.buildGroupingContext(state, windowId, rulesByDomain, isGlobal);
-  }
-
-  /**
-   * Pure logic transformation from a known browser state to grouping context.
+   * Pure logic transformation from a known browser state to grouping logic context.
    */
   private buildGroupingContext(
     state: BrowserState,
@@ -232,7 +248,6 @@ export default class TabGroupingController {
     );
 
     return {
-      allTabs: state.allTabs,
       scopedTabs,
       groupStates,
       managedGroupIds,
@@ -243,15 +258,17 @@ export default class TabGroupingController {
   async processGrouping(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
-    isGlobal?: boolean,
-    state?: BrowserState,
-  ): Promise<Result<void, Error>> {
+    isGlobal: boolean,
+    state: BrowserState,
+  ): Promise<Result<BrowserState, Error>> {
     try {
       // Phase 2a: Membership
-      // We start by calculating the memberships based on the provided state or fresh context
-      const pre = state
-        ? this.buildGroupingContext(state, windowId, rulesByDomain, isGlobal)
-        : await this.getGroupingContext(windowId, rulesByDomain, isGlobal);
+      const pre = this.buildGroupingContext(
+        state,
+        windowId,
+        rulesByDomain,
+        isGlobal,
+      );
 
       const membershipPlan = this.service.buildMembershipPlan(
         pre.groupStates,
@@ -262,13 +279,14 @@ export default class TabGroupingController {
 
       const memRes = await this.adapter.executeMembershipPlan(
         membershipPlan,
-        pre.allTabs,
+        state.allTabs,
       );
       if (!memRes.success) return memRes;
 
       // Phase 2b: Ordering (The "Reality Check" way)
-      // Capture a fresh context to see the ACTUAL indices and IDs after Phase 2a
-      const fresh = await this.getGroupingContext(
+      const freshState = await this.refreshState(true);
+      const fresh = this.buildGroupingContext(
+        freshState,
         windowId,
         rulesByDomain,
         isGlobal,
@@ -285,11 +303,15 @@ export default class TabGroupingController {
       const live = this.service.getLiveUnits(fresh.scopedTabs);
 
       const orderPlan = this.service.buildOrderPlan(desired, live);
-      return this.adapter.executeOrderPlan(
+      const orderRes = await this.adapter.executeOrderPlan(
         orderPlan,
         windowId,
         fresh.scopedTabs,
       );
+      if (!orderRes.success) return orderRes;
+
+      // Final settle-refresh for this window/unit
+      return { success: true, value: await this.refreshState(true) };
     } catch (err) {
       return {
         success: false,
@@ -298,25 +320,27 @@ export default class TabGroupingController {
     }
   }
 
+  private shouldSkip(
+    currentHash: string,
+    isAuto: boolean,
+  ): { skip: boolean; reason?: string } {
+    if (currentHash === this.lastFullStateHash) {
+      return { skip: true, reason: "Matches last full state" };
+    }
+    if (isAuto && currentHash === this.lastAutoStateHash) {
+      return { skip: true, reason: "Matches last auto state" };
+    }
+    return { skip: false };
+  }
+
   async updateBadge(): Promise<void> {
+    if (this.isProcessing) return;
+
     try {
-      const state = await this.captureBrowserState();
-      const currentHash = this.service.hashState(
-        state.allTabs,
-        state.groupIdToGroup,
-      );
-
-      // Identity check: skip if state matches the perfect "ideal" state from the last full execution
-      if (this.lastFullStateHash === currentHash) {
-        await this.adapter.updateBadge("");
-        return;
-      }
-
+      const state = await this.refreshState();
       const configResult = await this.loadConfiguration();
-      if (!configResult) return;
       const { rulesByDomain } = configResult;
 
-      // 1. Closures (Duplicates + Auto-Delete)
       const dupes = this.service.getDuplicateTabIds(state.allTabs);
       const autoDeletes = this.service.getAutoDeleteTabIds(
         state.allTabs,
@@ -326,68 +350,62 @@ export default class TabGroupingController {
 
       if (closeCount > 0) {
         await this.adapter.updateBadge(closeCount.toString());
-      } else {
-        // We know something is off because currentHash !== lastStateHash,
-        // and it's not a closure. So it must be a sort or grouping change.
-        await this.adapter.updateBadge("!");
+        return;
       }
-    } catch (err) {
-      console.warn("Failed to calculate affected tabs for badge:", err);
-    }
-  }
 
-  async execute(options?: { skipCleanup?: boolean }): Promise<void> {
-    if (this.isProcessing) {
-      console.warn("Tab grouping in progress");
-      return;
-    }
-    this.isProcessing = true;
-
-    try {
-      this.adapter.updateBadge("O", "#FFD700");
-      const [activeWindowId, config] = await Promise.all([
-        this.ensureActiveWindowId(),
-        this.loadConfiguration(),
-      ]);
-      const { rulesByDomain, config: groupingConfig } = config;
-
-      let state = await this.captureBrowserState();
       const currentHash = this.service.hashState(
         state.allTabs,
         state.groupIdToGroup,
       );
 
-      if (options?.skipCleanup) {
-        // Automatic: Skip if we match either last auto state OR last full state
-        if (
-          currentHash === this.lastAutoStateHash ||
-          currentHash === this.lastFullStateHash
-        ) {
-          console.log("No state changes (auto), skipping...");
-          this.adapter.updateBadge("");
-          return;
-        }
-      } else {
-        // Manual: Only skip if we match the last full (clean) state
-        if (currentHash === this.lastFullStateHash) {
-          console.log("No state changes (manual), skipping...");
-          this.adapter.updateBadge("");
-          return;
-        }
+      if (this.shouldSkip(currentHash, false).skip) {
+        await this.adapter.updateBadge("");
+        return;
       }
 
-      // 1. Cleanup & Refresh
-      const remainingTabs = await this.prepareTabs(
+      await this.adapter.updateBadge("!");
+    } catch (err) {
+      console.warn("Failed to update badge:", err);
+    }
+  }
+
+  async execute(options?: { skipCleanup?: boolean }): Promise<void> {
+    if (this.isProcessing) return;
+    this.isProcessing = true;
+
+    try {
+      this.adapter.updateBadge("O", "#FFD700");
+      const [activeWindowId, configResult] = await Promise.all([
+        this.ensureActiveWindowId(),
+        this.loadConfiguration(),
+      ]);
+      const { rulesByDomain, config: groupingConfig } = configResult;
+
+      let state = await this.refreshState();
+      const currentHash = this.service.hashState(
         state.allTabs,
+        state.groupIdToGroup,
+      );
+
+      const { skip, reason } = this.shouldSkip(
+        currentHash,
+        !!options?.skipCleanup,
+      );
+      if (skip) {
+        console.log(`Skipping: ${reason}`);
+        this.adapter.updateBadge("");
+        return;
+      }
+
+      // Phase 0: Cleanup
+      state = await this.runCleanupPhase(
+        state,
         rulesByDomain,
         groupingConfig,
         options?.skipCleanup,
       );
 
-      // Use the tabs returned by prepareTabs for the rest of the flow
-      state.allTabs = remainingTabs;
-
-      // 2. Phase 1: Window Consolidation
+      // Phase 1: Consolidation
       state = await this.runConsolidationPhase(
         state,
         rulesByDomain,
@@ -395,28 +413,25 @@ export default class TabGroupingController {
         activeWindowId,
       );
 
-      // 3. Phase 2: Grouping Pass
-      await this.runGroupingPhase(
+      // Phase 2: Grouping
+      state = await this.runGroupingPhase(
         state,
         rulesByDomain,
         groupingConfig,
         activeWindowId,
       );
 
-      // 4. Finalize state hash
-      const finalState = await this.captureBrowserState();
+      // Final Fingerprinting (after all phases)
+      const finalState = await this.refreshState(true);
       const finalHash = this.service.hashState(
         finalState.allTabs,
         finalState.groupIdToGroup,
       );
 
       this.lastStateHash = finalHash;
-      if (options?.skipCleanup) {
-        this.lastAutoStateHash = finalHash;
-      } else {
-        this.lastFullStateHash = finalHash;
-        this.lastAutoStateHash = finalHash;
-      }
+      this.lastAutoStateHash = finalHash;
+      this.lastFullStateHash = finalHash;
+
       this.adapter.updateBadge("");
     } catch (err) {
       console.warn("Execute error:", err);

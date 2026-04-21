@@ -396,7 +396,7 @@ describe("TabGroupingService", () => {
       expect(states[0].groupId).toBe(asGroupId(100));
     });
 
-    it("should PROTECT unnamed groups instead of scavenging them", () => {
+    it("Protects manual (unnamed) user groups", () => {
       const tab = mkTab(1, "https://google.com", 500);
       const groupIdToGroup = new Map([
         [500, { id: 500, title: "", collapsed: false } as any],

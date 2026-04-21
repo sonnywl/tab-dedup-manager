@@ -308,8 +308,11 @@ export class TabGroupingService {
     for (const tab of tabs) {
       if (tab.url && tab.id) {
         const tid = asTabId(tab.id)!;
-        if (seen.has(tab.url)) dupes.add(tid);
-        else seen.add(tab.url);
+        if (seen.has(tab.url)) {
+          dupes.add(tid);
+        } else {
+          seen.add(tab.url);
+        }
       }
     }
     return dupes;
