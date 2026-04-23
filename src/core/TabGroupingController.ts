@@ -415,16 +415,15 @@ export default class TabGroupingController {
         options?.skipCleanup,
       );
 
-      // Mandate: Load Protected Status (PRE-CONSOLIDATION)
-      // This ensures that manual groups moving across windows are remembered and re-bundled.
-      const { protectedMeta, managedGroupIds } =
-        this.service.identifyProtectedTabs(
-          state.allTabs,
-          state.groupIdToGroup,
-          rulesByDomain,
-        );
-
       for (let i = 0; i < 2; i++) {
+        const { protectedMeta, managedGroupIds } =
+          // This ensures that manual groups moving across windows are remembered and re-bundled.
+          this.service.identifyProtectedTabs(
+            state.allTabs,
+            state.groupIdToGroup,
+            rulesByDomain,
+          );
+
         // Phase 1: Consolidation
         state = await this.runConsolidationPhase(
           state,
