@@ -1,12 +1,10 @@
 import {
   BrowserState,
-  GroupId,
   GroupingConfig,
+  ProtectedTabMetaMap,
   Result,
-  Rule,
   RulesByDomain,
   SyncStore,
-  SyncStoreState,
   Tab,
   TabId,
   WindowId,
@@ -23,7 +21,6 @@ const STABILITY_DELAY = 60; // ms to wait for Chrome to propagate moves/indices
 
 export default class TabGroupingController {
   private isProcessing = false;
-  private lastStateHash: string | null = null;
   private lastFullStateHash: string | null = null;
   private lastAutoStateHash: string | null = null;
 
@@ -31,7 +28,7 @@ export default class TabGroupingController {
     private readonly service: TabGroupingService,
     private readonly windowService: WindowManagementService,
     private readonly adapter: ChromeTabAdapter,
-    private readonly store: SyncStore<SyncStoreState>,
+    private readonly store: SyncStore,
   ) {}
 
   /**
@@ -100,22 +97,26 @@ export default class TabGroupingController {
     let modified = false;
 
     if (!skipDestructive) {
-      const dupes = this.service.getDuplicateTabIds(currentState.allTabs);
-      const autoDeletes = this.service.getAutoDeleteTabIds(
-        currentState.allTabs,
-        rulesByDomain,
+      const toRemove = Array.from(
+        this.service.getCleanupTabIds(currentState.allTabs, rulesByDomain),
       );
-      const toRemove = Array.from(new Set([...dupes, ...autoDeletes]));
 
       if (toRemove.length > 0) {
         await this.adapter.removeTabs(toRemove);
         currentState = await this.refreshState(true);
+        modified = true;
       }
     }
 
     // Pre-sort internal browser pages (chrome:// etc.) to the start
-    await this.adapter.moveInternalTabsToStart(currentState.allTabs);
-    modified = true;
+    const internalMoves = this.service.calculateInternalPageMoves(
+      currentState.allTabs,
+    );
+    if (internalMoves.length > 0) {
+      await this.adapter.applyInternalPageMoves(internalMoves);
+      currentState = await this.refreshState(true);
+      modified = true;
+    }
 
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(
@@ -143,22 +144,16 @@ export default class TabGroupingController {
    */
   private async runConsolidationPhase(
     state: BrowserState,
-    rulesByDomain: RulesByDomain,
     groupingConfig: GroupingConfig,
     activeWindowId: number,
+    protectedMeta: ProtectedTabMetaMap,
+    managedGroupIds: Map<number, string>,
   ): Promise<BrowserState> {
     const numToKeep = groupingConfig.byWindow
       ? groupingConfig.numWindowsToKeep
       : 1;
 
     if (!isDefined(numToKeep)) return state;
-
-    const { protectedMeta, managedGroupIds } =
-      this.service.identifyProtectedTabs(
-        state.allTabs,
-        state.groupIdToGroup,
-        rulesByDomain,
-      );
 
     const plan = this.windowService.createConsolidationPlan(
       state.allTabs,
@@ -189,6 +184,8 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain,
     groupingConfig: GroupingConfig,
     activeWindowId: number,
+    protectedMeta: ProtectedTabMetaMap,
+    managedGroupIds: Map<number, string>,
   ): Promise<BrowserState> {
     const windowMap = groupingConfig.byWindow
       ? this.windowService.groupByWindow(state.allTabs)
@@ -201,6 +198,8 @@ export default class TabGroupingController {
         rulesByDomain,
         !groupingConfig.byWindow,
         currentState,
+        protectedMeta,
+        managedGroupIds,
       );
       if (!res.success) throw res.error;
       currentState = res.value;
@@ -216,18 +215,25 @@ export default class TabGroupingController {
     state: BrowserState,
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
-    isGlobal?: boolean,
+    isGlobal: boolean,
+    providedProtectedMeta?: ProtectedTabMetaMap,
+    providedManagedGroupIds?: Map<number, string>,
   ) {
     const scopedTabs = isGlobal
       ? state.allTabs
       : state.allTabs.filter((t) => t.windowId === windowId);
 
     const { protectedMeta, managedGroupIds } =
-      this.service.identifyProtectedTabs(
-        scopedTabs,
-        state.groupIdToGroup,
-        rulesByDomain,
-      );
+      providedProtectedMeta && providedManagedGroupIds
+        ? {
+            protectedMeta: providedProtectedMeta,
+            managedGroupIds: providedManagedGroupIds,
+          }
+        : this.service.identifyProtectedTabs(
+            scopedTabs,
+            state.groupIdToGroup,
+            rulesByDomain,
+          );
 
     const groupMap = this.service.buildGroupMap(
       scopedTabs,
@@ -260,6 +266,8 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain,
     isGlobal: boolean,
     state: BrowserState,
+    providedProtectedMeta?: ProtectedTabMetaMap,
+    providedManagedGroupIds?: Map<number, string>,
   ): Promise<Result<BrowserState, Error>> {
     try {
       // Phase 2a: Membership
@@ -268,6 +276,8 @@ export default class TabGroupingController {
         windowId,
         rulesByDomain,
         isGlobal,
+        providedProtectedMeta,
+        providedManagedGroupIds,
       );
 
       const membershipPlan = this.service.buildMembershipPlan(
@@ -290,6 +300,8 @@ export default class TabGroupingController {
         windowId,
         rulesByDomain,
         isGlobal,
+        providedProtectedMeta,
+        providedManagedGroupIds,
       );
 
       const repositionStates = this.service.calculateRepositionNeeds(
@@ -341,15 +353,13 @@ export default class TabGroupingController {
       const configResult = await this.loadConfiguration();
       const { rulesByDomain } = configResult;
 
-      const dupes = this.service.getDuplicateTabIds(state.allTabs);
-      const autoDeletes = this.service.getAutoDeleteTabIds(
+      const toRemove = this.service.getCleanupTabIds(
         state.allTabs,
         rulesByDomain,
       );
-      const closeCount = new Set([...dupes, ...autoDeletes]).size;
 
-      if (closeCount > 0) {
-        await this.adapter.updateBadge(closeCount.toString());
+      if (toRemove.size > 0) {
+        await this.adapter.updateBadge(toRemove.size.toString());
         return;
       }
 
@@ -405,22 +415,35 @@ export default class TabGroupingController {
         options?.skipCleanup,
       );
 
-      // Phase 1: Consolidation
-      state = await this.runConsolidationPhase(
-        state,
-        rulesByDomain,
-        groupingConfig,
-        activeWindowId,
-      );
+      // Mandate: Load Protected Status (PRE-CONSOLIDATION)
+      // This ensures that manual groups moving across windows are remembered and re-bundled.
+      const { protectedMeta, managedGroupIds } =
+        this.service.identifyProtectedTabs(
+          state.allTabs,
+          state.groupIdToGroup,
+          rulesByDomain,
+        );
 
-      // Phase 2: Grouping
-      state = await this.runGroupingPhase(
-        state,
-        rulesByDomain,
-        groupingConfig,
-        activeWindowId,
-      );
+      for (let i = 0; i < 2; i++) {
+        // Phase 1: Consolidation
+        state = await this.runConsolidationPhase(
+          state,
+          groupingConfig,
+          activeWindowId,
+          protectedMeta,
+          managedGroupIds,
+        );
 
+        // Phase 2: Grouping
+        state = await this.runGroupingPhase(
+          state,
+          rulesByDomain,
+          groupingConfig,
+          activeWindowId,
+          protectedMeta,
+          managedGroupIds,
+        );
+      }
       // Final Fingerprinting (after all phases)
       const finalState = await this.refreshState(true);
       const finalHash = this.service.hashState(
@@ -428,9 +451,10 @@ export default class TabGroupingController {
         finalState.groupIdToGroup,
       );
 
-      this.lastStateHash = finalHash;
       this.lastAutoStateHash = finalHash;
-      this.lastFullStateHash = finalHash;
+      if (!options?.skipCleanup) {
+        this.lastFullStateHash = finalHash;
+      }
 
       this.adapter.updateBadge("");
     } catch (err) {

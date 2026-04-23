@@ -283,9 +283,9 @@ export class TabGroupingService {
         existing
           ? {
               tabs: [...existing.tabs, tab],
-              displayName,
+              displayName: existing.displayName, // Stable: keep the first one
               domains: new Set([...existing.domains, domain]),
-              isExternal,
+              isExternal: isExternal || existing.isExternal,
               groupId: groupId || existing.groupId,
               collapsed: collapsed || existing.collapsed,
             }
@@ -302,32 +302,65 @@ export class TabGroupingService {
     return map;
   }
 
-  getDuplicateTabIds(tabs: Tab[]): Set<TabId> {
+  getCleanupTabIds(tabs: Tab[], rulesByDomain: RulesByDomain): Set<TabId> {
     const seen = new Set<string>();
-    const dupes = new Set<TabId>();
+    const toRemove = new Set<TabId>();
     for (const tab of tabs) {
-      if (tab.url && tab.id) {
-        const tid = asTabId(tab.id)!;
-        if (seen.has(tab.url)) {
-          dupes.add(tid);
-        } else {
-          seen.add(tab.url);
-        }
-      }
-    }
-    return dupes;
-  }
+      if (!tab.id || !tab.url) continue;
+      const tid = asTabId(tab.id)!;
 
-  getAutoDeleteTabIds(tabs: Tab[], rulesByDomain: RulesByDomain): Set<TabId> {
-    const toDelete = new Set<TabId>();
-    for (const tab of tabs) {
+      // 1. Auto-delete check
       const domain = this.getDomain(tab.url);
       const rule = rulesByDomain[domain];
-      if (rule?.autoDelete && tab.id) {
-        toDelete.add(asTabId(tab.id)!);
+      if (rule?.autoDelete) {
+        toRemove.add(tid);
+        continue;
+      }
+
+      // 2. Duplicate check
+      if (seen.has(tab.url)) {
+        toRemove.add(tid);
+      } else {
+        seen.add(tab.url);
       }
     }
-    return toDelete;
+    return toRemove;
+  }
+
+  calculateInternalPageMoves(
+    tabs: Tab[],
+  ): { tabId: TabId; targetIndex: number }[] {
+    const moves: { tabId: TabId; targetIndex: number }[] = [];
+    const windowMap = new Map<number, Tab[]>();
+
+    for (const tab of tabs) {
+      if (tab.windowId === undefined) continue;
+      if (!windowMap.has(tab.windowId)) windowMap.set(tab.windowId, []);
+      windowMap.get(tab.windowId)!.push(tab);
+    }
+
+    for (const wTabs of windowMap.values()) {
+      const internalUnpinned = wTabs.filter(
+        (t) => isInternalTab(t) && !t.pinned,
+      );
+      if (internalUnpinned.length === 0) continue;
+
+      // Stable sort by URL
+      const sorted = [...internalUnpinned].sort((a, b) =>
+        (a.url || "").localeCompare(b.url || ""),
+      );
+
+      const pinnedCount = wTabs.filter((t) => t.pinned).length;
+      let targetIdx = pinnedCount;
+
+      for (const tab of sorted) {
+        if (tab.id && tab.index !== targetIdx) {
+          moves.push({ tabId: asTabId(tab.id)!, targetIndex: targetIdx });
+        }
+        targetIdx++;
+      }
+    }
+    return moves;
   }
 
   private mapRawStates(

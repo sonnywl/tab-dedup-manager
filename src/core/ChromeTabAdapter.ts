@@ -148,39 +148,13 @@ export default class ChromeTabAdapter {
     }
   }
 
-  async moveInternalTabsToStart(tabs: Tab[]): Promise<void> {
-    const windowMap = new Map<number, Tab[]>();
-    for (const tab of tabs) {
-      if (tab.windowId === undefined) continue;
-      if (!windowMap.has(tab.windowId)) windowMap.set(tab.windowId, []);
-      windowMap.get(tab.windowId)!.push(tab);
-    }
-
-    for (const [_, wTabs] of windowMap.entries()) {
-      const internalUnpinned = wTabs.filter(
-        (t) => isInternalTab(t) && !t.pinned,
+  async applyInternalPageMoves(
+    moves: { tabId: TabId; targetIndex: number }[],
+  ): Promise<void> {
+    for (const move of moves) {
+      await retry(() =>
+        chrome.tabs.move(move.tabId as number, { index: move.targetIndex }),
       );
-      if (internalUnpinned.length === 0) continue;
-
-      // Stable sort by URL
-      internalUnpinned.sort((a, b) => (a.url || "").localeCompare(b.url || ""));
-
-      // Target starting index: after all pinned tabs in this window
-      const pinnedCount = wTabs.filter((t) => t.pinned).length;
-      let targetIndex = pinnedCount;
-
-      for (const tab of internalUnpinned) {
-        if (tab.id && tab.index !== targetIndex) {
-          const r = await retry(() =>
-            chrome.tabs.move(tab.id as number, { index: targetIndex }),
-          );
-          if (r.success) {
-            // Update local index to reflect move for subsequent iterations
-            tab.index = targetIndex;
-          }
-        }
-        targetIndex++;
-      }
     }
   }
 

@@ -45,7 +45,7 @@ Destructive operations are applied **globally** to the entire session before pha
 ## Execution Flow (Unified Orchestration)
 
 1.  **Config**: Load current rules and grouping settings.
-2.  **Fingerprint**: Calculate `lastStateHash`. Exit early if no change.
+2.  **Fingerprint**: Calculate current state hash. Exit early if matches `lastFullStateHash` (or `lastAutoStateHash` during auto-runs).
 3.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping (Skipped if `skipCleanup: true`).
 4.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
 5.  **Phase 2: Grouping Pass**:

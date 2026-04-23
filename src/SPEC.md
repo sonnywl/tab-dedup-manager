@@ -103,7 +103,7 @@ The layout follows a deterministic order:
 
 1.  **Trigger**: User clicks extension icon OR background event (if `processGroupOnChange` enabled).
 2.  **Load Config**: Fetch rules and grouping settings from sync storage.
-3.  **Fingerprint**: `lastStateHash` check. Skip if identical.
+3.  **Fingerprint**: `lastAutoStateHash` and `lastFullStateHash` checks. Skip if identical.
 4.  **Clean**: Global deduplication, auto-deletion, internal page pre-sorting, and optional single-tab ungrouping. (Destructive steps skipped if triggered by background event).
 5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
 6.  **Phase 2: Grouping Pass**:
