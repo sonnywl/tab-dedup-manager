@@ -473,7 +473,7 @@ describe("TabGroupingService", () => {
       const states = service.buildGroupStates(groupMap, cache);
       const repositioned = service.calculateRepositionNeeds(states, cache);
 
-      // Sorting: settings (Internal) < managed.com (M) < My Group (M) < other.com (Solo)
+      // Sorting: settings (Internal) < managed.com (Managed) < My Group (Manual) < other.com (Solo)
       expect(repositioned[0].displayName).toBe("settings");
       expect(repositioned[1].displayName).toBe("managed.com");
       expect(repositioned[2].displayName).toBe("My Group");

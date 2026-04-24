@@ -551,30 +551,6 @@ export class TabGroupingService {
     return true;
   }
 
-  private getSortingStrategies(tabCache: ReadonlyMap<TabId, Tab>) {
-    const sortByUrl = (a: GroupState, b: GroupState) => {
-      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
-      if (nameComp !== 0) return nameComp;
-
-      const tA = tabCache.get(a.tabIds[0]);
-      const tB = tabCache.get(b.tabIds[0]);
-      const urlComp = (tA?.url || "").localeCompare(tB?.url || "");
-      if (urlComp !== 0) return urlComp;
-      return (tA?.id ?? 0) - (tB?.id ?? 0);
-    };
-
-    const sortById = (a: GroupState, b: GroupState) => {
-      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
-      if (nameComp !== 0) return nameComp;
-
-      const tA = tabCache.get(a.tabIds[0]);
-      const tB = tabCache.get(b.tabIds[0]);
-      return (tA?.id ?? 0) - (tB?.id ?? 0);
-    };
-
-    return { sortByUrl, sortById };
-  }
-
   // ============================================================================
   // SORTING & REPOSITIONING
   // ============================================================================
@@ -598,6 +574,26 @@ export class TabGroupingService {
     return (a.url || "").localeCompare(b.url || "");
   }
 
+  private getSortingStrategies(tabCache: ReadonlyMap<TabId, Tab>) {
+    const sortByUrl = (a: GroupState, b: GroupState) => {
+      const tA = tabCache.get(a.tabIds[0]);
+      const tB = tabCache.get(b.tabIds[0]);
+      if (tA && tB) return this.compareTabOrder(tA, tB);
+      return (a.displayName || "").localeCompare(b.displayName || "");
+    };
+
+    const sortById = (a: GroupState, b: GroupState) => {
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
+      const tA = tabCache.get(a.tabIds[0]);
+      const tB = tabCache.get(b.tabIds[0]);
+      return (tA?.id ?? 0) - (tB?.id ?? 0);
+    };
+
+    return { sortByUrl, sortById };
+  }
+
   calculateRepositionNeeds(
     groupStates: GroupState[],
     tabCache: ReadonlyMap<TabId, Tab>,
@@ -610,7 +606,7 @@ export class TabGroupingService {
     allTabs.sort((a, b) => {
       if (a.windowId !== b.windowId)
         return (a.windowId || 0) - (b.windowId || 0);
-      return a.index - b.index;
+      return this.compareTabOrder(a, b);
     });
 
     const managed = new Set(groupStates.flatMap((s) => s.tabIds));
@@ -638,12 +634,15 @@ export class TabGroupingService {
         const isInternalA = tA ? isInternalTab(tA) : false;
         const isInternalB = tB ? isInternalTab(tB) : false;
 
-        // Mandate: Internal Pages -> Clustered Groups -> Title/URL
+        // Mandate: Internal Pages -> Managed Groups -> Manual Groups -> Single Tabs
         if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
 
-        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
-        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
+        const isGroupA = a.tabIds.length >= 2 ? 1 : 0;
+        const isGroupB = b.tabIds.length >= 2 ? 1 : 0;
         if (isGroupA !== isGroupB) return isGroupB - isGroupA;
+
+        // Managed (External=false) comes before Manual (External=true)
+        if (a.isExternal !== b.isExternal) return a.isExternal ? 1 : -1;
 
         return sortByUrl(a, b);
       });
