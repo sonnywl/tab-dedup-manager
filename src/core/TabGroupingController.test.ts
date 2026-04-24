@@ -1,5 +1,5 @@
+import { Tab, asTabId, asWindowId } from "@/types";
 import { TabGroupingService, WindowManagementService } from "utils/grouping";
-import { RulesByDomain, SyncStore, SyncStoreState, Tab, TabId, asTabId, asWindowId } from "@/types";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
@@ -80,7 +80,8 @@ const mockChrome = {
   },
   tabGroups: {
     update: vi.fn().mockImplementation((gid, update) => {
-      const group = currentGroups.get(gid) || ({ id: gid } as chrome.tabGroups.TabGroup);
+      const group =
+        currentGroups.get(gid) || ({ id: gid } as chrome.tabGroups.TabGroup);
       currentGroups.set(gid, { ...group, ...update });
       return Promise.resolve(currentGroups.get(gid));
     }),
@@ -146,7 +147,7 @@ describe("TabGroupingController", () => {
     vi.clearAllMocks();
     currentTabs = [];
     currentGroups = new Map();
-    
+
     service = new TabGroupingService();
     windowService = new WindowManagementService();
     adapter = new ChromeTabAdapter();
@@ -162,7 +163,11 @@ describe("TabGroupingController", () => {
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
     vi.mocked(mockStore.getState).mockResolvedValue({
       rules: [],
-      grouping: { byWindow: false, numWindowsToKeep: 2, ungroupSingleTab: false },
+      grouping: {
+        byWindow: false,
+        numWindowsToKeep: 2,
+        ungroupSingleTab: false,
+      },
     });
   });
 
@@ -176,7 +181,7 @@ describe("TabGroupingController", () => {
     it("skips when state hash unchanged", async () => {
       currentTabs = [mkTab(1, "https://google.com")];
       await controller.execute();
-      
+
       const callsBefore = mockChrome.tabs.query.mock.calls.length;
       await controller.execute();
       // Should only have called query once more for the initial check in execute
@@ -194,7 +199,9 @@ describe("TabGroupingController", () => {
 
   describe("Integration Tests (High-Fidelity)", () => {
     it("SplitPath: correctly groups tabs by path segment", async () => {
-      const rules = [{ domain: "github.com", splitByPath: 1, autoDelete: false }];
+      const rules = [
+        { domain: "github.com", splitByPath: 1, autoDelete: false },
+      ];
       vi.mocked(mockStore.getState).mockResolvedValue({
         rules: rules,
         grouping: { byWindow: false },
@@ -242,7 +249,9 @@ describe("TabGroupingController", () => {
 
       await controller.execute();
 
-      const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((call) => call[0]);
+      const removedIds = mockChrome.tabs.remove.mock.calls.flatMap(
+        (call) => call[0],
+      );
       expect(removedIds).toContain(1);
       expect(removedIds).toContain(3);
       expect(removedIds).not.toContain(2);
@@ -256,14 +265,20 @@ describe("TabGroupingController", () => {
         mkTab(2, "https://unique.com/page", -1, 1, 1),
         mkTab(3, "https://shared.com/page", -1, 0, 2),
       ];
-      currentGroups.set(101, { id: 101, title: "My Manual Group", windowId: 1 } as chrome.tabGroups.TabGroup);
+      currentGroups.set(101, {
+        id: 101,
+        title: "My Manual Group",
+        windowId: 1,
+      } as chrome.tabGroups.TabGroup);
 
       await controller.execute();
 
-      const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((call) => call[0]);
+      const removedIds = mockChrome.tabs.remove.mock.calls.flatMap(
+        (call) => call[0],
+      );
       expect(removedIds).toContain(3);
       expect(removedIds).not.toContain(1);
-      
+
       await assertIdempotent(controller);
     });
 
@@ -277,7 +292,11 @@ describe("TabGroupingController", () => {
         mkTab(1, "https://shared.com/page", 101, 0, 1),
         mkTab(2, "https://unique.com/page", -1, 1, 1),
       ];
-      currentGroups.set(101, { id: 101, title: "shared.com", windowId: 1 } as chrome.tabGroups.TabGroup);
+      currentGroups.set(101, {
+        id: 101,
+        title: "shared.com",
+        windowId: 1,
+      } as chrome.tabGroups.TabGroup);
 
       await controller.execute();
 
@@ -320,7 +339,9 @@ describe("TabGroupingController", () => {
       });
 
       await controller.updateBadge();
-      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(expect.objectContaining({ text: "!" }));
+      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "!" }),
+      );
     });
 
     it("clears badge when hash matches", async () => {
@@ -329,7 +350,9 @@ describe("TabGroupingController", () => {
       (controller as any).lastFullStateHash = hash;
 
       await controller.updateBadge();
-      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(expect.objectContaining({ text: "" }));
+      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "" }),
+      );
     });
 
     it("counts potential closures", async () => {
@@ -344,7 +367,9 @@ describe("TabGroupingController", () => {
       });
 
       await controller.updateBadge();
-      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(expect.objectContaining({ text: "2" }));
+      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(
+        expect.objectContaining({ text: "2" }),
+      );
     });
   });
 

@@ -1,5 +1,10 @@
 import { Tab, asTabId } from "@/types";
 
+import { vi } from "vitest";
+
+export let currentTabs: Tab[] = [];
+export const currentGroups = new Map<number, chrome.tabGroups.TabGroup>();
+
 /**
  * Creates a mock Chrome Tab object for testing.
  * Standardizes tab creation across the test suite.

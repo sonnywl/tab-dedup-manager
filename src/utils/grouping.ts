@@ -83,10 +83,12 @@ export class TabGroupingService {
           .filter(Boolean);
 
         if (parts.length >= rule.splitByPath) {
-          const seg = parts[rule.splitByPath - 1];
+          const segs = parts.slice(0, rule.splitByPath);
+          const pathKey = segs.join("/");
+          const lastSeg = segs[segs.length - 1];
           return {
-            key: `${base}::${seg.toLowerCase()}`,
-            title: `${seg} - ${base}`,
+            key: `${domain}::${pathKey}`,
+            title: `${lastSeg} - ${rule.groupName || domain}`,
           };
         }
       } catch {
@@ -573,13 +575,36 @@ export class TabGroupingService {
     return { sortByUrl, sortById };
   }
 
+  // ============================================================================
+  // SORTING & REPOSITIONING
+  // ============================================================================
+
+  public compareTabOrder(a: Tab, b: Tab): number {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+
+    const isInternalA = isInternalTab(a);
+    const isInternalB = isInternalTab(b);
+    if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
+
+    // Use groupId as proxy for "is clustered"
+    const isGroupedA = (a.groupId ?? -1) !== -1;
+    const isGroupedB = (b.groupId ?? -1) !== -1;
+    if (isGroupedA !== isGroupedB) return isGroupedA ? -1 : 1;
+
+    const domainA = this.getDomain(a.url);
+    const domainB = this.getDomain(b.url);
+    if (domainA !== domainB) return domainA.localeCompare(domainB);
+
+    return (a.url || "").localeCompare(b.url || "");
+  }
+
   calculateRepositionNeeds(
     groupStates: GroupState[],
     tabCache: ReadonlyMap<TabId, Tab>,
     windowId?: WindowId,
     managedGroupIds: Map<number, string> = new Map(),
   ): GroupState[] {
-    let allTabs = Array.from(tabCache.values());
+    const allTabs = Array.from(tabCache.values());
 
     // Mandate: Stable and comprehensive sort for all candidate tabs
     allTabs.sort((a, b) => {
@@ -598,8 +623,8 @@ export class TabGroupingService {
     const managedPinned = groupStates
       .filter((s) => tabCache.get(s.tabIds[0])?.pinned)
       .sort((a, b) => {
-        const isGroupA = a.isExternal || a.tabIds.length >= 2;
-        const isGroupB = b.isExternal || b.tabIds.length >= 2;
+        const isGroupA = a.isExternal || a.tabIds.length >= 2 ? 1 : 0;
+        const isGroupB = b.isExternal || b.tabIds.length >= 2 ? 1 : 0;
         if (isGroupA !== isGroupB) return isGroupA ? -1 : 1;
         if (a.isExternal !== b.isExternal) return a.isExternal ? -1 : 1;
         return sortById(a, b);

@@ -22,16 +22,16 @@ The application is structured into three distinct layers with all shared data st
 
 ## Requirements & Invariants
 
-| Rule             | Behavior                                                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                            |
-| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                      |
-| Background Sync  | Optional `processGroupOnChange` (default: **false**). Automatically triggers grouping on tab create/remove.      |
-| Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency. |
-| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL. |
+| Rule             | Behavior                                                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                                                                                               |
+| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                                                                                         |
+| Background Sync  | Optional `processGroupOnChange` (default: **false**). Automatically triggers grouping on tab create/remove.                                                                         |
+| Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency.                                                |
+| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL.                                                     |
 | Performance      | **State Fingerprinting**: Dual hashes (`lastFullStateHash` and `lastAutoStateHash`) ensure auto-runs skip redundant work while manual runs correctly proceed if cleanup is pending. |
-| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                |
-| Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.    |
+| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                                                                                   |
+| Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.                                                                       |
 
 ## Cleanup Logic (Global Priority)
 
@@ -60,6 +60,6 @@ Destructive operations are applied **globally** to the entire session before pha
 - **Atomic Manual Groups:** Move external groups as cohesive blocks using `chrome.tabGroups.move` to preserve their internal order and metadata.
 - **Snapshot Re-use:** Pass browser snapshots (`tabs` and `groups` arrays) between methods to avoid redundant `chrome.tabs.query` calls.
 - **Port-Aware Grouping:** Uses `url.host` instead of `url.hostname` to ensure different services on `localhost` (e.g., `:8000`, `:3000`) are grouped separately, improving developer workflow.
-- **Case-Insensitive Consolidation:** Always normalize path segments in group keys and perform a final case-insensitive merge pass on `GroupState` display names within their respective sections (Pinned/Unpinned). This prevents redundant groups when URLs have varying casing.
-- **Stability sorting**: Always include `(a.id ?? 0) - (b.id ?? 0)` as a fallback in sorts to prevent "jitter" when URLs are identical.
-- **ID Generation**: Use `crypto.randomUUID()` in the UI for unique rule IDs to avoid collisions during rapid edits.
+- **Testing Strategy**:
+  - **Prefer Unified Simulation**: Avoid brittle mock re-implementations of adapters. Use a high-fidelity `BrowserSimulation` in `test-utils.ts` (leveraging global simulation state like `currentTabs` and `currentGroups`) to ensure tests align with actual browser behaviors (e.g., index management, group membership).
+  - **Centralize Domain Logic**: Keep all grouping and sorting rules within `grouping.ts`. Do not duplicate domain heuristics in `ChromeTabAdapter` or test mocks; export them from the `TabGroupingService` to ensure consistency between production and testing.

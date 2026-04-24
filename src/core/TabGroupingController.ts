@@ -41,7 +41,7 @@ export default class TabGroupingController {
 
     const [tabs, groups] = await Promise.all([
       this.adapter.getNormalTabs(),
-      chrome.tabGroups.query({}),
+      this.adapter.getGroups(),
     ]);
 
     // Mandate: Ensure tabs are sorted by windowId and index for stable processing
@@ -131,12 +131,15 @@ export default class TabGroupingController {
   }
 
   private async ensureActiveWindowId(): Promise<number> {
-    const activeWindow = await chrome.windows.getCurrent();
-    if (activeWindow.type === "normal" && activeWindow.id !== undefined) {
+    const activeWindow = await this.adapter.getCurrentWindow();
+    if (activeWindow && activeWindow.id !== undefined) {
       return activeWindow.id;
     }
-    const allWindows = await chrome.windows.getAll({ windowTypes: ["normal"] });
-    return allWindows[0]?.id as number;
+    const allWindows = await this.adapter.getAllNormalWindows();
+    if (allWindows.length > 0 && allWindows[0].id !== undefined) {
+      return allWindows[0].id;
+    }
+    throw new Error("No normal browser windows found.");
   }
 
   /**
@@ -216,24 +219,12 @@ export default class TabGroupingController {
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
     isGlobal: boolean,
-    providedProtectedMeta?: ProtectedTabMetaMap,
-    providedManagedGroupIds?: Map<number, string>,
+    protectedMeta: ProtectedTabMetaMap,
+    managedGroupIds: Map<number, string>,
   ) {
     const scopedTabs = isGlobal
       ? state.allTabs
       : state.allTabs.filter((t) => t.windowId === windowId);
-
-    const { protectedMeta, managedGroupIds } =
-      providedProtectedMeta && providedManagedGroupIds
-        ? {
-            protectedMeta: providedProtectedMeta,
-            managedGroupIds: providedManagedGroupIds,
-          }
-        : this.service.identifyProtectedTabs(
-            scopedTabs,
-            state.groupIdToGroup,
-            rulesByDomain,
-          );
 
     const groupMap = this.service.buildGroupMap(
       scopedTabs,
@@ -266,8 +257,8 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain,
     isGlobal: boolean,
     state: BrowserState,
-    providedProtectedMeta?: ProtectedTabMetaMap,
-    providedManagedGroupIds?: Map<number, string>,
+    providedProtectedMeta: ProtectedTabMetaMap,
+    providedManagedGroupIds: Map<number, string>,
   ): Promise<Result<BrowserState, Error>> {
     try {
       // Phase 2a: Membership
@@ -415,34 +406,33 @@ export default class TabGroupingController {
         options?.skipCleanup,
       );
 
-      for (let i = 0; i < 2; i++) {
-        const { protectedMeta, managedGroupIds } =
-          // This ensures that manual groups moving across windows are remembered and re-bundled.
-          this.service.identifyProtectedTabs(
-            state.allTabs,
-            state.groupIdToGroup,
-            rulesByDomain,
-          );
-
-        // Phase 1: Consolidation
-        state = await this.runConsolidationPhase(
-          state,
-          groupingConfig,
-          activeWindowId,
-          protectedMeta,
-          managedGroupIds,
-        );
-
-        // Phase 2: Grouping
-        state = await this.runGroupingPhase(
-          state,
+      const { protectedMeta, managedGroupIds } =
+        // This ensures that manual groups moving across windows are remembered and re-bundled.
+        this.service.identifyProtectedTabs(
+          state.allTabs,
+          state.groupIdToGroup,
           rulesByDomain,
-          groupingConfig,
-          activeWindowId,
-          protectedMeta,
-          managedGroupIds,
         );
-      }
+
+      // Phase 1: Consolidation
+      state = await this.runConsolidationPhase(
+        state,
+        groupingConfig,
+        activeWindowId,
+        protectedMeta,
+        managedGroupIds,
+      );
+
+      // Phase 2: Grouping
+      state = await this.runGroupingPhase(
+        state,
+        rulesByDomain,
+        groupingConfig,
+        activeWindowId,
+        protectedMeta,
+        managedGroupIds,
+      );
+
       // Final Fingerprinting (after all phases)
       const finalState = await this.refreshState(true);
       const finalHash = this.service.hashState(

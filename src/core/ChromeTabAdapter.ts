@@ -10,7 +10,8 @@ import {
   asTabId,
   isDefined,
 } from "@/types";
-import { TabGroupingService, isInternalTab } from "utils/grouping";
+
+import { TabGroupingService } from "utils/grouping";
 
 // ============================================================================
 // UTILITIES
@@ -133,6 +134,32 @@ export default class ChromeTabAdapter {
     });
     if (result.success === false) {
       console.error("Failed to get tabs:", result.error);
+      return [];
+    }
+    return result.value;
+  }
+
+  async getGroups(): Promise<chrome.tabGroups.TabGroup[]> {
+    const result = await retry(async () => {
+      return chrome.tabGroups.query({});
+    });
+    if (result.success === false) {
+      console.error("Failed to get groups:", result.error);
+      return [];
+    }
+    return result.value;
+  }
+
+  async getCurrentWindow(): Promise<chrome.windows.Window> {
+    return chrome.windows.getCurrent({ windowTypes: ["normal"] });
+  }
+
+  async getAllNormalWindows(): Promise<chrome.windows.Window[]> {
+    const result = await retry(async () => {
+      return await chrome.windows.getAll({ windowTypes: ["normal"] });
+    });
+    if (result.success === false) {
+      console.error("Failed to get windows:", result.error);
       return [];
     }
     return result.value;
