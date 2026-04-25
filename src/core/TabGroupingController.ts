@@ -17,7 +17,8 @@ import { TabGroupingService, WindowManagementService } from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
-const STABILITY_DELAY = 60; // ms to wait for Chrome to propagate moves/indices
+const STABILITY_DELAY =
+  typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 150; // ms to wait for Chrome to propagate moves/indices
 
 export default class TabGroupingController {
   private isProcessing = false;
@@ -336,6 +337,11 @@ export default class TabGroupingController {
     return { skip: false };
   }
 
+  clearHash(): void {
+    this.lastAutoStateHash = null;
+    this.lastFullStateHash = null;
+  }
+
   async updateBadge(): Promise<void> {
     if (this.isProcessing) return;
 
@@ -388,14 +394,16 @@ export default class TabGroupingController {
         state.groupIdToGroup,
       );
 
-      const { skip, reason } = this.shouldSkip(
-        currentHash,
-        !!options?.skipCleanup,
-      );
+      const isAuto = !!options?.skipCleanup;
+      const { skip, reason } = this.shouldSkip(currentHash, isAuto);
       if (skip) {
         console.log(`Skipping: ${reason}`);
         this.adapter.updateBadge("");
         return;
+      }
+
+      if (!isAuto) {
+        this.clearHash();
       }
 
       // Phase 0: Cleanup

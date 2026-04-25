@@ -29,6 +29,7 @@ async function init() {
     const handleTabChange = debounce(async () => {
       try {
         const state = await store.getState();
+        controller.clearHash();
         if (state.grouping?.processGroupOnChange) {
           await controller.execute();
         }
@@ -45,6 +46,9 @@ async function init() {
     chrome.tabs.onCreated.addListener(handleTabChange);
     chrome.tabs.onRemoved.addListener(handleTabChange);
     chrome.tabs.onUpdated.addListener(handleTabChange);
+    chrome.tabs.onMoved.addListener(handleTabChange);
+    chrome.tabs.onAttached.addListener(handleTabChange);
+    chrome.tabs.onDetached.addListener(handleTabChange);
   } catch (err) {
     console.error("Fatal initialization error:", err);
   }

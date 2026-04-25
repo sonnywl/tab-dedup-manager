@@ -1,7 +1,7 @@
-import { Tab, asTabId } from "@/types";
+import { beforeEach, describe, expect, it } from "vitest";
+
 import { TabGroupingService } from "./grouping";
 import { mkTab } from "core/test-utils";
-import { describe, expect, it, beforeEach } from "vitest";
 
 describe("TabGroupingService - compareTabOrder", () => {
   let service: TabGroupingService;
