@@ -562,10 +562,13 @@ export class TabGroupingService {
     const isInternalB = isInternalTab(b);
     if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
 
-    // Use groupId as proxy for "is clustered"
-    const isGroupedA = (a.groupId ?? -1) !== -1;
-    const isGroupedB = (b.groupId ?? -1) !== -1;
-    if (isGroupedA !== isGroupedB) return isGroupedA ? -1 : 1;
+    // Mandate: Internal pages are sorted alphabetically by host, regardless of grouping status
+    if (!isInternalA) {
+      // Use groupId as proxy for "is clustered"
+      const isGroupedA = (a.groupId ?? -1) !== -1;
+      const isGroupedB = (b.groupId ?? -1) !== -1;
+      if (isGroupedA !== isGroupedB) return isGroupedA ? -1 : 1;
+    }
 
     const domainA = this.getDomain(a.url);
     const domainB = this.getDomain(b.url);
@@ -637,12 +640,15 @@ export class TabGroupingService {
         // Mandate: Internal Pages -> Managed Groups -> Manual Groups -> Single Tabs
         if (isInternalA !== isInternalB) return isInternalA ? -1 : 1;
 
-        const isGroupA = a.tabIds.length >= 2 ? 1 : 0;
-        const isGroupB = b.tabIds.length >= 2 ? 1 : 0;
-        if (isGroupA !== isGroupB) return isGroupB - isGroupA;
+        // Mandate: For internal pages, we skip the Group vs Solo priority to maintain alphabetical order
+        if (!isInternalA) {
+          const isGroupA = a.tabIds.length >= 2 ? 1 : 0;
+          const isGroupB = b.tabIds.length >= 2 ? 1 : 0;
+          if (isGroupA !== isGroupB) return isGroupB - isGroupA;
 
-        // Managed (External=false) comes before Manual (External=true)
-        if (a.isExternal !== b.isExternal) return a.isExternal ? 1 : -1;
+          // Managed (External=false) comes before Manual (External=true)
+          if (a.isExternal !== b.isExternal) return a.isExternal ? 1 : -1;
+        }
 
         return sortByUrl(a, b);
       });
