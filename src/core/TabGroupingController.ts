@@ -19,7 +19,7 @@ import ChromeTabAdapter from "./ChromeTabAdapter";
 
 const STABILITY_DELAY =
   // ms to wait for Chrome concurrent calls to settle. See background.ts
-  typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 200;
+  typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 250;
 
 export default class TabGroupingController {
   private isProcessing = false;
@@ -91,8 +91,8 @@ export default class TabGroupingController {
    */
   private async runCleanupPhase(
     state: BrowserState,
-    rulesByDomain: RulesByDomain,
     config: GroupingConfig,
+    rulesByDomain: RulesByDomain,
     skipDestructive?: boolean,
   ): Promise<BrowserState> {
     let currentState = state;
@@ -186,8 +186,8 @@ export default class TabGroupingController {
    */
   private async runGroupingPhase(
     state: BrowserState,
-    rulesByDomain: RulesByDomain,
     groupingConfig: GroupingConfig,
+    rulesByDomain: RulesByDomain,
     activeWindowId: number,
     protectedMeta: ProtectedTabMetaMap,
     managedGroupIds: Map<number, string>,
@@ -382,18 +382,11 @@ export default class TabGroupingController {
 
     try {
       this.adapter.updateBadge("O", "#FFD700");
-      const [activeWindowId, configResult] = await Promise.all([
-        this.ensureActiveWindowId(),
-        this.loadConfiguration(),
-      ]);
-      const { rulesByDomain, config: groupingConfig } = configResult;
-
       let state = await this.refreshState();
       const currentHash = this.service.hashState(
         state.allTabs,
         state.groupIdToGroup,
       );
-
       const isAuto = !!options?.skipCleanup;
       const { skip, reason } = this.shouldSkip(currentHash, isAuto);
       if (skip) {
@@ -405,16 +398,22 @@ export default class TabGroupingController {
         this.clearHash();
       }
 
+      const [activeWindowId, configResult] = await Promise.all([
+        this.ensureActiveWindowId(),
+        this.loadConfiguration(),
+      ]);
+      const { rulesByDomain, config } = configResult;
+
       // Phase 0: Cleanup
       state = await this.runCleanupPhase(
         state,
+        config,
         rulesByDomain,
-        groupingConfig,
         options?.skipCleanup,
       );
 
+      // This ensures that manual groups moving across windows are remembered and re-bundled.
       const { protectedMeta, managedGroupIds } =
-        // This ensures that manual groups moving across windows are remembered and re-bundled.
         this.service.identifyProtectedTabs(
           state.allTabs,
           state.groupIdToGroup,
@@ -424,7 +423,7 @@ export default class TabGroupingController {
       // Phase 1: Consolidation
       state = await this.runConsolidationPhase(
         state,
-        groupingConfig,
+        config,
         activeWindowId,
         protectedMeta,
         managedGroupIds,
@@ -433,8 +432,8 @@ export default class TabGroupingController {
       // Phase 2: Grouping
       state = await this.runGroupingPhase(
         state,
+        config,
         rulesByDomain,
-        groupingConfig,
         activeWindowId,
         protectedMeta,
         managedGroupIds,
