@@ -29,11 +29,14 @@ async function init() {
     const handleTabChange = debounce(async () => {
       try {
         const state = await store.getState();
-        controller.clearHash();
-        if (state.grouping?.processGroupOnChange) {
-          await controller.execute();
+        if (
+          state.grouping?.processGroupOnChange == null ||
+          state.grouping?.processGroupOnChange === false
+        ) {
+          await controller.updateBadge();
+          return;
         }
-        await controller.updateBadge();
+        await controller.execute();
       } catch (err) {
         console.error("Error in handleTabChange:", err);
       }

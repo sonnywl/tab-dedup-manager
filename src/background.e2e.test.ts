@@ -284,7 +284,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         ),
         fc.boolean(),
         async (rawTabs, _byWindow) => {
-          const rulesByDomain: RulesByDomain = {};
           const title = "Persistence Group"; // Mandate: Only named groups are protected
 
           const tabs = rawTabs.map((rt, i) =>
