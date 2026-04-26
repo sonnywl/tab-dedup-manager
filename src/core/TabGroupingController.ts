@@ -105,7 +105,7 @@ export default class TabGroupingController {
 
       if (toRemove.length > 0) {
         await this.adapter.removeTabs(toRemove);
-        currentState = await this.refreshState(true);
+        currentState = await this.refreshState();
         modified = true;
       }
     }
@@ -116,7 +116,7 @@ export default class TabGroupingController {
     );
     if (internalMoves.length > 0) {
       await this.adapter.applyInternalPageMoves(internalMoves);
-      currentState = await this.refreshState(true);
+      currentState = await this.refreshState();
       modified = true;
     }
 
@@ -129,7 +129,7 @@ export default class TabGroupingController {
       modified = true;
     }
 
-    return modified ? this.refreshState(true) : currentState;
+    return modified ? this.refreshState() : currentState;
   }
 
   private async ensureActiveWindowId(): Promise<number> {
@@ -175,7 +175,7 @@ export default class TabGroupingController {
         state.allTabs,
       );
       if (!res.success) throw res.error;
-      return this.refreshState(true);
+      return this.refreshState();
     }
 
     return state;
@@ -287,7 +287,7 @@ export default class TabGroupingController {
       if (!memRes.success) return memRes;
 
       // Phase 2b: Ordering (The "Reality Check" way)
-      const freshState = await this.refreshState(true);
+      const freshState = await this.refreshState();
       const fresh = this.buildGroupingContext(
         freshState,
         windowId,
@@ -315,8 +315,7 @@ export default class TabGroupingController {
       );
       if (!orderRes.success) return orderRes;
 
-      // Final settle-refresh for this window/unit
-      return { success: true, value: await this.refreshState(true) };
+      return { success: true, value: await this.refreshState() };
     } catch (err) {
       return {
         success: false,
@@ -402,7 +401,6 @@ export default class TabGroupingController {
         this.adapter.updateBadge("");
         return;
       }
-
       if (!isAuto) {
         this.clearHash();
       }
