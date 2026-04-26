@@ -18,7 +18,8 @@ import { TabGroupingService, WindowManagementService } from "utils/grouping";
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
 const STABILITY_DELAY =
-  typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 150; // ms to wait for Chrome to propagate moves/indices
+  // ms to wait for Chrome concurrent calls to settle. See background.ts
+  typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 200;
 
 export default class TabGroupingController {
   private isProcessing = false;

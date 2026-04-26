@@ -37,7 +37,7 @@ async function init() {
       } catch (err) {
         console.error("Error in handleTabChange:", err);
       }
-    }, 300);
+    }, 100);
 
     // Initial update
     handleTabChange();
