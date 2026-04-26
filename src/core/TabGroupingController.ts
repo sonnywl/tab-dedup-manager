@@ -95,41 +95,37 @@ export default class TabGroupingController {
     rulesByDomain: RulesByDomain,
     skipDestructive?: boolean,
   ): Promise<BrowserState> {
-    let currentState = state;
     let modified = false;
 
     if (!skipDestructive) {
       const toRemove = Array.from(
-        this.service.getCleanupTabIds(currentState.allTabs, rulesByDomain),
+        this.service.getCleanupTabIds(state.allTabs, rulesByDomain),
       );
 
       if (toRemove.length > 0) {
         await this.adapter.removeTabs(toRemove);
-        currentState = await this.refreshState();
         modified = true;
       }
     }
 
-    // Pre-sort internal browser pages (chrome:// etc.) to the start
     const internalMoves = this.service.calculateInternalPageMoves(
-      currentState.allTabs,
+      state.allTabs,
     );
     if (internalMoves.length > 0) {
       await this.adapter.applyInternalPageMoves(internalMoves);
-      currentState = await this.refreshState();
       modified = true;
     }
 
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(
-        currentState.allTabs,
+        state.allTabs,
         this.service,
         rulesByDomain,
       );
       modified = true;
     }
 
-    return modified ? this.refreshState() : currentState;
+    return modified ? this.refreshState() : state;
   }
 
   private async ensureActiveWindowId(): Promise<number> {
