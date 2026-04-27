@@ -193,18 +193,22 @@ export class TabGroupingService {
 
       const title = g.title || "";
       // Mandate: A group is "Managed" if it has a title that matches the domain-grouping logic
-      // for AT LEAST one of its member tabs. This is a best-effort heuristic to avoid
-      // destroying manual user groups while still "reclaiming" extension-owned groups.
-      const isManaged = gTabs.some((t) => {
-        const domain = this.getDomain(t.url);
-        const normalizedDomain = this.normalizeDomain(domain);
-        return this.isInternalTitle(
-          title,
-          normalizedDomain,
-          t.url,
-          rulesByDomain,
-        );
-      });
+      // for AT LEAST one of its member tabs. OR if all its members are internal tabs,
+      // OR if the group title explicitly matches 'other' or 'extension'.
+      const isManaged =
+        gTabs.some((t) => {
+          const domain = this.getDomain(t.url);
+          const normalizedDomain = this.normalizeDomain(domain);
+          return this.isInternalTitle(
+            title,
+            normalizedDomain,
+            t.url,
+            rulesByDomain,
+          );
+        }) ||
+        gTabs.every(isInternalTab) ||
+        title.toLowerCase() === "other" ||
+        title.toLowerCase() === "extension";
 
       if (!isManaged) {
         for (const t of gTabs) {

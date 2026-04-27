@@ -396,27 +396,21 @@ describe("TabGroupingService", () => {
       expect(states[0].groupId).toBe(asGroupId(100));
     });
 
-    it("Protects manual (unnamed) user groups", () => {
-      const tab = mkTab(1, "https://google.com", 500);
+    it("should mark groups of internal pages as managed", () => {
+      const tab1 = mkTab(1, "edge://settings", 101);
+      const tab2 = mkTab(2, "edge://extensions", 101);
       const groupIdToGroup = new Map([
-        [500, { id: 500, title: "", collapsed: false } as any],
+        [101, { id: 101, title: "My Manual Internal Group" } as any],
       ]);
 
-      const { protectedMeta } = service.identifyProtectedTabs(
-        [tab],
+      const { managedGroupIds } = service.identifyProtectedTabs(
+        [tab1, tab2],
         groupIdToGroup,
         {},
       );
 
-      const groupMap = service.buildGroupMap(
-        [tab],
-        {},
-        groupIdToGroup,
-        protectedMeta,
-      );
-      const entry = groupMap.get("external::500");
-      expect(entry?.isExternal).toBe(true);
-      expect(entry?.groupId).toBe(asGroupId(500));
+      expect(managedGroupIds.has(101)).toBe(true);
+      expect(managedGroupIds.get(101)).toBe("My Manual Internal Group");
     });
   });
 
