@@ -5,6 +5,7 @@ import {
   Result,
   RulesByDomain,
   SyncStore,
+  SyncStoreState,
   Tab,
   TabId,
   WindowId,
@@ -59,11 +60,13 @@ export default class TabGroupingController {
     };
   }
 
-  private async loadConfiguration(): Promise<{
+  private async loadConfiguration(
+    providedState?: SyncStoreState,
+  ): Promise<{
     rulesByDomain: RulesByDomain;
     config: GroupingConfig;
   }> {
-    const state = await this.store.getState();
+    const state = providedState || (await this.store.getState());
     const rules = state?.rules ?? [];
     const grouping = state?.grouping ?? {};
 
@@ -342,8 +345,12 @@ export default class TabGroupingController {
     if (this.isProcessing) return;
 
     try {
-      const state = await this.refreshState();
-      const configResult = await this.loadConfiguration();
+      const [state, rawStore, activeWindowId] = await Promise.all([
+        this.refreshState(),
+        this.store.getState(),
+        this.ensureActiveWindowId(),
+      ]);
+      const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain } = configResult;
 
       const toRemove = this.service.getCleanupTabIds(
@@ -359,6 +366,8 @@ export default class TabGroupingController {
       const currentHash = this.service.hashState(
         state.allTabs,
         state.groupIdToGroup,
+        rawStore,
+        activeWindowId,
       );
 
       if (this.shouldSkip(currentHash, false).skip) {
@@ -378,10 +387,16 @@ export default class TabGroupingController {
 
     try {
       this.adapter.updateBadge("O", "#FFD700");
-      let state = await this.refreshState();
+      let [state, rawStore, activeWindowId] = await Promise.all([
+        this.refreshState(),
+        this.store.getState(),
+        this.ensureActiveWindowId(),
+      ]);
       const currentHash = this.service.hashState(
         state.allTabs,
         state.groupIdToGroup,
+        rawStore,
+        activeWindowId,
       );
       const isAuto = !!options?.skipCleanup;
       const { skip, reason } = this.shouldSkip(currentHash, isAuto);
@@ -394,10 +409,7 @@ export default class TabGroupingController {
         this.clearHash();
       }
 
-      const [activeWindowId, configResult] = await Promise.all([
-        this.ensureActiveWindowId(),
-        this.loadConfiguration(),
-      ]);
+      const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
 
       // Phase 0: Cleanup
@@ -436,10 +448,16 @@ export default class TabGroupingController {
       );
 
       // Final Fingerprinting (after all phases)
-      const finalState = await this.refreshState(true);
+      const [finalState, finalRawStore, finalWindowId] = await Promise.all([
+        this.refreshState(true),
+        this.store.getState(),
+        this.ensureActiveWindowId(),
+      ]);
       const finalHash = this.service.hashState(
         finalState.allTabs,
         finalState.groupIdToGroup,
+        finalRawStore,
+        finalWindowId,
       );
 
       this.lastAutoStateHash = finalHash;

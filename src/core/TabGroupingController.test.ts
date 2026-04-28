@@ -346,7 +346,14 @@ describe("TabGroupingController", () => {
 
     it("clears badge when hash matches", async () => {
       currentTabs = [mkTab(1, "https://google.com/1")];
-      const hash = service.hashState(currentTabs, new Map());
+      const storeState = await mockStore.getState();
+      const activeWindowId = (await mockChrome.windows.getCurrent()).id;
+      const hash = service.hashState(
+        currentTabs,
+        new Map(),
+        storeState,
+        activeWindowId,
+      );
       (controller as any).lastFullStateHash = hash;
 
       await controller.updateBadge();

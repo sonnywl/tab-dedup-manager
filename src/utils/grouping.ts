@@ -11,6 +11,7 @@ import {
   ProtectedTabMeta,
   ProtectedTabMetaMap,
   RulesByDomain,
+  SyncStoreState,
   Tab,
   TabId,
   WindowId,
@@ -866,6 +867,8 @@ export class TabGroupingService {
   hashState(
     tabs: Tab[],
     groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+    config?: SyncStoreState,
+    activeWindowId?: number,
   ): string {
     let h = 2166136261 >>> 0; // FNV offset basis
 
@@ -879,6 +882,11 @@ export class TabGroupingService {
         update(str.charCodeAt(i));
       }
     };
+
+    // 0. Contextual Hashing
+    if (activeWindowId !== undefined) {
+      update(activeWindowId);
+    }
 
     // 1. Stable Tab Hashing
     const sortedTabs = [...tabs].sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
@@ -899,6 +907,25 @@ export class TabGroupingService {
       update(g.id);
       update(g.collapsed ? 1 : 0);
       updateString(g.title || "");
+    }
+
+    // 3. Stable Config Hashing
+    if (config) {
+      const g = config.grouping;
+      update(g.byWindow ? 1 : 0);
+      update(g.numWindowsToKeep ?? 0);
+      update(g.ungroupSingleTab ? 1 : 0);
+      update(g.processGroupOnChange ? 1 : 0);
+
+      const sortedRules = [...(config.rules || [])].sort((a, b) =>
+        a.domain.localeCompare(b.domain),
+      );
+      for (const r of sortedRules) {
+        updateString(r.domain);
+        updateString(r.groupName || "");
+        update(r.autoDelete ? 1 : 0);
+        update(r.splitByPath ?? 0);
+      }
     }
 
     return (h >>> 0).toString(16);

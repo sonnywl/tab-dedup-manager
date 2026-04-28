@@ -36,7 +36,7 @@ async function init() {
           await controller.updateBadge();
           return;
         }
-        await controller.execute();
+        await controller.execute({ skipCleanup: true });
       } catch (err) {
         console.error("Error in handleTabChange:", err);
       }
