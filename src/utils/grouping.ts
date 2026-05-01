@@ -560,7 +560,11 @@ export class TabGroupingService {
   // SORTING & REPOSITIONING
   // ============================================================================
 
-  public compareTabOrder(a: Tab, b: Tab): number {
+  public compareTabOrder(
+    a: Tab,
+    b: Tab,
+    managedGroupIds: Map<number, string> = new Map(),
+  ): number {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
 
     const isInternalA = isInternalTab(a);
@@ -569,10 +573,20 @@ export class TabGroupingService {
 
     // Mandate: Internal pages are sorted alphabetically by host, regardless of grouping status
     if (!isInternalA) {
-      // Use groupId as proxy for "is clustered"
-      const isGroupedA = (a.groupId ?? -1) !== -1;
-      const isGroupedB = (b.groupId ?? -1) !== -1;
+      const gidA = a.groupId ?? -1;
+      const gidB = b.groupId ?? -1;
+      const isGroupedA = gidA !== -1;
+      const isGroupedB = gidB !== -1;
+
+      // Grouped tabs come before ungrouped (Solo) tabs
       if (isGroupedA !== isGroupedB) return isGroupedA ? -1 : 1;
+
+      if (isGroupedA && isGroupedB && gidA !== gidB) {
+        // Both are grouped, but in different groups. Check Managed vs Manual.
+        const isManagedA = managedGroupIds.has(gidA);
+        const isManagedB = managedGroupIds.has(gidB);
+        if (isManagedA !== isManagedB) return isManagedA ? -1 : 1;
+      }
     }
 
     const domainA = this.getDomain(a.url);
@@ -582,11 +596,14 @@ export class TabGroupingService {
     return (a.url || "").localeCompare(b.url || "");
   }
 
-  private getSortingStrategies(tabCache: ReadonlyMap<TabId, Tab>) {
+  private getSortingStrategies(
+    tabCache: ReadonlyMap<TabId, Tab>,
+    managedGroupIds: Map<number, string> = new Map(),
+  ) {
     const sortByUrl = (a: GroupState, b: GroupState) => {
       const tA = tabCache.get(a.tabIds[0]);
       const tB = tabCache.get(b.tabIds[0]);
-      if (tA && tB) return this.compareTabOrder(tA, tB);
+      if (tA && tB) return this.compareTabOrder(tA, tB, managedGroupIds);
       return (a.displayName || "").localeCompare(b.displayName || "");
     };
 
@@ -614,7 +631,7 @@ export class TabGroupingService {
     allTabs.sort((a, b) => {
       if (a.windowId !== b.windowId)
         return (a.windowId || 0) - (b.windowId || 0);
-      return this.compareTabOrder(a, b);
+      return this.compareTabOrder(a, b, managedGroupIds);
     });
 
     const managed = new Set(groupStates.flatMap((s) => s.tabIds));
@@ -622,7 +639,10 @@ export class TabGroupingService {
       (t) => t.pinned && !managed.has(asTabId(t.id)!),
     );
 
-    const { sortByUrl, sortById } = this.getSortingStrategies(tabCache);
+    const { sortByUrl, sortById } = this.getSortingStrategies(
+      tabCache,
+      managedGroupIds,
+    );
 
     const managedPinned = groupStates
       .filter((s) => tabCache.get(s.tabIds[0])?.pinned)

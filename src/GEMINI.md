@@ -51,7 +51,8 @@ Destructive operations are applied **globally** to the entire session before pha
 5.  **Phase 2: Grouping Pass**:
     - **Phase 2a: Membership**: Identify `protectedTabIds`, build `GroupMap`, and execute `MembershipPlan` (ungroup/group/title) on the current state.
     - **Phase 2b: Ordering (Reality Check)**: Recapture fresh state to get actual indices and IDs, calculate reposition needs using LIS, and execute `OrderPlan` (absolute positioning).
-    - **Cleanup**: Final pass to ensure no single-tab managed groups remain.
+6.  **Phase 3: Verification**: Refreshes browser state and verifies that all tabs and groups are correctly positioned according to the intended state. If inconsistencies are detected, it triggers a one-time retry of Phase 2 to resolve remaining issues.
+7.  **Cleanup**: Final pass to ensure no single-tab managed groups remain.
 
 ## Learnings & Best Practices
 

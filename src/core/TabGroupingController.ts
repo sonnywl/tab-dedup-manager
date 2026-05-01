@@ -14,7 +14,7 @@ import {
   isDefined,
   validateRule,
 } from "@/types";
-import { TabGroupingService, WindowManagementService } from "utils/grouping";
+import { isInternalTab, TabGroupingService, WindowManagementService } from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
@@ -60,9 +60,7 @@ export default class TabGroupingController {
     };
   }
 
-  private async loadConfiguration(
-    providedState?: SyncStoreState,
-  ): Promise<{
+  private async loadConfiguration(providedState?: SyncStoreState): Promise<{
     rulesByDomain: RulesByDomain;
     config: GroupingConfig;
   }> {
@@ -387,11 +385,12 @@ export default class TabGroupingController {
 
     try {
       this.adapter.updateBadge("O", "#FFD700");
-      let [state, rawStore, activeWindowId] = await Promise.all([
+      const [initialState, rawStore, activeWindowId] = await Promise.all([
         this.refreshState(),
         this.store.getState(),
         this.ensureActiveWindowId(),
       ]);
+      let state = initialState;
       const currentHash = this.service.hashState(
         state.allTabs,
         state.groupIdToGroup,
@@ -447,6 +446,27 @@ export default class TabGroupingController {
         managedGroupIds,
       );
 
+      // Phase 3: Verification
+      const verification = await this.verifyGrouping(
+        config,
+        rulesByDomain,
+        activeWindowId,
+      );
+
+      state = verification.state;
+      if (!verification.isVerified) {
+        console.warn("Verification failed, retrying grouping once...");
+        this.adapter.updateBadge("!", "#FFA500"); // Orange badge with !
+        state = await this.runGroupingPhase(
+          state,
+          config,
+          rulesByDomain,
+          activeWindowId,
+          protectedMeta,
+          managedGroupIds,
+        );
+      }
+
       // Final Fingerprinting (after all phases)
       const [finalState, finalRawStore, finalWindowId] = await Promise.all([
         this.refreshState(true),
@@ -468,8 +488,68 @@ export default class TabGroupingController {
       this.adapter.updateBadge("");
     } catch (err) {
       console.warn("Execute error:", err);
+      this.adapter.updateBadge("!", "#FFA500");
     } finally {
       this.isProcessing = false;
     }
   }
+
+  private getCategory(
+    unit: OrderUnit,
+    tabCache: ReadonlyMap<TabId, Tab>,
+    managedGroupIds: Map<number, string>,
+  ): number {
+    const tab = tabCache.get(unit.kind === "group" ? unit.tabIds[0] : unit.tabId)!;
+    if (isInternalTab(tab)) return 0;
+    if (unit.kind === "group") {
+      return managedGroupIds.has(unit.groupId) ? 1 : 2;
+    }
+    return 3; // SOLO
+  }
+
+  private async verifyGrouping(
+    config: GroupingConfig,
+    rulesByDomain: RulesByDomain,
+    activeWindowId: number,
+  ): Promise<{ isVerified: boolean; state: BrowserState }> {
+    const state = await this.refreshState(true);
+    const { managedGroupIds } = this.service.identifyProtectedTabs(
+      state.allTabs,
+      state.groupIdToGroup,
+      rulesByDomain,
+    );
+    const tabCache = new Map<TabId, Tab>(
+      state.allTabs.map((t) => [asTabId(t.id)!, t]),
+    );
+
+    const windowMap = config.byWindow
+      ? this.windowService.groupByWindow(state.allTabs)
+      : new Map([[asWindowId(activeWindowId), state.allTabs]]);
+
+    for (const tabs of windowMap.values()) {
+      const units = this.service.getLiveUnits(tabs);
+
+      let lastCategory = -1;
+      const seenGroups = new Set<number>();
+      let lastGroupId = -1;
+
+      for (const unit of units) {
+        // 1. Cohesion Check (No group interleaving)
+        if (unit.kind === "group") {
+          if (unit.groupId !== lastGroupId && seenGroups.has(unit.groupId)) {
+            return { isVerified: false, state };
+          }
+          seenGroups.add(unit.groupId);
+        }
+        lastGroupId = unit.kind === "group" ? unit.groupId : -1;
+
+        // 2. Category Order Check (Internal -> Managed -> Manual -> Solo)
+        const category = this.getCategory(unit, tabCache, managedGroupIds);
+        if (category < lastCategory) return { isVerified: false, state };
+        lastCategory = category;
+      }
+    }
+    return { isVerified: true, state };
+  }
+
 }
