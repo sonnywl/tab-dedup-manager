@@ -185,11 +185,7 @@ export default class ChromeTabAdapter {
     }
   }
 
-  async ungroupSingleTabGroups(
-    tabs: Tab[],
-    service: TabGroupingService,
-    rulesByDomain: RulesByDomain,
-  ): Promise<void> {
+  async ungroupSingleTabGroups(tabs: Tab[]): Promise<void> {
     const groupCounts = new Map<number, number>();
     const groupIds = new Set<number>();
     for (const tab of tabs) {
@@ -199,22 +195,10 @@ export default class ChromeTabAdapter {
       }
     }
 
-    const groups = await chrome.tabGroups.query({});
-    const groupIdToGroup = new Map(groups.map((g) => [g.id, g]));
-
-    const { managedGroupIds } = service.identifyProtectedTabs(
-      tabs,
-      groupIdToGroup,
-      rulesByDomain,
-    );
-
     const toUngroup: number[] = [];
     for (const tab of tabs) {
       if (tab.id && tab.groupId !== -1 && tab.groupId !== undefined) {
-        if (
-          groupCounts.get(tab.groupId) === 1 &&
-          managedGroupIds.has(tab.groupId)
-        ) {
+        if (groupCounts.get(tab.groupId) === 1) {
           toUngroup.push(tab.id);
         }
       }

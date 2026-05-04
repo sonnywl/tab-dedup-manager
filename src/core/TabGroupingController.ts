@@ -14,7 +14,11 @@ import {
   isDefined,
   validateRule,
 } from "@/types";
-import { isInternalTab, TabGroupingService, WindowManagementService } from "utils/grouping";
+import {
+  TabGroupingService,
+  WindowManagementService,
+  isInternalTab,
+} from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
@@ -118,11 +122,7 @@ export default class TabGroupingController {
     }
 
     if (config.ungroupSingleTab) {
-      await this.adapter.ungroupSingleTabGroups(
-        state.allTabs,
-        this.service,
-        rulesByDomain,
-      );
+      await this.adapter.ungroupSingleTabGroups(state.allTabs);
       modified = true;
     }
 
@@ -499,7 +499,9 @@ export default class TabGroupingController {
     tabCache: ReadonlyMap<TabId, Tab>,
     managedGroupIds: Map<number, string>,
   ): number {
-    const tab = tabCache.get(unit.kind === "group" ? unit.tabIds[0] : unit.tabId)!;
+    const tab = tabCache.get(
+      unit.kind === "group" ? unit.tabIds[0] : unit.tabId,
+    )!;
     if (isInternalTab(tab)) return 0;
     if (unit.kind === "group") {
       return managedGroupIds.has(unit.groupId) ? 1 : 2;
@@ -551,5 +553,4 @@ export default class TabGroupingController {
     }
     return { isVerified: true, state };
   }
-
 }
