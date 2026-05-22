@@ -103,9 +103,8 @@ The layout follows a deterministic order:
 
 1.  **Trigger**: User clicks extension icon OR background event (if `processGroupOnChange` enabled).
 2.  **Load Config**: Fetch rules and grouping settings from sync storage.
-3.  **Fingerprint**: `lastAutoStateHash` and `lastFullStateHash` checks. Skip if identical.
-4.  **Clean**: Global deduplication, auto-deletion, internal page pre-sorting, and optional single-tab ungrouping. (Destructive steps skipped if triggered by background event).
-5.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
+3.  **Clean**: Global deduplication, auto-deletion, internal page pre-sorting, and optional single-tab ungrouping. (Destructive steps skipped if triggered by background event).
+4.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
 6.  **Phase 2: Grouping Pass**:
     - **Mapping**: Build `GroupMap` based on rules, `splitByPath`, and protected group status.
     - **Membership**: `executeMembershipPlan` performs surgical grouping/ungrouping.
@@ -133,7 +132,6 @@ The system is verified through a tiered testing approach:
 | **Window Consolidation (numWindowsToKeep)** | `E2E: numWindowsToKeep correctly consolidates...`                                  | **Verified** |
 | **Manual Group Protection**                 | `Invariant: Manual groups are moved atomically`                                    | **Verified** |
 | **Manual Group Order Persistence**          | `Invariant: Manual groups preserve their internal tab order`                       | **Verified** |
-| **State Fingerprinting**                    | `TabGroupingController > execute() > skips when state hash unchanged`              | **Verified** |
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |

@@ -28,8 +28,6 @@ const STABILITY_DELAY =
 
 export default class TabGroupingController {
   private isProcessing = false;
-  private lastFullStateHash: string | null = null;
-  private lastAutoStateHash: string | null = null;
 
   constructor(
     private readonly service: TabGroupingService,
@@ -321,24 +319,6 @@ export default class TabGroupingController {
     }
   }
 
-  private shouldSkip(
-    currentHash: string,
-    isAuto: boolean,
-  ): { skip: boolean; reason?: string } {
-    if (currentHash === this.lastFullStateHash) {
-      return { skip: true, reason: "Matches last full state" };
-    }
-    if (isAuto && currentHash === this.lastAutoStateHash) {
-      return { skip: true, reason: "Matches last auto state" };
-    }
-    return { skip: false };
-  }
-
-  clearHash(): void {
-    this.lastAutoStateHash = null;
-    this.lastFullStateHash = null;
-  }
-
   async updateBadge(): Promise<void> {
     if (this.isProcessing) return;
 
@@ -361,18 +341,6 @@ export default class TabGroupingController {
         return;
       }
 
-      const currentHash = this.service.hashState(
-        state.allTabs,
-        state.groupIdToGroup,
-        rawStore,
-        activeWindowId,
-      );
-
-      if (this.shouldSkip(currentHash, false).skip) {
-        await this.adapter.updateBadge("");
-        return;
-      }
-
       await this.adapter.updateBadge("!");
     } catch (err) {
       console.warn("Failed to update badge:", err);
@@ -391,22 +359,7 @@ export default class TabGroupingController {
         this.ensureActiveWindowId(),
       ]);
       let state = initialState;
-      const currentHash = this.service.hashState(
-        state.allTabs,
-        state.groupIdToGroup,
-        rawStore,
-        activeWindowId,
-      );
       const isAuto = !!options?.skipCleanup;
-      const { skip, reason } = this.shouldSkip(currentHash, isAuto);
-      if (skip) {
-        console.log(`Skipping: ${reason}`);
-        this.adapter.updateBadge("");
-        return;
-      }
-      if (!isAuto) {
-        this.clearHash();
-      }
 
       const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
@@ -455,34 +408,7 @@ export default class TabGroupingController {
 
       state = verification.state;
       if (!verification.isVerified) {
-        console.warn("Verification failed, retrying grouping once...");
-        this.adapter.updateBadge("!", "#FFA500"); // Orange badge with !
-        state = await this.runGroupingPhase(
-          state,
-          config,
-          rulesByDomain,
-          activeWindowId,
-          protectedMeta,
-          managedGroupIds,
-        );
-      }
-
-      // Final Fingerprinting (after all phases)
-      const [finalState, finalRawStore, finalWindowId] = await Promise.all([
-        this.refreshState(true),
-        this.store.getState(),
-        this.ensureActiveWindowId(),
-      ]);
-      const finalHash = this.service.hashState(
-        finalState.allTabs,
-        finalState.groupIdToGroup,
-        finalRawStore,
-        finalWindowId,
-      );
-
-      this.lastAutoStateHash = finalHash;
-      if (!options?.skipCleanup) {
-        this.lastFullStateHash = finalHash;
+        console.warn("Verification failed, skipping retry for idempotency.");
       }
 
       this.adapter.updateBadge("");

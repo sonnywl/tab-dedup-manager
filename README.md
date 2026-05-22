@@ -24,7 +24,6 @@ One-click Tab Dedup/Group Manager isn't just a script; it's an engineered system
   - _Invariant:_ Sorting is always deterministic.
 - **Optimized API Usage:**
   - **Atomic Moves:** Uses `chrome.tabGroups.move` to move entire groups in a single API call, preventing visual jitter.
-  - **State Fingerprinting:** Calculates a hash of the current browser state (Tabs + Rules + Config) to skip redundant processing loops.
   - **Lazy Moves:** Checks `windowId` and `index` 1ms before moving. Skips if already correct.
   - **Robust Title Updates:** Batches title updates to the end of the execution cycle to ensure correct rendering across all Chromium browsers (Chrome, Brave, Edge).
 

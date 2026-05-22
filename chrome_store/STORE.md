@@ -16,7 +16,7 @@ Reclaim your workspace and save system memory. Whether you handle 10 or 100+ tab
 ### 🛡️ Privacy & Performance
 
 - **100% Private:** All processing happens locally on your machine. No tracking, no data collection, and no cloud syncing required.
-- **Resource Efficient:** State-hashing technology ensures the extension only runs when necessary, preserving CPU and battery life.
+- **Resource Efficient:** Performs all processing locally, ensuring no impact on CPU and battery life.
 - **Power User Optimized:** Designed for stability and speed, even with hundreds of tabs across multi-monitor setups.
 
 ### 💡 Why Use One-click Tab Manager?

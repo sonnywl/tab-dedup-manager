@@ -34,10 +34,21 @@ const mockChrome = {
   },
   tabs: {
     group: vi.fn().mockImplementation((options) => {
-      const gid = options.groupId || Math.floor(Math.random() * 1000) + 1000;
       const tabIds = Array.isArray(options.tabIds)
         ? options.tabIds
         : [options.tabIds];
+      
+      // Look for existing group ID for these tabs
+      let gid = options.groupId;
+      if (!gid) {
+        const firstTab = currentTabs.find(t => tabIds.includes(t.id));
+        if (firstTab?.groupId && firstTab.groupId !== -1) {
+          gid = firstTab.groupId;
+        } else {
+          gid = Math.floor(Math.random() * 1000) + 1000;
+        }
+      }
+      
       currentTabs.forEach((t) => {
         if (tabIds.includes(t.id)) t.groupId = gid;
       });
@@ -178,23 +189,6 @@ describe("TabGroupingController", () => {
       expect(mockChrome.tabs.query).not.toHaveBeenCalled();
     });
 
-    it("skips when state hash unchanged", async () => {
-      currentTabs = [mkTab(1, "https://google.com")];
-      await controller.execute();
-
-      const callsBefore = mockChrome.tabs.query.mock.calls.length;
-      await controller.execute();
-      // Should only have called query once more for the initial check in execute
-      expect(mockChrome.tabs.query.mock.calls.length).toBe(callsBefore + 1);
-    });
-
-    it("hash is order-stable", () => {
-      const tabs1 = [mkTab(1, "https://a.com"), mkTab(2, "https://b.com")];
-      const tabs2 = [mkTab(2, "https://b.com"), mkTab(1, "https://a.com")];
-      const hash1 = service.hashState(tabs1, new Map());
-      const hash2 = service.hashState(tabs2, new Map());
-      expect(hash1).toBe(hash2);
-    });
   });
 
   describe("Integration Tests (High-Fidelity)", () => {
@@ -341,24 +335,6 @@ describe("TabGroupingController", () => {
       await controller.updateBadge();
       expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(
         expect.objectContaining({ text: "!" }),
-      );
-    });
-
-    it("clears badge when hash matches", async () => {
-      currentTabs = [mkTab(1, "https://google.com/1")];
-      const storeState = await mockStore.getState();
-      const activeWindowId = (await mockChrome.windows.getCurrent()).id;
-      const hash = service.hashState(
-        currentTabs,
-        new Map(),
-        storeState,
-        activeWindowId,
-      );
-      (controller as any).lastFullStateHash = hash;
-
-      await controller.updateBadge();
-      expect(mockChrome.action.setBadgeText).toHaveBeenCalledWith(
-        expect.objectContaining({ text: "" }),
       );
     });
 
