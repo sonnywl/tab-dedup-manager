@@ -41,12 +41,8 @@ const mockChrome = {
       // Look for existing group ID for these tabs
       let gid = options.groupId;
       if (!gid) {
-        const firstTab = currentTabs.find(t => tabIds.includes(t.id));
-        if (firstTab?.groupId && firstTab.groupId !== -1) {
-          gid = firstTab.groupId;
-        } else {
-          gid = Math.floor(Math.random() * 1000) + 1000;
-        }
+        // Create a deterministic group ID based on the first tab's ID
+        gid = 1000 + (tabIds[0] || 0);
       }
       
       currentTabs.forEach((t) => {
@@ -55,7 +51,7 @@ const mockChrome = {
       if (!currentGroups.has(gid)) {
         currentGroups.set(gid, {
           id: gid,
-          title: "",
+          title: options.title || "",
           windowId:
             currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
         } as chrome.tabGroups.TabGroup);
@@ -125,7 +121,14 @@ const mockStore = {
     grouping: { byWindow: false, numWindowsToKeep: 2, ungroupSingleTab: false },
   }),
 };
-vi.mock("../utils/startSyncStore.js", () => ({ default: () => mockStore }));
+vi.mock("../utils/startSyncStore.js", () => ({
+  default: vi.fn().mockResolvedValue({
+    getState: vi.fn().mockResolvedValue({
+      rules: [],
+      grouping: { byWindow: false, numWindowsToKeep: 2, ungroupSingleTab: false },
+    }),
+  }),
+}));
 
 /**
  * Helper to assert that a second execution of the controller does nothing.
@@ -318,6 +321,30 @@ describe("TabGroupingController", () => {
 
       expect(currentGroups.get(t1?.groupId!)?.title).toBe("localhost:8000");
       expect(currentGroups.get(t3?.groupId!)?.title).toBe("localhost:8529");
+    });
+    it("OrderPlan: submits correct order plan to adapter", async () => {
+      // Setup: tabs in wrong order based on Title sorting (B before A, should move to A before B)
+      currentTabs = [
+        mkTab(2, "https://example.com/b", -1, 0, 1, false, "B"),
+        mkTab(1, "https://example.com/a", -1, 1, 1, false, "A"),
+      ];
+      vi.mocked(mockStore.getState).mockResolvedValue({
+        rules: [],
+        grouping: { byWindow: false },
+      });
+
+      const executeOrderPlanSpy = vi.spyOn(adapter, "executeOrderPlan");
+
+      await controller.execute();
+
+      expect(executeOrderPlanSpy).toHaveBeenCalled();
+      
+      // Verify moves were performed to correct indices
+      // A (id 1) should be at index 0, B (id 2) at index 1
+      expect(mockChrome.tabs.move).toHaveBeenCalledWith(1, expect.objectContaining({index: 0}));
+      expect(mockChrome.tabs.move).toHaveBeenCalledWith(2, expect.objectContaining({index: 1}));
+
+      await assertIdempotent(controller);
     });
   });
 

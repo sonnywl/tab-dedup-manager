@@ -1115,8 +1115,14 @@ export class WindowManagementService {
 
     // Group all tabs from excess windows by their current grouping status
     for (const tab of excessTabs) {
+      // Mandate: If a tab is protected, it cannot be merged; skip it.
+      if (protectedTabMeta.has(asTabId(tab.id)!)) continue;
+
       if (isGrouped(tab)) {
         const gid = tab.groupId!;
+        // Mandate: If a group is protected, it cannot be merged; skip its tabs.
+        if (protectedTabMeta.has(asTabId(tab.id)!)) continue;
+        
         if (!groupToTabs.has(gid)) groupToTabs.set(gid, []);
         groupToTabs.get(gid)!.push(tab);
       } else {

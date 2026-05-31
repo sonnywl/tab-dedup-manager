@@ -24,7 +24,6 @@ function useSyncStore() {
     grouping: {
       byWindow: false,
       ungroupSingleTab: false,
-      processGroupOnChange: false,
     },
   });
   const [store, setStore] = useState<any>(null);
@@ -37,7 +36,6 @@ function useSyncStore() {
           byWindow: false,
           numWindowsToKeep: 2,
           ungroupSingleTab: false,
-          processGroupOnChange: false,
         },
       });
       setStore(s);
@@ -49,7 +47,6 @@ function useSyncStore() {
             byWindow: false,
             numWindowsToKeep: 2,
             ungroupSingleTab: false,
-            processGroupOnChange: false,
           };
 
       setStateInternal({
@@ -190,24 +187,6 @@ const GroupingSettings = ({
       {chrome.i18n.getMessage("groupingBehaviorLabel")}
     </label>
     <div className="space-y-4">
-      <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={!!config.processGroupOnChange}
-            onChange={(e) =>
-              onChange({
-                ...config,
-                processGroupOnChange: e.target.checked,
-              })
-            }
-            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-          />
-          <span className="text-sm text-gray-700">
-            {chrome.i18n.getMessage("processGroupOnChangeLabel")}
-          </span>
-        </label>
-      </div>
       <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input

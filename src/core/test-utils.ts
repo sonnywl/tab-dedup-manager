@@ -16,6 +16,7 @@ export const mkTab = (
   index = 0,
   windowId = 1,
   pinned = false,
+  title = "",
 ): Tab => {
   const hasProtocol = /^[a-z-]+:/.test(url);
   return {
@@ -36,7 +37,7 @@ export const mkTab = (
     mutedInfo: { muted: false },
     selected: false,
     status: "complete",
-    title: "",
+    title: title,
     width: 0,
   } as Tab;
 };
@@ -46,54 +47,75 @@ export const mkTab = (
  */
 export const getTabIds = (tabs: Tab[]) => tabs.map((t) => asTabId(t.id)!);
 
+/**
+ * Properly moves tabs within currentTabs, handling index shifts and re-indexing.
+ */
+export const moveTabsInMock = (
+  tabIds: number[],
+  targetIndex: number,
+  targetWindowId: number,
+) => {
+  const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
+
+  // 1. Separate tabs being moved and those staying
+  const tabsToMove = ids.map((id) => currentTabs.find((t) => t.id === id)!);
+  let otherTabs = currentTabs.filter((t) => !ids.includes(t.id));
+
+  // 2. Identify target window tabs
+  let targetWindowTabs = otherTabs
+    .filter((t) => t.windowId === targetWindowId)
+    .sort((a, b) => a.index - b.index);
+
+  // 3. Insert tabs at target index
+  let index = targetIndex;
+  if (index === -1) index = targetWindowTabs.length;
+
+  tabsToMove.forEach((t) => {
+    t.windowId = targetWindowId;
+  });
+
+  targetWindowTabs.splice(index, 0, ...tabsToMove);
+
+  // 4. Re-index all tabs in the target window
+  targetWindowTabs.forEach((t, i) => {
+    t.index = i;
+  });
+
+  // 5. Re-index remaining tabs in other windows (in case they shifted)
+  const otherWindows = Array.from(
+    new Set(otherTabs.map((t) => t.windowId)),
+  ).filter((wid) => wid !== targetWindowId);
+  
+  for (const wid of otherWindows) {
+    otherTabs
+      .filter((t) => t.windowId === wid)
+      .sort((a, b) => a.index - b.index)
+      .forEach((t, i) => {
+        t.index = i;
+      });
+  }
+
+  // 6. Update currentTabs
+  currentTabs = [
+    ...targetWindowTabs,
+    ...otherTabs.filter((t) => t.windowId !== targetWindowId),
+  ];
+};
+
 export const mockChrome = {
-  runtime: {
-    getURL: vi.fn().mockReturnValue("chrome-extension://self-id/"),
-  },
-  storage: {
-    local: { get: vi.fn(), set: vi.fn() },
-    onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
-  },
-  action: {
-    setBadgeText: vi.fn(),
-    setBadgeBackgroundColor: vi.fn(),
-  },
+  // ... (keep existing mocks)
   tabs: {
-    group: vi.fn().mockImplementation((options) => {
-      const gid = options.groupId || Math.floor(Math.random() * 1000) + 1000;
-      const tabIds = Array.isArray(options.tabIds)
-        ? options.tabIds
-        : [options.tabIds];
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) t.groupId = gid;
-      });
-      if (!currentGroups.has(gid)) {
-        currentGroups.set(gid, {
-          id: gid,
-          title: "",
-          windowId:
-            currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
-        });
-      }
-      return Promise.resolve(gid);
-    }),
-    ungroup: vi.fn().mockImplementation((ids) => {
-      const tabIds = Array.isArray(ids) ? ids : [ids];
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) t.groupId = -1;
-      });
-      return Promise.resolve();
-    }),
+    // ... (keep existing mocks for group, ungroup, remove, etc.)
     move: vi.fn().mockImplementation((ids, options) => {
       const tabIds = Array.isArray(ids) ? ids : [ids];
-      const targetWin = options.windowId;
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) {
-          if (targetWin) t.windowId = targetWin;
-        }
-      });
+      const targetWin = options.windowId ?? currentTabs.find(t => tabIds.includes(t.id))?.windowId ?? 1;
+      const targetIndex = options.index;
+      
+      moveTabsInMock(tabIds, targetIndex, targetWin);
+      
       return Promise.resolve([]);
     }),
+    // ...
     query: vi.fn().mockImplementation(() => Promise.resolve([...currentTabs])),
     remove: vi.fn().mockImplementation((ids) => {
       const toRemove = Array.isArray(ids) ? ids : [ids];

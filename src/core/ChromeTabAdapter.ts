@@ -335,6 +335,11 @@ export default class ChromeTabAdapter {
         });
 
         if (isToMove) {
+          // Query latest state for this tab/group before moving
+          const currentTabs = await chrome.tabs.query({
+            windowId: targetWindowId as number,
+          });
+
           await runAtomicOperation(async () => {
             const targetIndex = unit.targetIndex;
             if (unit.kind === "group") {
@@ -342,19 +347,40 @@ export default class ChromeTabAdapter {
                 console.warn("[Order] Skipping invalid group move:", unit);
                 return;
               }
+              // Groups in Chrome don't have a simple "index" like tabs,
+              // they are moved by tab ID or group ID. `chrome.tabGroups.move`
+              // works well with index.
               await chrome.tabGroups.move(unit.groupId as number, {
                 windowId: targetWindowId,
                 index: targetIndex,
               });
+
+              // Ensure internal tab ordering within the group
+              for (let i = 0; i < unit.tabIds.length; i++) {
+                const tabId = unit.tabIds[i] as number;
+                const desiredIndex = targetIndex + i;
+                const currentTab = currentTabs.find((t) => t.id === tabId);
+
+                if (currentTab && currentTab.index !== desiredIndex) {
+                  await chrome.tabs.move(tabId, {
+                    index: desiredIndex,
+                  });
+                }
+              }
             } else {
               if (unit.tabId === null || !isFinite(unit.tabId)) {
                 console.warn("[Order] Skipping invalid solo tab move:", unit);
                 return;
               }
-              await chrome.tabs.move(unit.tabId as number, {
-                windowId: targetWindowId,
-                index: targetIndex,
-              });
+              const tabId = unit.tabId as number;
+              const currentTab = currentTabs.find((t) => t.id === tabId);
+
+              if (currentTab && currentTab.index !== targetIndex) {
+                await chrome.tabs.move(tabId, {
+                  windowId: targetWindowId,
+                  index: targetIndex,
+                });
+              }
             }
           }, snapshotTabs);
         }

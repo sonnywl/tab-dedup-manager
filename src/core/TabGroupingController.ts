@@ -85,7 +85,6 @@ export default class TabGroupingController {
         byWindow: !!grouping.byWindow,
         numWindowsToKeep: grouping.numWindowsToKeep,
         ungroupSingleTab: !!grouping.ungroupSingleTab,
-        processGroupOnChange: !!grouping.processGroupOnChange,
       },
     };
   }
@@ -302,7 +301,7 @@ export default class TabGroupingController {
 
       const desired = this.service.mapToOrderUnits(repositionStates);
       const live = this.service.getLiveUnits(fresh.scopedTabs);
-
+      console.log(live, desired);
       const orderPlan = this.service.buildOrderPlan(desired, live);
       const orderRes = await this.adapter.executeOrderPlan(
         orderPlan,

@@ -391,22 +391,4 @@ describe("App Component", () => {
     expect(groupInputs[0]).toBeDisabled();
     expect(splitInputs[0]).toBeDisabled();
   });
-
-  it("toggles processGroupOnChange checkbox", async () => {
-    const user = userEvent.setup();
-    render(<App />);
-
-    const checkbox = screen.getByLabelText(
-      /Automatically group\/dedup when tabs are created or removed/i,
-    );
-    await user.click(checkbox);
-
-    await waitFor(() => {
-      expect(mockStore.setState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          grouping: expect.objectContaining({ processGroupOnChange: true }),
-        }),
-      );
-    });
-  });
 });
