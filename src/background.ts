@@ -12,7 +12,6 @@ async function init() {
         byWindow: false,
         numWindowsToKeep: 2,
         ungroupSingleTab: false,
-        processGroupOnChange: false,
       },
     });
 
@@ -28,15 +27,7 @@ async function init() {
 
     const handleTabChange = debounce(async () => {
       try {
-        const state = await store.getState();
-        if (
-          state.grouping?.processGroupOnChange == null ||
-          state.grouping?.processGroupOnChange === false
-        ) {
-          await controller.updateBadge();
-          return;
-        }
-        await controller.execute({ skipCleanup: true });
+        await controller.updateBadge();
       } catch (err) {
         console.error("Error in handleTabChange:", err);
       }

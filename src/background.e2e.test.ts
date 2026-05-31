@@ -724,6 +724,35 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
 
     await assertIdempotent(controller);
   });
+
+  it("E2E: splitByPath groups respect Title order", async () => {
+    const rules = [{ domain: "example.com", splitByPath: 1, autoDelete: false }];
+    mockChrome.storage.local.get.mockResolvedValue({
+      rules: rules,
+      grouping: { byWindow: false },
+    });
+
+    // Tab 2 (Title "B") and Tab 1 (Title "A") are in reverse title order
+    // Should be sorted alphabetically by title: "A" then "B"
+    const tabs = [
+      mkTab(2, "https://example.com/a/2", -1, 0, 1, false, "B"),
+      mkTab(1, "https://example.com/a/1", -1, 0, 1, false, "A"),
+    ];
+
+    currentTabs = tabs;
+    currentGroups = new Map();
+
+    await controller.execute();
+
+    // Verify tabs within group are reordered to 1 then 2 (A then B)
+    const moveCalls = mockChrome.tabs.move.mock.calls;
+    
+    // Tab 1 should be moved to index 0, Tab 2 to index 1
+    expect(moveCalls).toContainEqual([1, expect.objectContaining({index: 0})]);
+    expect(moveCalls).toContainEqual([2, expect.objectContaining({index: 1})]);
+
+    await assertIdempotent(controller);
+  });
 });
 
 describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
@@ -1442,64 +1471,6 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
   });
 });
 
-describe("TabGrouping E2E processGroupOnChange Trigger Tests", () => {
-  let controller: TabGroupingController;
-  let store: any;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const service = new TabGroupingService();
-    const windowService = new WindowManagementService();
-    const adapter = new ChromeTabAdapter();
-    store = {
-      getState: vi.fn(),
-    };
-    controller = new TabGroupingController(
-      service,
-      windowService,
-      adapter,
-      store as any,
-    );
-    (controller as any).isProcessing = false;
-
-    currentTabs = [];
-    currentGroups = new Map();
-    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
-    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
-  });
-
-  it("E2E: execute() is called with skipCleanup: true when processGroupOnChange is enabled", async () => {
-    // This test simulates the logic inside background.ts's handleTabChange
-    store.getState.mockResolvedValue({
-      rules: [],
-      grouping: { processGroupOnChange: true, byWindow: false },
-    });
-
-    const executeSpy = vi.spyOn(controller, "execute");
-
-    // Simulate background.ts handleTabChange logic:
-    const state = await store.getState();
-    if (state.grouping.processGroupOnChange) {
-      await controller.execute({ skipCleanup: true });
-    }
-
-    expect(executeSpy).toHaveBeenCalledWith({ skipCleanup: true });
-  });
-
-  it("E2E: execute() is NOT called when processGroupOnChange is disabled", async () => {
-    store.getState.mockResolvedValue({
-      rules: [],
-      grouping: { processGroupOnChange: false, byWindow: false },
-    });
-
-    const executeSpy = vi.spyOn(controller, "execute");
-
-    // Simulate background.ts handleTabChange logic:
-    const state = await store.getState();
-    if (state.grouping.processGroupOnChange) {
-      await controller.execute({ skipCleanup: true });
-    }
-
-    expect(executeSpy).not.toHaveBeenCalled();
-  });
-});
+// ============================================================================
+// END OF TESTS
+// ============================================================================

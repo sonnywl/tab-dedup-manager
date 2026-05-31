@@ -56,7 +56,6 @@ The extension ensures operations are both efficient and visually stable (minimiz
 | Mechanism                | Layer       | Scope  | Goal                                                                                                                   |
 | :----------------------- | :---------- | :----- | :--------------------------------------------------------------------------------------------------------------------- |
 | **State Fingerprinting** | Application | Global | **Gatekeeper**: Skips the entire process if the global state (tabs, rules, config) is unchanged.                       |
-| **Background Events**    | background  | Event  | **Automation**: Optional `processGroupOnChange` triggers `execute({ skipCleanup: true })` on tab create/remove/update. |
 | **Atomic Planning**      | Domain      | Global | **Intended State**: Logic calculates final targets as if cleanup/merges already happened, ensuring one-click finality. |
 
 ### 2.2 Group-Block Stability
@@ -101,7 +100,7 @@ The layout follows a deterministic order:
 
 ## 4. Data Flow
 
-1.  **Trigger**: User clicks extension icon OR background event (if `processGroupOnChange` enabled).
+1. **Trigger**: User clicks extension icon.
 2.  **Load Config**: Fetch rules and grouping settings from sync storage.
 3.  **Clean**: Global deduplication, auto-deletion, internal page pre-sorting, and optional single-tab ungrouping. (Destructive steps skipped if triggered by background event).
 4.  **Phase 1: Window Consolidation**: If `byWindow` is true and windows exceed `numWindowsToKeep`, merge excess tabs/groups into high-affinity retained windows based on domain frequency.
@@ -135,5 +134,4 @@ The system is verified through a tiered testing approach:
 | **Atomic Planning**                         | `TabGroupingController > execute() > is idempotent: second execution does nothing` | **Verified** |
 | **Global Deduplication**                    | `E2E: global deduplication closes duplicate URLs session-wide...`                  | **Verified** |
 | **Global Auto-Delete**                      | `E2E: autoDelete rule correctly closes tabs session-wide...`                       | **Verified** |
-| **Background Sync**                         | `App Component > toggles processGroupOnChange checkbox`                            | **Verified** |
 | **Exclusions (Popups, PWAs)**               | `ChromeTabAdapter > getNormalTabs correctly filters...`                            | **Verified** |

@@ -22,16 +22,15 @@ The application is structured into three distinct layers with all shared data st
 
 ## Requirements & Invariants
 
-| Rule             | Behavior                                                                                                                                                                            |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                                                                                               |
-| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                                                                                         |
-| Background Sync  | Optional `processGroupOnChange` (default: **false**). Automatically triggers grouping on tab create/remove.                                                                         |
-| Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency.                                                |
-| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL.                                                     |
+| Rule             | Behavior                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| Group threshold  | 2+ tabs with same group key (domain + path) → group, 1 tab → ungroup.                                                                       |
+| Grouping Scope   | Global (merge all to active window) OR per-window grouping.                                                                                 |     |
+| Window Limit     | Optional `numWindowsToKeep` (defaults to **2**). Excess windows merge into high-affinity retained windows based on domain frequency.        |
+| Sort order       | **Managed Pinned**: Groups → Manual → Managed → Stable ID. **Managed Unpinned**: Internal Pages → Clustered Groups → Title/URL.             |
 | Performance      | High-performance sorting using Longest Increasing Subsequence to minimize DOM mutations and maintain visual stability during repositioning. |
-| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                                                                                   |
-| Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.                                                                       |
+| Visual Stability | **Atomic Execution**: Plan on intended state, execute changes sequentially with stability delays.                                           |
+| Exclusions       | Always skip non-normal windows and extension-owned pages. Internal pages are managed and sorted to the front.                               |
 
 ## Cleanup Logic (Global Priority)
 
@@ -46,12 +45,12 @@ Destructive operations are applied **globally** to the entire session before pha
 
 1.  **Config**: Load current rules and grouping settings.
 2.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping (Skipped if `skipCleanup: true`).
-4.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
-5.  **Phase 2: Grouping Pass**:
+3.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
+4.  **Phase 2: Grouping Pass**:
     - **Phase 2a: Membership**: Identify `protectedTabIds`, build `GroupMap`, and execute `MembershipPlan` (ungroup/group/title) on the current state.
     - **Phase 2b: Ordering (Reality Check)**: Recapture fresh state to get actual indices and IDs, calculate reposition needs using LIS, and execute `OrderPlan` (absolute positioning).
-6.  **Phase 3: Verification**: Refreshes browser state and verifies that all tabs and groups are correctly positioned according to the intended state. If inconsistencies are detected, it triggers a one-time retry of Phase 2 to resolve remaining issues.
-7.  **Cleanup**: Final pass to ensure no single-tab managed groups remain.
+5.  **Phase 3: Verification**: Refreshes browser state and verifies that all tabs and groups are correctly positioned according to the intended state. If inconsistencies are detected, it triggers a one-time retry of Phase 2 to resolve remaining issues.
+6.  **Cleanup**: Final pass to ensure no single-tab managed groups remain.
 
 ## Learnings & Best Practices
 

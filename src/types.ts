@@ -23,7 +23,6 @@ export interface GroupingConfig {
   byWindow: boolean;
   numWindowsToKeep?: number | null | undefined;
   ungroupSingleTab?: boolean | null | undefined;
-  processGroupOnChange?: boolean | null | undefined;
 }
 
 export interface SyncStoreState {
@@ -160,11 +159,6 @@ export function validateGroupingConfig(c: unknown): c is GroupingConfig {
   if (
     config.ungroupSingleTab != null &&
     typeof config.ungroupSingleTab !== "boolean"
-  )
-    return false;
-  if (
-    config.processGroupOnChange != null &&
-    typeof config.processGroupOnChange !== "boolean"
   )
     return false;
 

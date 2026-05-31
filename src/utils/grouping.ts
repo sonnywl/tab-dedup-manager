@@ -455,6 +455,8 @@ export class TabGroupingService {
 
       const valid = s.tabIds.map((id) => tabCache.get(id)).filter(isDefined);
       valid.sort((a, b) => {
+        const titleComp = (a.title || "").localeCompare(b.title || "");
+        if (titleComp !== 0) return titleComp;
         const urlComp = (a.url || "").localeCompare(b.url || "");
         if (urlComp !== 0) return urlComp;
         return (a.id ?? 0) - (b.id ?? 0); // Stability fallback
@@ -596,15 +598,15 @@ export class TabGroupingService {
     return (a.url || "").localeCompare(b.url || "");
   }
 
-  private getSortingStrategies(
-    tabCache: ReadonlyMap<TabId, Tab>,
-    managedGroupIds: Map<number, string> = new Map(),
-  ) {
-    const sortByUrl = (a: GroupState, b: GroupState) => {
+  private getSortingStrategies(tabCache: ReadonlyMap<TabId, Tab>) {
+    const sortByTitle = (a: GroupState, b: GroupState) => {
+      // Sort groups by their displayName (group title), then by the URL of the first tab.
+      const nameComp = (a.displayName || "").localeCompare(b.displayName || "");
+      if (nameComp !== 0) return nameComp;
+
       const tA = tabCache.get(a.tabIds[0]);
       const tB = tabCache.get(b.tabIds[0]);
-      if (tA && tB) return this.compareTabOrder(tA, tB, managedGroupIds);
-      return (a.displayName || "").localeCompare(b.displayName || "");
+      return (tA?.url || "").localeCompare(tB?.url || "");
     };
 
     const sortById = (a: GroupState, b: GroupState) => {
@@ -616,7 +618,7 @@ export class TabGroupingService {
       return (tA?.id ?? 0) - (tB?.id ?? 0);
     };
 
-    return { sortByUrl, sortById };
+    return { sortByTitle, sortById };
   }
 
   calculateRepositionNeeds(
@@ -639,10 +641,7 @@ export class TabGroupingService {
       (t) => t.pinned && !managed.has(asTabId(t.id)!),
     );
 
-    const { sortByUrl, sortById } = this.getSortingStrategies(
-      tabCache,
-      managedGroupIds,
-    );
+    const { sortByTitle, sortById } = this.getSortingStrategies(tabCache);
 
     const managedPinned = groupStates
       .filter((s) => tabCache.get(s.tabIds[0])?.pinned)
@@ -675,7 +674,7 @@ export class TabGroupingService {
           if (a.isExternal !== b.isExternal) return a.isExternal ? 1 : -1;
         }
 
-        return sortByUrl(a, b);
+        return sortByTitle(a, b);
       });
 
     const tabsInGroupCount = new Map<number, number>();
@@ -775,51 +774,9 @@ export class TabGroupingService {
     return { toUngroup, toGroup, targetWindowId: windowId };
   }
 
-  buildOrderPlan(desired: OrderUnit[], liveUnits: OrderUnit[]): OrderPlan {
-    const liveKeys = liveUnits.map((u) => this.unitKey(u));
-    const desiredKeys = desired.map((u) => this.unitKey(u));
-
-    // Map each desired key to its current index in live state
-    const liveIndexMap = new Map<string, number>();
-    liveKeys.forEach((key, idx) => liveIndexMap.set(key, idx));
-
-    // Filter desired units to those that exist in the live snapshot for THIS window
-    // AND are at their correct absolute target position.
-    // If a unit is interleaved with unmanaged tabs, its targetIndex won't match its current index.
-    const indices: number[] = [];
-    const candidatesForLIS: number[] = []; // Indices in 'desired' list
-
-    desired.forEach((unit, dIdx) => {
-      const key = this.unitKey(unit);
-      const lIdx = liveIndexMap.get(key);
-      if (lIdx !== undefined) {
-        const liveUnit = liveUnits[lIdx];
-        // Mandate: A unit is only a candidate for staying (LIS) if its
-        // current absolute position matches its target absolute position.
-        // This ensures unmanaged tabs are displaced correctly to the end.
-        if (liveUnit.targetIndex === unit.targetIndex) {
-          indices.push(lIdx);
-          candidatesForLIS.push(dIdx);
-        }
-      }
-    });
-
-    // LIS algorithm to find the largest subset of units already in order
-    const lisSubsequenceIndices = this.calculateLIS(indices);
-    const inOrderKeys = new Set(
-      lisSubsequenceIndices.map((i) => desiredKeys[candidatesForLIS[i]]),
-    );
-
-    const toMove = desired.filter((u) => !inOrderKeys.has(this.unitKey(u)));
-
-    return {
-      desired,
-      toMove,
-    };
-  }
-
   mapToOrderUnits(states: GroupState[]): OrderUnit[] {
     const units: OrderUnit[] = [];
+    let currentIdx = 0;
     for (const s of states) {
       const isActuallyGrouped =
         (s.isExternal || s.tabIds.length >= 2) && s.groupId !== null;
@@ -829,20 +786,57 @@ export class TabGroupingService {
           kind: "group",
           groupId: s.groupId as GroupId,
           tabIds: [...s.tabIds],
-          targetIndex: s.targetIndex ?? 0,
+          targetIndex: currentIdx,
         });
+        currentIdx += s.tabIds.length;
       } else {
         // Treat as individual tabs
-        s.tabIds.forEach((tid, i) => {
+        s.tabIds.forEach((tid) => {
           units.push({
             kind: "solo",
             tabId: tid,
-            targetIndex: (s.targetIndex ?? 0) + i,
+            targetIndex: currentIdx,
           });
+          currentIdx++;
         });
       }
     }
     return units;
+  }
+
+  buildOrderPlan(desired: OrderUnit[], liveUnits: OrderUnit[]): OrderPlan {
+    const liveKeys = liveUnits.map((u) => this.unitKey(u));
+    const desiredKeys = desired.map((u) => this.unitKey(u));
+
+    // Map each desired key to its current index in live state
+    const liveIndexMap = new Map<string, number>();
+    liveKeys.forEach((key, idx) => liveIndexMap.set(key, idx));
+
+    // Find the longest subsequence of `liveUnits` that matches the relative order in `desired`
+    const indices: number[] = [];
+    desiredKeys.forEach((key) => {
+      const lIdx = liveIndexMap.get(key);
+      if (lIdx !== undefined) {
+        indices.push(lIdx);
+      }
+    });
+
+    const lisSubsequenceIndices = this.calculateLIS(indices);
+    const inOrderKeys = new Set(lisSubsequenceIndices.map((i) => liveKeys[i]));
+
+    const toMove = desired.filter((u) => {
+      const isInOrder = inOrderKeys.has(this.unitKey(u));
+      const liveUnit = liveUnits.find(
+        (l) => this.unitKey(l) === this.unitKey(u),
+      );
+      // Need to move if not in LIS OR if targetIndex is different
+      return !isInOrder || (liveUnit && liveUnit.targetIndex !== u.targetIndex);
+    });
+    console.log(toMove);
+    return {
+      desired,
+      toMove,
+    };
   }
 
   getLiveUnits(tabs: Tab[]): OrderUnit[] {
@@ -873,7 +867,9 @@ export class TabGroupingService {
   }
 
   private unitKey(u: OrderUnit): string {
-    return u.kind === "group" ? `g:${u.groupId}` : `t:${u.tabId}`;
+    return u.kind === "group"
+      ? `g:${u.groupId}:${u.tabIds.join(",")}`
+      : `t:${u.tabId}`;
   }
 
   // ============================================================================
@@ -935,7 +931,6 @@ export class TabGroupingService {
       update(g.byWindow ? 1 : 0);
       update(g.numWindowsToKeep ?? 0);
       update(g.ungroupSingleTab ? 1 : 0);
-      update(g.processGroupOnChange ? 1 : 0);
 
       const sortedRules = [...(config.rules || [])].sort((a, b) =>
         a.domain.localeCompare(b.domain),
