@@ -1,6 +1,7 @@
 import {
   BrowserState,
   GroupingConfig,
+  OrderUnit,
   ProtectedTabMetaMap,
   Result,
   RulesByDomain,
@@ -359,7 +360,6 @@ export default class TabGroupingController {
         this.ensureActiveWindowId(),
       ]);
       let state = initialState;
-      const isAuto = !!options?.skipCleanup;
 
       const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
