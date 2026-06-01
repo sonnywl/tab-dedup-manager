@@ -147,7 +147,6 @@ export default class TabGroupingController {
     groupingConfig: GroupingConfig,
     activeWindowId: number,
     protectedMeta: ProtectedTabMetaMap,
-    managedGroupIds: Map<number, string>,
   ): Promise<BrowserState> {
     const numToKeep = groupingConfig.byWindow
       ? groupingConfig.numWindowsToKeep
@@ -160,7 +159,6 @@ export default class TabGroupingController {
       numToKeep,
       this.service,
       protectedMeta,
-      managedGroupIds,
       asWindowId(activeWindowId),
     );
 
@@ -323,7 +321,7 @@ export default class TabGroupingController {
     if (this.isProcessing) return;
 
     try {
-      const [state, rawStore, activeWindowId] = await Promise.all([
+      const [state, rawStore, _] = await Promise.all([
         this.refreshState(),
         this.store.getState(),
         this.ensureActiveWindowId(),
@@ -385,7 +383,6 @@ export default class TabGroupingController {
         config,
         activeWindowId,
         protectedMeta,
-        managedGroupIds,
       );
 
       // Phase 2: Grouping

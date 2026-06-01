@@ -36,7 +36,6 @@ describe("WindowManagementService", () => {
         1, // numWindowsToKeep
         service,
         new Map(),
-        new Map(),
         asWindowId(1), // target
       );
 
@@ -58,7 +57,6 @@ describe("WindowManagementService", () => {
         2,
         service,
         new Map(),
-        new Map(),
         asWindowId(1),
       );
 
@@ -77,7 +75,6 @@ describe("WindowManagementService", () => {
         tabs,
         1,
         service,
-        new Map(),
         new Map(),
         asWindowId(1),
       );
@@ -367,9 +364,9 @@ describe("TabGroupingService", () => {
       expect(
         plan.toMove.some((u) => u.kind === "group" && u.groupId === 102),
       ).toBe(true);
-      expect(plan.toMove.some((u) => u.kind === "solo" && u.tabIds[0] === 3)).toBe(
-        true,
-      );
+      expect(
+        plan.toMove.some((u) => u.kind === "solo" && u.tabIds[0] === 3),
+      ).toBe(true);
     });
   });
 

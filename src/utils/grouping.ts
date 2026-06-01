@@ -347,20 +347,28 @@ export class TabGroupingService {
     }
 
     for (const wTabs of windowMap.values()) {
-      const internalUnpinned = wTabs.filter(
+      const allInternalUnpinned = wTabs.filter(
         (t) => isInternalTab(t) && !t.pinned,
       );
-      if (internalUnpinned.length === 0) continue;
+      if (allInternalUnpinned.length === 0) continue;
 
-      // Stable sort by URL
-      const sorted = [...internalUnpinned].sort((a, b) =>
-        (a.url || "").localeCompare(b.url || ""),
+      // Identify the current block of internal tabs
+      const pinnedCount = wTabs.filter((t) => t.pinned).length;
+
+      // Check if they are already in a contiguous block starting at pinnedCount
+      const areAlreadyAtStart = allInternalUnpinned.every(
+        (t) =>
+          t.index >= pinnedCount &&
+          t.index < pinnedCount + allInternalUnpinned.length,
       );
 
-      const pinnedCount = wTabs.filter((t) => t.pinned).length;
-      let targetIdx = pinnedCount;
+      if (areAlreadyAtStart) continue;
 
-      for (const tab of sorted) {
+      // If not, move them to the front, preserving existing relative order to minimize disruption
+      allInternalUnpinned.sort((a, b) => a.index - b.index);
+
+      let targetIdx = pinnedCount;
+      for (const tab of allInternalUnpinned) {
         if (tab.id && tab.index !== targetIdx) {
           moves.push({ tabId: asTabId(tab.id)!, targetIndex: targetIdx });
         }
@@ -1005,7 +1013,6 @@ export class WindowManagementService {
     numWindowsToKeep: number,
     service: TabGroupingService,
     protectedTabMeta: ProtectedTabMetaMap,
-    managedGroupIds: Map<number, string>,
     targetWindowId: WindowId,
   ): ConsolidationPlan | null {
     const windowGroups = this.groupByWindow(tabs);
@@ -1036,7 +1043,6 @@ export class WindowManagementService {
       excess,
       service,
       protectedTabMeta,
-      managedGroupIds,
     );
 
     const groupMoves: { groupId: number; windowId: WindowId }[] = [];
@@ -1087,7 +1093,6 @@ export class WindowManagementService {
     excessTabs: Tab[],
     service: TabGroupingService,
     protectedTabMeta: ProtectedTabMetaMap = new Map(),
-    managedGroupIds: Map<number, string> = new Map(),
   ): Map<WindowId, TabId[]> {
     const plan = new Map<WindowId, TabId[]>();
     const domainCounts = new Map<WindowId, Map<Domain, number>>();
@@ -1122,7 +1127,7 @@ export class WindowManagementService {
         const gid = tab.groupId!;
         // Mandate: If a group is protected, it cannot be merged; skip its tabs.
         if (protectedTabMeta.has(asTabId(tab.id)!)) continue;
-        
+
         if (!groupToTabs.has(gid)) groupToTabs.set(gid, []);
         groupToTabs.get(gid)!.push(tab);
       } else {
