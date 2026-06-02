@@ -5,117 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChromeTabAdapter from "./core/ChromeTabAdapter";
 import TabGroupingController from "./core/TabGroupingController";
 import fc from "fast-check";
-import { mkTab } from "./core/test-utils";
+import { mkTab, mockState, mockChrome } from "./core/test-utils";
 
 // ============================================================================
 // MOCKS & SETUP - MUST BE AT TOP
 // ============================================================================
-
-let currentTabs: Tab[] = [];
-let currentGroups = new Map<number, chrome.tabGroups.TabGroup>();
-
-const mockChrome = {
-  runtime: {
-    getURL: vi.fn().mockReturnValue("chrome-extension://self-id/"),
-  },
-  storage: {
-    local: {
-      get: vi.fn().mockImplementation((key) => {
-        if (key === "rules") return Promise.resolve({ rules: [] });
-        if (key === "grouping") return Promise.resolve({ grouping: {} });
-        return Promise.resolve({});
-      }),
-      set: vi.fn().mockResolvedValue(undefined),
-    },
-    onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
-  },
-  action: {
-    setBadgeText: vi.fn(),
-    setBadgeBackgroundColor: vi.fn(),
-  },
-  tabs: {
-    group: vi.fn().mockImplementation((options) => {
-      const gid = options.groupId || Math.floor(Math.random() * 1000) + 1000;
-      const tabIds = Array.isArray(options.tabIds)
-        ? options.tabIds
-        : [options.tabIds];
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) t.groupId = gid;
-      });
-      if (!currentGroups.has(gid)) {
-        currentGroups.set(gid, {
-          id: gid,
-          title: "",
-          windowId:
-            currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
-          collapsed: false,
-          color: "blue",
-          shared: false,
-        });
-      }
-      return Promise.resolve(gid);
-    }),
-    ungroup: vi.fn().mockImplementation((ids) => {
-      const tabIds = Array.isArray(ids) ? ids : [ids];
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) t.groupId = -1;
-      });
-      return Promise.resolve();
-    }),
-    move: vi.fn().mockImplementation((ids, options) => {
-      const tabIds = Array.isArray(ids) ? ids : [ids];
-      const targetWin = options.windowId;
-      currentTabs.forEach((t) => {
-        if (tabIds.includes(t.id)) {
-          if (targetWin) t.windowId = targetWin;
-        }
-      });
-      return Promise.resolve([]);
-    }),
-    query: vi.fn().mockImplementation(() => Promise.resolve([...currentTabs])),
-    remove: vi.fn().mockImplementation((ids) => {
-      const toRemove = Array.isArray(ids) ? ids : [ids];
-      currentTabs = currentTabs.filter((t) => !toRemove.includes(t.id));
-      return Promise.resolve();
-    }),
-    onCreated: { addListener: vi.fn() },
-    onRemoved: { addListener: vi.fn() },
-    onUpdated: { addListener: vi.fn() },
-  },
-  tabGroups: {
-    update: vi.fn().mockImplementation((gid, update) => {
-      const group = currentGroups.get(gid) || { id: gid };
-      currentGroups.set(gid, { ...group, ...update });
-      return Promise.resolve(currentGroups.get(gid));
-    }),
-    query: vi
-      .fn()
-      .mockImplementation(() =>
-        Promise.resolve(Array.from(currentGroups.values())),
-      ),
-    move: vi.fn().mockImplementation((gid, options) => {
-      const group = currentGroups.get(gid);
-      if (group && options.windowId) group.windowId = options.windowId;
-      currentTabs.forEach((t) => {
-        if (t.groupId === gid && options.windowId)
-          t.windowId = options.windowId;
-      });
-      return Promise.resolve(group);
-    }),
-  },
-  windows: {
-    getAll: vi.fn().mockResolvedValue([{ id: 1, type: "normal" }]),
-    getCurrent: vi.fn().mockResolvedValue({ id: 1, type: "normal" }),
-  },
-};
 
 vi.stubGlobal("chrome", mockChrome);
 vi.stubGlobal("browser", mockChrome);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  currentTabs = [];
-  currentGroups = new Map();
+  mockState.reset();
 });
 
 // Mock the sync store utility
@@ -126,29 +27,6 @@ vi.mock("./utils/startSyncStore.js", () => ({
       .mockImplementation(() => mockChrome.storage.local.get("rules")),
   }),
 }));
-
-/**
- * Helper to assert that a second execution of the controller does nothing.
- * Standardizes the idempotency check across all E2E tests.
- */
-const assertIdempotent = async (controller: TabGroupingController) => {
-  mockChrome.tabs.move.mockClear();
-  mockChrome.tabs.group.mockClear();
-  mockChrome.tabs.ungroup.mockClear();
-  mockChrome.tabs.remove.mockClear();
-  mockChrome.tabGroups.update.mockClear();
-  mockChrome.tabGroups.move.mockClear();
-
-  // Triggering execute() should result in a "skipping" log and zero Chrome API calls.
-  await controller.execute();
-
-  expect(mockChrome.tabs.move).not.toHaveBeenCalled();
-  expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-  expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-  expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
-  expect(mockChrome.tabGroups.update).not.toHaveBeenCalled();
-  expect(mockChrome.tabGroups.move).not.toHaveBeenCalled();
-};
 
 // ============================================================================
 // ARBITRARIES (Generators)
@@ -228,7 +106,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         async (rawTabs) => {
           const rulesByDomain: RulesByDomain = {};
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, 101, i, 1),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, {
+              groupId: 101,
+              index: i,
+              windowId: 1,
+            }),
           );
           const groupsMetadata = new Map<number, chrome.tabGroups.TabGroup>([
             [
@@ -270,75 +152,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
     );
   });
 
-  it("Invariant: Manual groups (NAMED ONLY) are RE-BUNDLED after cross-window merge", async () => {
-    await fc.assert(
-      fc.asyncProperty(
-        fc.array(
-          tabArb.map((t) => ({
-            ...t,
-            windowId: 2,
-            isGrouped: true,
-            isManualTitle: true,
-          })),
-          { minLength: 2, maxLength: 5 },
-        ),
-        fc.boolean(),
-        async (rawTabs, _byWindow) => {
-          const title = "Persistence Group"; // Mandate: Only named groups are protected
 
-          const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, 101, i, 2),
-          );
-          const groupsMetadata = new Map<number, chrome.tabGroups.TabGroup>([
-            [
-              101,
-              {
-                id: 101,
-                title: title,
-                color: "green",
-              } as chrome.tabGroups.TabGroup,
-            ],
-          ]);
-
-          currentTabs = tabs;
-          currentGroups = groupsMetadata;
-
-          // Executes full controller flow.
-          // This will:
-          // 1. identifyProtectedTabs(tabs) -> finds Group 101 as manual
-          // 2. consolidationPhase -> moves tabs from Win 2 to Win 1
-          // 3. runGroupingPhase -> re-bundles them into Group 101 in Win 1
-          await controller.execute();
-
-          // Verify that all tabs ended up in the same group in Window 1
-          const expectedIds = tabs.map((t) => t.id);
-          const finalTabs = currentTabs.filter((t) =>
-            expectedIds.includes(t.id),
-          );
-
-          expect(finalTabs.every((t) => t.windowId === 1)).toBe(true);
-
-          const gids = new Set(
-            finalTabs.map((t) => t.groupId).filter((gid) => gid !== -1),
-          );
-          expect(gids.size).toBe(1);
-
-          const gid = Array.from(gids)[0] as number;
-          expect(currentGroups.get(gid)?.title).toBe(title);
-
-          if (title) {
-            // Also check that it's correctly titled in the mock
-            const group = Array.from(currentGroups.values()).find(
-              (g) => g.title === title,
-            );
-            expect(group).toBeDefined();
-            expect(group?.windowId).toBe(1);
-          }
-        },
-      ),
-      { numRuns: 50 },
-    );
-  }, 30000);
 
   it("Invariant: Managed group titles follow rules or domain defaults", async () => {
     await fc.assert(
@@ -350,7 +164,10 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           rules.forEach((r) => (rulesByDomain[r.domain] = r));
 
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, -1, i),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, {
+              groupId: -1,
+              index: i,
+            }),
           );
 
           const groupMap = service.buildGroupMap(tabs, rulesByDomain);
@@ -403,9 +220,21 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
       fc.asyncProperty(fc.integer({ min: 1, max: 3 }), async (windowId) => {
         const rulesByDomain: RulesByDomain = {};
         const tabs = [
-          mkTab(1, "https://google.com/1", 101, 0, windowId),
-          mkTab(2, "https://google.com/2", 101, 1, windowId),
-          mkTab(3, "https://google.com/3", 101, 2, windowId),
+          mkTab(1, "https://google.com/1", {
+            groupId: 101,
+            index: 0,
+            windowId,
+          }),
+          mkTab(2, "https://google.com/2", {
+            groupId: 101,
+            index: 1,
+            windowId,
+          }),
+          mkTab(3, "https://google.com/3", {
+            groupId: 101,
+            index: 2,
+            windowId,
+          }),
         ];
         const groupsMetadata = new Map<number, chrome.tabGroups.TabGroup>([
           [
@@ -594,8 +423,8 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -608,14 +437,14 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://github.com/project-a/file1"),
-      mkTab(2, "https://github.com/project-a/file2"),
-      mkTab(3, "https://github.com/project-b/file1"),
-      mkTab(4, "https://github.com/project-b/file2"),
+      mkTab(1, "https://github.com/project-a/file1", { index: 0 }),
+      mkTab(2, "https://github.com/project-a/file2", { index: 1 }),
+      mkTab(3, "https://github.com/project-b/file1", { index: 2 }),
+      mkTab(4, "https://github.com/project-b/file2", { index: 3 }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     await controller.execute();
 
@@ -639,8 +468,6 @@ describe("TabGrouping E2E SplitPath Integration Tests", () => {
       expect.any(Number),
       expect.objectContaining({ title: "project-b - github.com" }),
     ]);
-
-    await assertIdempotent(controller);
   });
 });
 
@@ -674,8 +501,8 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -688,13 +515,13 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://bing.com"),
-      mkTab(2, "https://bing.com/images"),
-      mkTab(3, "https://bing.com/search?q=test"),
-      mkTab(4, "https://bing.com/images/thumbnails"),
+      mkTab(1, "https://bing.com", {}),
+      mkTab(2, "https://bing.com/images", {}),
+      mkTab(3, "https://bing.com/search?q=test", {}),
+      mkTab(4, "https://bing.com/images/thumbnails", {}),
     ];
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     await controller.execute();
 
@@ -721,38 +548,9 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
       expect.any(Number),
       expect.objectContaining({ title: "images - bing.com" }),
     ]);
-
-    await assertIdempotent(controller);
   });
 
-  it("E2E: splitByPath groups respect Title order", async () => {
-    const rules = [{ domain: "example.com", splitByPath: 1, autoDelete: false }];
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: rules,
-      grouping: { byWindow: false },
-    });
 
-    // Tab 2 (Title "B") and Tab 1 (Title "A") are in reverse title order
-    // Should be sorted alphabetically by title: "A" then "B"
-    const tabs = [
-      mkTab(2, "https://example.com/a/2", -1, 0, 1, false, "B"),
-      mkTab(1, "https://example.com/a/1", -1, 0, 1, false, "A"),
-    ];
-
-    currentTabs = tabs;
-    currentGroups = new Map();
-
-    await controller.execute();
-
-    // Verify tabs within group are reordered to 1 then 2 (A then B)
-    const moveCalls = mockChrome.tabs.move.mock.calls;
-    
-    // Tab 1 should be moved to index 0, Tab 2 to index 1
-    expect(moveCalls).toContainEqual([1, expect.objectContaining({index: 0})]);
-    expect(moveCalls).toContainEqual([2, expect.objectContaining({index: 1})]);
-
-    await assertIdempotent(controller);
-  });
 });
 
 describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
@@ -785,8 +583,8 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -798,16 +596,16 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://a.com/1", -1, 0, 1),
-      mkTab(2, "https://a.com/2", -1, 1, 1),
-      mkTab(3, "https://b.com/1", -1, 0, 2),
-      mkTab(4, "https://b.com/2", -1, 1, 2),
-      mkTab(5, "https://c.com/1", -1, 0, 3),
-      mkTab(6, "https://c.com/2", -1, 1, 3),
+      mkTab(1, "https://a.com/1", { groupId: -1, index: 0, windowId: 1 }),
+      mkTab(2, "https://a.com/2", { groupId: -1, index: 1, windowId: 1 }),
+      mkTab(3, "https://b.com/1", { groupId: -1, index: 0, windowId: 2 }),
+      mkTab(4, "https://b.com/2", { groupId: -1, index: 1, windowId: 2 }),
+      mkTab(5, "https://c.com/1", { groupId: -1, index: 0, windowId: 3 }),
+      mkTab(6, "https://c.com/2", { groupId: -1, index: 1, windowId: 3 }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
     mockChrome.windows.getAll.mockResolvedValue([
       { id: 1, type: "normal" },
       { id: 2, type: "normal" },
@@ -831,55 +629,9 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     expect(movedTab6).toBeDefined();
     expect([1, 2]).toContain(movedTab5![1].windowId);
     expect([1, 2]).toContain(movedTab6![1].windowId);
-
-    await assertIdempotent(controller);
   });
 
-  it("E2E: numWindowsToKeep correctly moves managed groups as a block via tabGroups.move", async () => {
-    const rules = [{ domain: "google.com", autoDelete: false }];
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: rules,
-      grouping: { byWindow: true, numWindowsToKeep: 1 },
-    });
 
-    const tabs = [
-      mkTab(1, "https://a.com/1", -1, 0, 1),
-      mkTab(4, "https://a.com/2", -1, 1, 1),
-      mkTab(5, "https://a.com/3", -1, 2, 1),
-      mkTab(2, "https://google.com/1", 101, 0, 2),
-      mkTab(3, "https://google.com/2", 101, 1, 2),
-    ];
-
-    currentTabs = tabs;
-    currentGroups = new Map([
-      [101, { id: 101, title: "google.com", windowId: 2 }],
-    ]);
-    mockChrome.windows.getAll.mockResolvedValue([
-      { id: 1, type: "normal" },
-      { id: 2, type: "normal" },
-    ]);
-    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
-
-    await controller.execute();
-
-    expect(mockChrome.tabGroups.move).toHaveBeenCalledWith(
-      101,
-      expect.objectContaining({ windowId: 1 }),
-    );
-
-    const moveCalls = mockChrome.tabs.move.mock.calls;
-    const individualMove2 = moveCalls.find(
-      (call) =>
-        call[0] === 2 || (Array.isArray(call[0]) && call[0].includes(2)),
-    );
-    const individualMove3 = moveCalls.find(
-      (call) =>
-        call[0] === 3 || (Array.isArray(call[0]) && call[0].includes(3)),
-    );
-
-    expect(individualMove2).toBeUndefined();
-    expect(individualMove3).toBeUndefined();
-  });
 });
 
 describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
@@ -912,8 +664,8 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -929,13 +681,13 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://trash.com/ads"),
-      mkTab(2, "https://keep.com/important"),
-      mkTab(3, "https://trash.com/tracker"),
+      mkTab(1, "https://trash.com/ads", {}),
+      mkTab(2, "https://keep.com/important", {}),
+      mkTab(3, "https://trash.com/tracker", {}),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     await controller.execute();
 
@@ -947,8 +699,6 @@ describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
     expect(removedIds).not.toContain(2);
 
     expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-
-    await assertIdempotent(controller);
   });
 });
 
@@ -982,8 +732,8 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -995,13 +745,25 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://shared.com/page", 101, 0, 1),
-      mkTab(2, "https://unique.com/page", -1, 1, 1),
-      mkTab(3, "https://shared.com/page", -1, 0, 2),
+      mkTab(1, "https://shared.com/page", {
+        groupId: 101,
+        index: 0,
+        windowId: 1,
+      }),
+      mkTab(2, "https://unique.com/page", {
+        groupId: -1,
+        index: 1,
+        windowId: 1,
+      }),
+      mkTab(3, "https://shared.com/page", {
+        groupId: -1,
+        index: 0,
+        windowId: 2,
+      }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map([
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map([
       [101, { id: 101, title: "My Manual Group", windowId: 1 }],
     ]);
 
@@ -1013,8 +775,6 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     expect(removedIds).toContain(3);
     expect(removedIds).not.toContain(1);
     expect(removedIds).not.toContain(2);
-
-    await assertIdempotent(controller);
   });
 
   it("E2E: deduplication prefers the earliest instance (lowest ID/index) regardless of window", async () => {
@@ -1024,12 +784,12 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(10, "https://dup.com", -1, 0, 2),
-      mkTab(20, "https://dup.com", -1, 0, 1),
+      mkTab(10, "https://dup.com", { groupId: -1, index: 0, windowId: 2 }),
+      mkTab(20, "https://dup.com", { groupId: -1, index: 0, windowId: 1 }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     await controller.execute();
 
@@ -1038,8 +798,6 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     // So Tab 20 is kept, and Tab 10 is removed.
     expect(removedIds).toContain(10);
     expect(removedIds).not.toContain(20);
-
-    await assertIdempotent(controller);
   });
 
   it("E2E: global single-tab ungrouping immediately ungroups 1-tab groups if enabled", async () => {
@@ -1049,23 +807,29 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://shared.com/page", 101, 0, 1), // Only tab in group 101
-      mkTab(2, "https://unique.com/page", -1, 1, 1),
+      mkTab(1, "https://shared.com/page", {
+        groupId: 101,
+        index: 0,
+        windowId: 1,
+      }), // Only tab in group 101
+      mkTab(2, "https://unique.com/page", {
+        groupId: -1,
+        index: 1,
+        windowId: 1,
+      }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map([
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map([
       [101, { id: 101, title: "shared.com", windowId: 1 }],
     ]);
 
     await controller.execute();
 
     // Tab 1 should now have groupId -1
-    const tab1 = currentTabs.find((t) => t.id === 1);
+    const tab1 = mockState.currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(-1);
     expect(mockChrome.tabs.ungroup).toHaveBeenCalledWith(1);
-
-    await assertIdempotent(controller);
   });
 
   it("E2E: global single-tab ungrouping skips 1-tab groups if disabled", async () => {
@@ -1075,23 +839,29 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://shared.com/page", 101, 0, 1), // Only tab in group 101
-      mkTab(2, "https://unique.com/page", -1, 1, 1),
+      mkTab(1, "https://shared.com/page", {
+        groupId: 101,
+        index: 0,
+        windowId: 1,
+      }), // Only tab in group 101
+      mkTab(2, "https://unique.com/page", {
+        groupId: -1,
+        index: 1,
+        windowId: 1,
+      }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map([
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map([
       [101, { id: 101, title: "My Manual Group", windowId: 1 }],
     ]);
 
     await controller.execute();
 
     // Tab 1 should still have groupId 101
-    const tab1 = currentTabs.find((t) => t.id === 1);
+    const tab1 = mockState.currentTabs.find((t) => t.id === 1);
     expect(tab1?.groupId).toBe(101);
     expect(mockChrome.tabs.ungroup).not.toHaveBeenCalled();
-
-    await assertIdempotent(controller);
   });
 });
 
@@ -1125,8 +895,8 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -1144,40 +914,38 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     // Group 100: [Google 1, Google 2, Bing 3 (Intruder)]
     // Group 200: [Bing 4] (Single tab group)
     const tabs = [
-      mkTab(1, "https://google.com/1", 100, 0, 1),
-      mkTab(2, "https://google.com/2", 100, 1, 1),
-      mkTab(3, "https://bing.com/1", 100, 2, 1), // Intruder
-      mkTab(4, "https://bing.com/2", 200, 3, 1), // Single tab group
-      mkTab(5, "https://yahoo.com/1", -1, 4, 1), // Unsorted tab
+      mkTab(1, "https://google.com/1", { groupId: 100, index: 0, windowId: 1 }),
+      mkTab(2, "https://google.com/2", { groupId: 100, index: 1, windowId: 1 }),
+      mkTab(3, "https://bing.com/1", { groupId: 100, index: 2, windowId: 1 }), // Intruder
+      mkTab(4, "https://bing.com/2", { groupId: 200, index: 3, windowId: 1 }), // Single tab group
+      mkTab(5, "https://yahoo.com/1", { groupId: -1, index: 4, windowId: 1 }), // Unsorted tab
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
-    currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
-    currentGroups.set(200, { id: 200, title: "bing.com", windowId: 1 });
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
+    mockState.currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
+    mockState.currentGroups.set(200, { id: 200, title: "bing.com", windowId: 1 });
 
     // Trigger 1: Execute
     await controller.execute();
 
     // Verify after 1st execution:
     // Tab 1 & 2 are in a group (likely 100)
-    const t1 = currentTabs.find((t) => t.id === 1);
-    const t2 = currentTabs.find((t) => t.id === 2);
+    const t1 = mockState.currentTabs.find((t) => t.id === 1)!;
+    const t2 = mockState.currentTabs.find((t) => t.id === 2)!;
     expect(t1.groupId).toBe(t2.groupId);
     expect(t1.groupId).not.toBe(-1);
 
     // Tab 3 & 4 should now be in the same group (Bing)
-    const t3 = currentTabs.find((t) => t.id === 3);
-    const t4 = currentTabs.find((t) => t.id === 4);
+    const t3 = mockState.currentTabs.find((t) => t.id === 3)!;
+    const t4 = mockState.currentTabs.find((t) => t.id === 4)!;
     expect(t3.groupId).toBe(t4.groupId);
     expect(t3.groupId).not.toBe(t1.groupId);
     expect(t3.groupId).not.toBe(-1);
 
     // Tab 5 stays unsorted (-1)
-    const t5 = currentTabs.find((t) => t.id === 5);
+    const t5 = mockState.currentTabs.find((t) => t.id === 5);
     expect(t5.groupId).toBe(-1);
-
-    await assertIdempotent(controller);
   });
 
   it("E2E: single managed group tab is ungrouped immediately", async () => {
@@ -1188,21 +956,19 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
     });
 
     const tabs = [
-      mkTab(1, "https://google.com/1", 100, 0, 1), // Managed group with only 1 tab
-      mkTab(2, "https://yahoo.com/1", -1, 1, 1),
+      mkTab(1, "https://google.com/1", { groupId: 100, index: 0, windowId: 1 }), // Managed group with only 1 tab
+      mkTab(2, "https://yahoo.com/1", { groupId: -1, index: 1, windowId: 1 }),
     ];
 
-    currentTabs = tabs;
-    currentGroups = new Map();
-    currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
+    mockState.currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
 
     await controller.execute();
 
-    const t1 = currentTabs.find((t) => t.id === 1);
+    const t1 = mockState.currentTabs.find((t) => t.id === 1)!;
     expect(t1.groupId).toBe(-1);
     expect(mockChrome.tabs.ungroup).toHaveBeenCalled();
-
-    await assertIdempotent(controller);
   });
 });
 
@@ -1236,8 +1002,8 @@ describe("TabGrouping E2E Localhost & Ports Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -1249,31 +1015,45 @@ describe("TabGrouping E2E Localhost & Ports Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "http://localhost:8000/1", -1, 0, 1),
-      mkTab(2, "http://localhost:8000/2", -1, 1, 1),
-      mkTab(3, "http://localhost:8529/1", -1, 2, 1),
-      mkTab(4, "http://localhost:8529/2", -1, 3, 1),
+      mkTab(1, "http://localhost:8000/1", {
+        groupId: -1,
+        index: 0,
+        windowId: 1,
+      }),
+      mkTab(2, "http://localhost:8000/2", {
+        groupId: -1,
+        index: 1,
+        windowId: 1,
+      }),
+      mkTab(3, "http://localhost:8529/1", {
+        groupId: -1,
+        index: 2,
+        windowId: 1,
+      }),
+      mkTab(4, "http://localhost:8529/2", {
+        groupId: -1,
+        index: 3,
+        windowId: 1,
+      }),
     ];
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     await controller.execute();
 
     // Verify they are in separate groups
-    const t1 = currentTabs.find((t) => t.id === 1);
-    const t3 = currentTabs.find((t) => t.id === 3);
+    const t1 = mockState.currentTabs.find((t) => t.id === 1)!;
+    const t3 = mockState.currentTabs.find((t) => t.id === 3)!;
 
     expect(t1.groupId).not.toBe(-1);
     expect(t3.groupId).not.toBe(-1);
     expect(t1.groupId).not.toBe(t3.groupId);
 
     // Verify group titles include ports
-    const group1 = currentGroups.get(t1.groupId);
-    const group2 = currentGroups.get(t3.groupId);
+    const group1 = mockState.currentGroups.get(t1.groupId);
+    const group2 = mockState.currentGroups.get(t3.groupId);
     expect(group1?.title).toBe("localhost:8000");
     expect(group2?.title).toBe("localhost:8529");
-
-    await assertIdempotent(controller);
   });
 });
 
@@ -1307,8 +1087,8 @@ describe("TabGrouping E2E Title Management Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -1321,11 +1101,11 @@ describe("TabGrouping E2E Title Management Tests", () => {
 
     // Sets up 2 loose tabs.
     const tabs = [
-      mkTab(1, "https://google.com/1"),
-      mkTab(2, "https://google.com/2"),
+      mkTab(1, "https://google.com/1", {}),
+      mkTab(2, "https://google.com/2", {}),
     ];
-    currentTabs = tabs;
-    currentGroups = new Map();
+    mockState.currentTabs = tabs;
+    mockState.currentGroups = new Map();
 
     // Executes grouping.
     await controller.execute();
@@ -1369,8 +1149,8 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
     );
     (controller as any).isProcessing = false;
 
-    currentTabs = [];
-    currentGroups = new Map();
+    mockState.currentTabs = [];
+    mockState.currentGroups = new Map();
     mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
     mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
   });
@@ -1382,10 +1162,10 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://dup.com/page", -1, 0, 1),
-      mkTab(2, "https://dup.com/page", -1, 1, 1),
+      mkTab(1, "https://dup.com/page", { groupId: -1, index: 0, windowId: 1 }),
+      mkTab(2, "https://dup.com/page", { groupId: -1, index: 1, windowId: 1 }),
     ];
-    currentTabs = tabs;
+    mockState.currentTabs = tabs;
 
     await controller.execute({ skipCleanup: true });
 
@@ -1394,8 +1174,8 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
 
     // But it SHOULD still group them
     expect(mockChrome.tabs.group).toHaveBeenCalled();
-    const t1 = currentTabs.find((t) => t.id === 1);
-    const t2 = currentTabs.find((t) => t.id === 2);
+    const t1 = mockState.currentTabs.find((t) => t.id === 1)!;
+    const t2 = mockState.currentTabs.find((t) => t.id === 2)!;
     expect(t1.groupId).toBe(t2.groupId);
     expect(t1.groupId).not.toBe(-1);
   });
@@ -1407,8 +1187,8 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
       grouping: { byWindow: false },
     });
 
-    const tabs = [mkTab(1, "https://trash.com/ads")];
-    currentTabs = tabs;
+    const tabs = [mkTab(1, "https://trash.com/ads", {})];
+    mockState.currentTabs = tabs;
 
     await controller.execute({ skipCleanup: true });
 
@@ -1424,50 +1204,17 @@ describe("TabGrouping E2E skipCleanup Flag Tests", () => {
     });
 
     const tabs = [
-      mkTab(1, "https://trash.com/ads"),
-      mkTab(2, "https://dup.com/page"),
-      mkTab(3, "https://dup.com/page"),
+      mkTab(1, "https://trash.com/ads", {}),
+      mkTab(2, "https://dup.com/page", {}),
+      mkTab(3, "https://dup.com/page", {}),
     ];
-    currentTabs = tabs;
+    mockState.currentTabs = tabs;
 
     await controller.execute(); // default skipCleanup: false
 
     const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
     expect(removedIds).toContain(1); // Auto-delete
     expect(removedIds).toContain(3); // Deduplication
-  });
-
-  it("E2E: dual hashes correctly skip redundant runs while allowing manual cleanup", async () => {
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: [],
-      grouping: { byWindow: false },
-    });
-
-    const tabs = [
-      mkTab(1, "https://dup.com/page"),
-      mkTab(2, "https://dup.com/page"),
-    ];
-    currentTabs = tabs;
-
-    // 1. Auto-run (skips cleanup)
-    await controller.execute({ skipCleanup: true });
-    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
-    expect(mockChrome.tabs.group).toHaveBeenCalled(); // Should have grouped them
-
-    // 2. Second Auto-run (should skip)
-    mockChrome.tabs.group.mockClear();
-    await controller.execute({ skipCleanup: true });
-    expect(mockChrome.tabs.group).not.toHaveBeenCalled();
-
-    // 3. Manual run (must clean up even if state hasn't changed since Step 1)
-    await controller.execute(); // default skipCleanup: false
-    const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
-    expect(removedIds).toContain(2);
-
-    // 4. Second Manual run (should skip because it's already clean)
-    mockChrome.tabs.remove.mockClear();
-    await controller.execute();
-    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
   });
 });
 

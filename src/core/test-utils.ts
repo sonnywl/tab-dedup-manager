@@ -2,8 +2,14 @@ import { Tab, asTabId } from "@/types";
 
 import { vi } from "vitest";
 
-export let currentTabs: Tab[] = [];
-export const currentGroups = new Map<number, chrome.tabGroups.TabGroup>();
+export const mockState = {
+  currentTabs: [] as Tab[],
+  currentGroups: new Map<number, chrome.tabGroups.TabGroup>(),
+  reset: () => {
+    mockState.currentTabs.length = 0;
+    mockState.currentGroups.clear();
+  }
+};
 
 /**
  * Creates a mock Chrome Tab object for testing.
@@ -12,12 +18,21 @@ export const currentGroups = new Map<number, chrome.tabGroups.TabGroup>();
 export const mkTab = (
   id: number,
   url: string,
-  groupId: number | null = null,
-  index = 0,
-  windowId = 1,
-  pinned = false,
-  title = "",
+  options: {
+    groupId?: number | null;
+    index?: number;
+    windowId?: number;
+    pinned?: boolean;
+    title?: string;
+  } = {},
 ): Tab => {
+  const {
+    groupId = null,
+    index = 0,
+    windowId = 1,
+    pinned = false,
+    title = "",
+  } = options;
   const hasProtocol = /^[a-z-]+:/.test(url);
   return {
     id,
@@ -48,7 +63,7 @@ export const mkTab = (
 export const getTabIds = (tabs: Tab[]) => tabs.map((t) => asTabId(t.id)!);
 
 /**
- * Properly moves tabs within currentTabs, handling index shifts and re-indexing.
+ * Properly moves tabs within mockState.currentTabs, handling index shifts and re-indexing.
  */
 export const moveTabsInMock = (
   tabIds: number[],
@@ -58,11 +73,13 @@ export const moveTabsInMock = (
   const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
 
   // 1. Separate tabs being moved and those staying
-  const tabsToMove = ids.map((id) => currentTabs.find((t) => t.id === id)!);
-  let otherTabs = currentTabs.filter((t) => !ids.includes(t.id));
+  const tabsToMove = ids.map((id) => mockState.currentTabs.find((t) => t.id === id)!);
+  const otherTabs = mockState.currentTabs.filter(
+    (t) => t.id != null && !ids.includes(t.id),
+  );
 
   // 2. Identify target window tabs
-  let targetWindowTabs = otherTabs
+  const targetWindowTabs = otherTabs
     .filter((t) => t.windowId === targetWindowId)
     .sort((a, b) => a.index - b.index);
 
@@ -85,7 +102,7 @@ export const moveTabsInMock = (
   const otherWindows = Array.from(
     new Set(otherTabs.map((t) => t.windowId)),
   ).filter((wid) => wid !== targetWindowId);
-  
+
   for (const wid of otherWindows) {
     otherTabs
       .filter((t) => t.windowId === wid)
@@ -95,31 +112,77 @@ export const moveTabsInMock = (
       });
   }
 
-  // 6. Update currentTabs
-  currentTabs = [
+  // 6. Update mockState.currentTabs
+  mockState.currentTabs = [
     ...targetWindowTabs,
     ...otherTabs.filter((t) => t.windowId !== targetWindowId),
   ];
 };
 
 export const mockChrome = {
-  // ... (keep existing mocks)
+  runtime: {
+    getURL: vi.fn().mockReturnValue("chrome-extension://self-id/"),
+  },
+  storage: {
+    local: {
+      get: vi.fn().mockImplementation((key) => {
+        if (key === "rules") return Promise.resolve({ rules: [] });
+        if (key === "grouping") return Promise.resolve({ grouping: {} });
+        return Promise.resolve({});
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+    },
+    onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+  },
+  action: {
+    setBadgeText: vi.fn(),
+    setBadgeBackgroundColor: vi.fn(),
+  },
   tabs: {
-    // ... (keep existing mocks for group, ungroup, remove, etc.)
+    group: vi.fn().mockImplementation((options) => {
+      const gid = options.groupId || Math.floor(Math.random() * 1000) + 1000;
+      const tabIds = Array.isArray(options.tabIds)
+        ? options.tabIds
+        : [options.tabIds];
+      mockState.currentTabs.forEach((t) => {
+        if (tabIds.includes(t.id)) t.groupId = gid;
+      });
+      if (!mockState.currentGroups.has(gid)) {
+        mockState.currentGroups.set(gid, {
+          id: gid,
+          title: "",
+          windowId:
+            mockState.currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
+          collapsed: false,
+          color: "blue",
+          shared: false,
+        });
+      }
+      return Promise.resolve(gid);
+    }),
+    ungroup: vi.fn().mockImplementation((ids) => {
+      const tabIds = Array.isArray(ids) ? ids : [ids];
+      mockState.currentTabs.forEach((t) => {
+        if (tabIds.includes(t.id)) t.groupId = -1;
+      });
+      return Promise.resolve();
+    }),
     move: vi.fn().mockImplementation((ids, options) => {
       const tabIds = Array.isArray(ids) ? ids : [ids];
-      const targetWin = options.windowId ?? currentTabs.find(t => tabIds.includes(t.id))?.windowId ?? 1;
+      const targetWin =
+        options.windowId ??
+        mockState.currentTabs.find((t) => tabIds.includes(t.id))?.windowId ??
+        1;
       const targetIndex = options.index;
-      
+
       moveTabsInMock(tabIds, targetIndex, targetWin);
-      
+
       return Promise.resolve([]);
     }),
-    // ...
-    query: vi.fn().mockImplementation(() => Promise.resolve([...currentTabs])),
+    query: vi.fn().mockImplementation(() => Promise.resolve([...mockState.currentTabs])),
     remove: vi.fn().mockImplementation((ids) => {
       const toRemove = Array.isArray(ids) ? ids : [ids];
-      currentTabs = currentTabs.filter((t) => !toRemove.includes(t.id));
+      mockState.currentTabs = mockState.currentTabs.filter((t) => !toRemove.includes(t.id));
       return Promise.resolve();
     }),
     onCreated: { addListener: vi.fn() },
@@ -128,19 +191,19 @@ export const mockChrome = {
   },
   tabGroups: {
     update: vi.fn().mockImplementation((gid, update) => {
-      const group = currentGroups.get(gid) || { id: gid };
-      currentGroups.set(gid, { ...group, ...update });
-      return Promise.resolve(currentGroups.get(gid));
+      const group = mockState.currentGroups.get(gid) || { id: gid };
+      mockState.currentGroups.set(gid, { ...group, ...update });
+      return Promise.resolve(mockState.currentGroups.get(gid));
     }),
     query: vi
       .fn()
       .mockImplementation(() =>
-        Promise.resolve(Array.from(currentGroups.values())),
+        Promise.resolve(Array.from(mockState.currentGroups.values())),
       ),
     move: vi.fn().mockImplementation((gid, options) => {
-      const group = currentGroups.get(gid);
+      const group = mockState.currentGroups.get(gid);
       if (group && options.windowId) group.windowId = options.windowId;
-      currentTabs.forEach((t) => {
+      mockState.currentTabs.forEach((t) => {
         if (t.groupId === gid && options.windowId)
           t.windowId = options.windowId;
       });

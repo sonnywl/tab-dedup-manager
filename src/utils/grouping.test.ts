@@ -1,5 +1,5 @@
 import {
-  ConsolidationPlan,
+  GroupState,
   OrderUnit,
   ProtectedTabMetaMap,
   RulesByDomain,
@@ -28,8 +28,8 @@ describe("WindowManagementService", () => {
   describe("createConsolidationPlan", () => {
     it("Global mode: consolidates all tabs to targetWindowId", () => {
       const tabs = [
-        mkTab(1, "https://a.com", -1, 0, 1), // Win 1
-        mkTab(2, "https://b.com", -1, 0, 2), // Win 2
+        mkTab(1, "https://a.com", { windowId: 1 }),
+        mkTab(2, "https://b.com", { windowId: 2 }),
       ];
       const plan = windowService.createConsolidationPlan(
         tabs,
@@ -46,10 +46,10 @@ describe("WindowManagementService", () => {
 
     it("Per-window mode: respects numWindowsToKeep and targetWindowId", () => {
       const tabs = [
-        mkTab(1, "https://a.com", -1, 0, 1), // Win 1 (target)
-        mkTab(2, "https://b.com", -1, 0, 2), // Win 2
-        mkTab(3, "https://c.com", -1, 0, 3), // Win 3
-        mkTab(4, "https://d.com", -1, 1, 3), // Win 3 (extra tab)
+        mkTab(1, "https://a.com", { windowId: 1 }),
+        mkTab(2, "https://b.com", { windowId: 2 }),
+        mkTab(3, "https://c.com", { windowId: 3 }),
+        mkTab(4, "https://d.com", { windowId: 3, index: 1 }),
       ];
       // numWindowsToKeep = 2. Retained should be Win 3 (largest) and Win 1 (target).
       const plan = windowService.createConsolidationPlan(
@@ -67,9 +67,9 @@ describe("WindowManagementService", () => {
 
     it("Respects groups as blocks during consolidation", () => {
       const tabs = [
-        mkTab(1, "https://a.com", -1, 0, 1), // Win 1 (target)
-        mkTab(2, "https://b.com", 100, 0, 2), // Win 2, Group 100
-        mkTab(3, "https://b.com", 100, 1, 2), // Win 2, Group 100
+        mkTab(1, "https://a.com", { windowId: 1 }), // Win 1 (target)
+        mkTab(2, "https://b.com", { groupId: 100, windowId: 2 }), // Win 2, Group 100
+        mkTab(3, "https://b.com", { groupId: 100, windowId: 2 }), // Win 2, Group 100
       ];
       const plan = windowService.createConsolidationPlan(
         tabs,
@@ -110,10 +110,10 @@ describe("TabGroupingService", () => {
       };
 
       const tabs = [
-        mkTab(1, "https://github.com/project-a/1", 101),
-        mkTab(2, "https://github.com/project-a/2", 101),
-        mkTab(3, "https://github.com/project-b/1", 102), // Single tab for project-b segment
-        mkTab(4, "https://google.com/search", 103), // Single tab for google.com
+        mkTab(1, "https://github.com/project-a/1", { groupId: 101 }),
+        mkTab(2, "https://github.com/project-a/2", { groupId: 101 }),
+        mkTab(3, "https://github.com/project-b/1", { groupId: 102 }), // Single tab for project-b segment
+        mkTab(4, "https://google.com/search", { groupId: 103 }), // Single tab for google.com
       ];
 
       const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
@@ -147,6 +147,36 @@ describe("TabGroupingService", () => {
 
       expect(google?.tabIds).toHaveLength(1);
       expect(google?.groupId).toBeNull(); // Cleared for single tab
+    });
+  });
+
+  describe("splitByPath Sorting", () => {
+    it("should group by splitByPath and sort tabs alphabetically by title", () => {
+      const rulesByDomain: RulesByDomain = {
+        "github.com": {
+          domain: "github.com",
+          splitByPath: 1,
+        },
+      };
+
+      // Tabs in reverse alphabetical order of title
+      const tabs = [
+        mkTab(1, "https://github.com/project-a/1", { title: "B", index: 0 }),
+        mkTab(2, "https://github.com/project-a/2", { title: "A", index: 1 }),
+      ];
+
+      const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
+      const groupMap = service.buildGroupMap(tabs, rulesByDomain);
+      const states = service.buildGroupStates(groupMap, cache);
+
+      const group = states.find((s) => s.displayName.includes("project-a"));
+      expect(group).toBeDefined();
+      expect(group!.tabIds).toHaveLength(2);
+      
+      // Verify sorted order (A then B)
+      const sortedTabs = group!.tabIds.map(id => cache.get(id)!);
+      expect(sortedTabs[0].title).toBe("A");
+      expect(sortedTabs[1].title).toBe("B");
     });
   });
 
@@ -257,20 +287,22 @@ describe("TabGroupingService", () => {
 
   describe("calculateRepositionNeeds", () => {
     it("should flag a group for repositioning if internal tab order is incorrect", () => {
-      const tab1 = mkTab(1, "https://a.com", 10, 1);
-      const tab2 = mkTab(2, "https://b.com", 10, 0);
+      const tab1 = mkTab(1, "https://a.com", { groupId: 10, index: 1 });
+      const tab2 = mkTab(2, "https://b.com", { groupId: 10, index: 0 });
       const tabCache = new Map([
         [asTabId(1)!, tab1],
         [asTabId(2)!, tab2],
       ]);
 
-      const groupStates: any[] = [
+      const groupStates: GroupState[] = [
         {
           displayName: "a.com",
           sourceDomain: "a.com",
           tabIds: [asTabId(1)!, asTabId(2)!],
-          groupId: 10,
+          groupId: asGroupId(10)!,
           isExternal: false,
+          needsReposition: false,
+          collapsed: false,
         },
       ];
 
@@ -287,8 +319,8 @@ describe("TabGroupingService", () => {
     });
 
     it("Global Mode: should flag solo tabs from other windows for movement into the target window", () => {
-      const tab1 = mkTab(1, "https://a.com", -1, 0, 1); // Win 1, index 0
-      const tab2 = mkTab(2, "https://b.com", -1, 0, 2); // Win 2, index 0
+      const tab1 = mkTab(1, "https://a.com", { windowId: 1, index: 0 }); // Win 1, index 0
+      const tab2 = mkTab(2, "https://b.com", { windowId: 2, index: 0 }); // Win 2, index 0
 
       // In Global mode, tabCache contains tabs from ALL windows
       const tabCache = new Map([
@@ -296,13 +328,15 @@ describe("TabGroupingService", () => {
         [asTabId(2)!, tab2],
       ]);
 
-      const groupStates: any[] = [
+      const groupStates: GroupState[] = [
         {
           displayName: "a.com",
           sourceDomain: "a.com",
           tabIds: [asTabId(1)!],
           groupId: null,
           isExternal: false,
+          needsReposition: false,
+          collapsed: false,
         },
         {
           displayName: "b.com",
@@ -310,6 +344,8 @@ describe("TabGroupingService", () => {
           tabIds: [asTabId(2)!],
           groupId: null,
           isExternal: false,
+          needsReposition: false,
+          collapsed: false,
         },
       ];
 
@@ -341,7 +377,7 @@ describe("TabGroupingService", () => {
           tabIds: [asTabId(2)!],
           targetIndex: 1,
         },
-        { kind: "solo", tabIds: [asTabId(3)!], targetIndex: 2 },
+        { kind: "solo", tabId: asTabId(3)!, targetIndex: 2 },
       ];
 
       const live: OrderUnit[] = [
@@ -357,22 +393,25 @@ describe("TabGroupingService", () => {
           tabIds: [asTabId(2)!],
           targetIndex: 2,
         },
-        { kind: "solo", tabIds: [asTabId(3)!], targetIndex: 3 },
+        { kind: "solo", tabId: asTabId(3)!, targetIndex: 3 },
       ];
 
       const plan = service.buildOrderPlan(desired, live);
       expect(
         plan.toMove.some((u) => u.kind === "group" && u.groupId === 102),
       ).toBe(true);
-      expect(
-        plan.toMove.some((u) => u.kind === "solo" && u.tabIds[0] === 3),
-      ).toBe(true);
+      expect(plan.toMove.some((u) => u.kind === "solo" && u.tabId === 3)).toBe(
+        true,
+      );
     });
   });
 
   describe("QA Reproductions", () => {
     it("should PRESERVE the groupId for pinned tabs if they belong to an external (protected) group", () => {
-      const pinnedTab = mkTab(1, "https://google.com", 100, 0, 1, true);
+      const pinnedTab = mkTab(1, "https://google.com", {
+        groupId: 100,
+        pinned: true,
+      });
       const tabCache = new Map([[asTabId(1)!, pinnedTab]]);
       const protectedMeta: ProtectedTabMetaMap = new Map([
         [asTabId(1)!, { title: "Manual Group", originalGroupId: 100 }],
@@ -393,8 +432,8 @@ describe("TabGroupingService", () => {
     });
 
     it("should mark groups of internal pages as managed", () => {
-      const tab1 = mkTab(1, "edge://settings", 101);
-      const tab2 = mkTab(2, "edge://extensions", 101);
+      const tab1 = mkTab(1, "edge://settings", { groupId: 101 });
+      const tab2 = mkTab(2, "edge://extensions", { groupId: 101 });
       const groupIdToGroup = new Map([
         [101, { id: 101, title: "My Manual Internal Group" } as any],
       ]);
@@ -413,56 +452,14 @@ describe("TabGroupingService", () => {
   describe("Sorting & Hierarchy", () => {
     it("should sort groups by displayName, then by URL of the first tab", () => {
       const tabs = [
-        mkTab(1, "https://a.com/page1", 100),
-        mkTab(2, "https://a.com/page2", 100),
-        mkTab(3, "https://a.com/page3", 101),
-        mkTab(4, "https://a.com/page4", 101),
+        mkTab(1, "https://a.com/page1", { groupId: 100 }),
+        mkTab(2, "https://a.com/page2", { groupId: 100 }),
+        mkTab(3, "https://a.com/page3", { groupId: 101 }),
+        mkTab(4, "https://a.com/page4", { groupId: 101 }),
       ];
       // Force group names: Group 100 -> "A Group", Group 101 -> "A Group" (same name)
       // Group 100 URL: a.com/page1, Group 101 URL: a.com/page3
       const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
-      const groupMap: any = new Map([
-        [
-          "A Group",
-          {
-            tabs: [tabs[0], tabs[1]],
-            displayName: "A Group",
-            domains: new Set(["a.com"]),
-            groupId: 100,
-          },
-        ],
-        [
-          "A Group",
-          {
-            tabs: [tabs[2], tabs[3]],
-            displayName: "A Group",
-            domains: new Set(["a.com"]),
-            groupId: 101,
-          },
-        ],
-      ]);
-
-      const states = [
-        {
-          displayName: "A Group",
-          sourceDomain: "a.com",
-          tabIds: [asTabId(1)!, asTabId(2)!],
-          groupId: asGroupId(100),
-          collapsed: false,
-          needsReposition: false,
-          isExternal: false,
-        },
-        {
-          displayName: "A Group",
-          sourceDomain: "a.com",
-          tabIds: [asTabId(3)!, asTabId(4)!],
-          groupId: asGroupId(101),
-          collapsed: false,
-          needsReposition: false,
-          isExternal: false,
-        },
-      ];
-
       // Need to adjust states because displayName is the same, so they should be merged or ordered by URL.
       // Actually, my test setup might be flawed for this. Let's use different names.
 
@@ -498,8 +495,8 @@ describe("TabGroupingService", () => {
       };
 
       const tabs = [
-        mkTab(1, "https://manual.com/1", 500),
-        mkTab(2, "https://manual.com/2", 500), // Manual Group
+        mkTab(1, "https://manual.com/1", { groupId: 500 }),
+        mkTab(2, "https://manual.com/2", { groupId: 500 }), // Manual Group
         mkTab(3, "https://managed.com/1"),
         mkTab(4, "https://managed.com/2"), // Managed Group
         mkTab(5, "edge://settings"), // Internal Page
@@ -538,10 +535,10 @@ describe("TabGroupingService", () => {
       const rulesByDomain: RulesByDomain = {};
 
       const tabs = [
-        mkTab(1, "https://google.com/1", 101),
-        mkTab(2, "https://google.com/2", 101),
-        mkTab(3, "edge://settings/appearance", -1, 2),
-        mkTab(4, "edge://extensions/", -1, 3),
+        mkTab(1, "https://google.com/1", { groupId: 101 }),
+        mkTab(2, "https://google.com/2", { groupId: 101 }),
+        mkTab(3, "edge://settings/appearance", { index: 2 }),
+        mkTab(4, "edge://extensions/", { index: 3 }),
       ];
 
       const cache = new Map(tabs.map((t) => [asTabId(t.id)!, t]));
@@ -586,14 +583,9 @@ describe("TabGroupingService", () => {
               const count = r.isGroup ? 2 : 1;
               for (let i = 0; i < count; i++) {
                 const tid = asTabId(tabs.length + 1)!;
-                const t = mkTab(
-                  tid,
-                  `https://${r.domain}/${idx}/${i}`,
-                  -1,
-                  0,
-                  1,
-                  r.pinned,
-                );
+                const t = mkTab(tid, `https://${r.domain}/${idx}/${i}`, {
+                  pinned: r.pinned,
+                });
                 tabs.push(t);
                 cache.set(tid, t);
               }

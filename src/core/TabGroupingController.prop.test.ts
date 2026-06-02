@@ -7,7 +7,7 @@ import {
   isInternalTab,
 } from "utils/grouping";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { currentGroups, currentTabs, mkTab, mockChrome } from "./test-utils";
+import { mockState, mkTab, mockChrome } from "./test-utils";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 import TabGroupingController from "./TabGroupingController";
@@ -39,12 +39,43 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
     mockStore = { getState: vi.fn() };
 
     // Reset global chrome mock
-    vi.stubGlobal("chrome", mockChrome);
+    const currentMockChrome = {
+      ...mockChrome,
+      tabs: {
+        ...mockChrome.tabs,
+        group: vi.fn().mockImplementation((options) => {
+          const tabIds = Array.isArray(options.tabIds)
+            ? options.tabIds
+            : [options.tabIds];
+          let gid = options.groupId || 1000 + (tabIds[0] || 0);
+          mockState.currentTabs.forEach((t) => {
+            if (tabIds.includes(t.id)) t.groupId = gid;
+          });
+          if (!mockState.currentGroups.has(gid)) {
+            mockState.currentGroups.set(gid, {
+              id: gid,
+              title: options.title || "",
+              windowId:
+                mockState.currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
+            } as chrome.tabGroups.TabGroup);
+          }
+          return Promise.resolve(gid);
+        }),
+        ungroup: vi.fn().mockImplementation((ids) => {
+          const tabIds = Array.isArray(ids) ? ids : [ids];
+          mockState.currentTabs.forEach((t) => {
+            if (tabIds.includes(t.id)) t.groupId = -1;
+          });
+          return Promise.resolve();
+        }),
+      },
+    };
+    vi.stubGlobal("chrome", currentMockChrome);
 
     // Clear global simulation state
-    currentTabs.length = 0;
-    currentGroups.clear();
+    mockState.reset();
   });
+
 
   it("Invariant: Pinned tabs and internal pages always come first", async () => {
     await fc.assert(
@@ -52,15 +83,12 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
         fc.array(tabArb, { minLength: 5, maxLength: 20 }),
         async (rawTabs) => {
           // Setup tabs in the mock simulation
-          currentTabs.push(
+          mockState.currentTabs.push(
             ...rawTabs.map((t, i) =>
               mkTab(
                 i + 1,
                 `https://${t.domain}${t.path}`,
-                -1,
-                i,
-                t.windowId,
-                t.pinned,
+                { index: i, windowId: t.windowId, pinned: t.pinned },
               ),
             ),
           );
@@ -95,8 +123,8 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
             internalIdxs.forEach((idx) => expect(idx).toBeGreaterThan(lastPin));
           }
 
-          currentTabs.length = 0;
-          currentGroups.clear();
+          mockState.currentTabs.length = 0;
+          mockState.currentGroups.clear();
         },
       ),
       { numRuns: 20 },
@@ -105,10 +133,10 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
 
   it("Invariant: splitByPath rules correctly group tabs by sub-path", async () => {
     const domain = "github.com";
-    currentTabs.push(
-      mkTab(1, `https://${domain}/project-a/file1`, -1, 0, 1),
-      mkTab(2, `https://${domain}/project-a/file2`, -1, 1, 1),
-      mkTab(3, `https://${domain}/project-b/file1`, -1, 2, 1),
+    mockState.currentTabs.push(
+      mkTab(1, `https://${domain}/project-a/file1`, { index: 0, windowId: 1 }),
+      mkTab(2, `https://${domain}/project-a/file2`, { index: 1, windowId: 1 }),
+      mkTab(3, `https://${domain}/project-b/file1`, { index: 2, windowId: 1 }),
     );
 
     vi.mocked(mockStore.getState).mockResolvedValue({
