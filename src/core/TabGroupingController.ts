@@ -199,6 +199,7 @@ export default class TabGroupingController {
         currentState,
         protectedMeta,
         managedGroupIds,
+        !!groupingConfig.sortManualGroupTabs,
       );
       if (!res.success) throw res.error;
       currentState = res.value;
@@ -256,6 +257,7 @@ export default class TabGroupingController {
     state: BrowserState,
     providedProtectedMeta: ProtectedTabMetaMap,
     providedManagedGroupIds: Map<number, string>,
+    sortManualGroupTabs: boolean,
   ): Promise<Result<BrowserState, Error>> {
     try {
       // Phase 2a: Membership
@@ -297,11 +299,11 @@ export default class TabGroupingController {
         fresh.tabCache,
         windowId,
         fresh.managedGroupIds,
+        sortManualGroupTabs,
       );
 
       const desired = this.service.mapToOrderUnits(repositionStates);
       const live = this.service.getLiveUnits(fresh.scopedTabs);
-      console.log(live, desired);
       const orderPlan = this.service.buildOrderPlan(desired, live);
       const orderRes = await this.adapter.executeOrderPlan(
         orderPlan,
@@ -360,7 +362,6 @@ export default class TabGroupingController {
       ]);
       let state = initialState;
 
-      console.log(rawStore);
       const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
 
@@ -378,9 +379,8 @@ export default class TabGroupingController {
           state.allTabs,
           state.groupIdToGroup,
           rulesByDomain,
-          !!config.sortManualGroupTabs,
         );
-      console.log(protectedMeta, managedGroupIds, config);
+
       // Phase 1: Consolidation
       state = await this.runConsolidationPhase(
         state,
@@ -445,7 +445,6 @@ export default class TabGroupingController {
       state.allTabs,
       state.groupIdToGroup,
       rulesByDomain,
-      !!config.sortManualGroupTabs,
     );
     const tabCache = new Map<TabId, Tab>(
       state.allTabs.map((t) => [asTabId(t.id)!, t]),

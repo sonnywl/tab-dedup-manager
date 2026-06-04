@@ -634,6 +634,7 @@ export class TabGroupingService {
     tabCache: ReadonlyMap<TabId, Tab>,
     windowId?: WindowId,
     managedGroupIds: Map<number, string> = new Map(),
+    sortManualGroupTabs: boolean = false,
   ): GroupState[] {
     const allTabs = Array.from(tabCache.values());
 
@@ -699,8 +700,23 @@ export class TabGroupingService {
 
     const processStates = (states: GroupState[]) => {
       for (const s of states) {
+        // When sortManualGroupTabs is enabled, derive the desired tab order for external groups
+        // using the same compareTabOrder comparator used for overall tab ordering.
+        const resolvedState =
+          sortManualGroupTabs && s.isExternal
+            ? {
+                ...s,
+                tabIds: [...s.tabIds].sort((idA, idB) => {
+                  const a = tabCache.get(idA);
+                  const b = tabCache.get(idB);
+                  if (!a || !b) return 0;
+                  return this.compareTabOrder(a, b, managedGroupIds);
+                }),
+              }
+            : s;
+
         const needsReposition = !this.validateGroupState(
-          s,
+          resolvedState,
           tabCache,
           tabsInGroupCount,
           tabsInGroupIdMap,
@@ -708,19 +724,21 @@ export class TabGroupingService {
           windowId,
         );
         const currentTitle =
-          s.groupId !== null ? managedGroupIds.get(s.groupId as number) : null;
+          resolvedState.groupId !== null
+            ? managedGroupIds.get(resolvedState.groupId as number)
+            : null;
         const needsTitleUpdate =
-          s.groupId !== null &&
+          resolvedState.groupId !== null &&
           currentTitle !== null &&
-          currentTitle !== s.displayName;
+          currentTitle !== resolvedState.displayName;
 
         results.push({
-          ...s,
+          ...resolvedState,
           needsReposition,
           needsTitleUpdate,
           targetIndex: idx,
         });
-        idx += s.tabIds.length;
+        idx += resolvedState.tabIds.length;
       }
     };
 
