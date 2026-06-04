@@ -35,7 +35,6 @@ describe("WindowManagementService", () => {
         tabs,
         1, // numWindowsToKeep
         service,
-        new Map(),
         asWindowId(1), // target
       );
 
@@ -56,7 +55,6 @@ describe("WindowManagementService", () => {
         tabs,
         2,
         service,
-        new Map(),
         asWindowId(1),
       );
 
@@ -75,7 +73,6 @@ describe("WindowManagementService", () => {
         tabs,
         1,
         service,
-        new Map(),
         asWindowId(1),
       );
 
@@ -172,9 +169,9 @@ describe("TabGroupingService", () => {
       const group = states.find((s) => s.displayName.includes("project-a"));
       expect(group).toBeDefined();
       expect(group!.tabIds).toHaveLength(2);
-      
+
       // Verify sorted order (A then B)
-      const sortedTabs = group!.tabIds.map(id => cache.get(id)!);
+      const sortedTabs = group!.tabIds.map((id) => cache.get(id)!);
       expect(sortedTabs[0].title).toBe("A");
       expect(sortedTabs[1].title).toBe("B");
     });

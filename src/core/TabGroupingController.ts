@@ -147,7 +147,6 @@ export default class TabGroupingController {
     state: BrowserState,
     groupingConfig: GroupingConfig,
     activeWindowId: number,
-    protectedMeta: ProtectedTabMetaMap,
   ): Promise<BrowserState> {
     const numToKeep = groupingConfig.byWindow
       ? groupingConfig.numWindowsToKeep
@@ -159,7 +158,6 @@ export default class TabGroupingController {
       state.allTabs,
       numToKeep,
       this.service,
-      protectedMeta,
       asWindowId(activeWindowId),
     );
 
@@ -382,12 +380,7 @@ export default class TabGroupingController {
         );
 
       // Phase 1: Consolidation
-      state = await this.runConsolidationPhase(
-        state,
-        config,
-        activeWindowId,
-        protectedMeta,
-      );
+      state = await this.runConsolidationPhase(state, config, activeWindowId);
 
       // Phase 2: Grouping
       state = await this.runGroupingPhase(

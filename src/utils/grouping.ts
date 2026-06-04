@@ -1099,7 +1099,6 @@ export class WindowManagementService {
     tabs: Tab[],
     numWindowsToKeep: number,
     service: TabGroupingService,
-    protectedTabMeta: ProtectedTabMetaMap,
     targetWindowId: WindowId,
   ): ConsolidationPlan | null {
     const windowGroups = this.groupByWindow(tabs);
@@ -1125,12 +1124,7 @@ export class WindowManagementService {
 
     if (excess.length === 0) return null;
 
-    const mergePlan = this.calculateMergePlan(
-      retained,
-      excess,
-      service,
-      protectedTabMeta,
-    );
+    const mergePlan = this.calculateMergePlan(retained, excess, service);
 
     const groupMoves: { groupId: number; windowId: WindowId }[] = [];
     const tabMoves: { tabIds: number[]; windowId: WindowId }[] = [];
@@ -1179,7 +1173,6 @@ export class WindowManagementService {
     retainedWindows: Map<WindowId, Tab[]>,
     excessTabs: Tab[],
     service: TabGroupingService,
-    protectedTabMeta: ProtectedTabMetaMap = new Map(),
   ): Map<WindowId, TabId[]> {
     const plan = new Map<WindowId, TabId[]>();
     const domainCounts = new Map<WindowId, Map<Domain, number>>();
@@ -1207,13 +1200,8 @@ export class WindowManagementService {
 
     // Group all tabs from excess windows by their current grouping status
     for (const tab of excessTabs) {
-      // Mandate: If a tab is protected, it cannot be merged; skip it.
-      if (protectedTabMeta.has(asTabId(tab.id)!)) continue;
-
       if (isGrouped(tab)) {
         const gid = tab.groupId!;
-        // Mandate: If a group is protected, it cannot be merged; skip its tabs.
-        if (protectedTabMeta.has(asTabId(tab.id)!)) continue;
 
         if (!groupToTabs.has(gid)) groupToTabs.set(gid, []);
         groupToTabs.get(gid)!.push(tab);
