@@ -51,6 +51,10 @@
     "message": "Ungroup groups that only contain one tab",
     "description": "Checkbox label for ungrouping single tab groups."
   },
+  "sortManualGroupTabsLabel": {
+    "message": "Enable sorting for tabs in manual groups",
+    "description": "Checkbox label for enabling sorting of manual groups."
+  },
   "keepTabsPerWindowLabel": {
     "message": "Keep tabs grouped per window (or limit number of windows)",
     "description": "Checkbox label for window-scoped grouping."

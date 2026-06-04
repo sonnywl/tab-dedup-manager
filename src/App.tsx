@@ -205,6 +205,24 @@ const GroupingSettings = ({
           </span>
         </label>
       </div>
+      <div className="flex items-center gap-4 border-b border-gray-200 pb-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!config.sortManualGroupTabs}
+            onChange={(e) =>
+              onChange({
+                ...config,
+                sortManualGroupTabs: e.target.checked,
+              })
+            }
+            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">
+            {chrome.i18n.getMessage("sortManualGroupTabsLabel")}
+          </span>
+        </label>
+      </div>
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
