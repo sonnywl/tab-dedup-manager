@@ -33,8 +33,8 @@ export default defineConfig(() => ({
     alias: aliases,
   },
   build: {
-    sourcemap: true,
-    minify: false,
+    // sourcemap: true,
+    // minify: false,
     outDir: "./build",
     emptyOutDir: true,
     rollupOptions: {
