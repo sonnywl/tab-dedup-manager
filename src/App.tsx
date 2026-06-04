@@ -24,6 +24,7 @@ function useSyncStore() {
     grouping: {
       byWindow: false,
       ungroupSingleTab: false,
+      sortManualGroupTabs: false,
     },
   });
   const [store, setStore] = useState<any>(null);
@@ -36,6 +37,7 @@ function useSyncStore() {
           byWindow: false,
           numWindowsToKeep: 2,
           ungroupSingleTab: false,
+          sortManualGroupTabs: false,
         },
       });
       setStore(s);
@@ -47,6 +49,7 @@ function useSyncStore() {
             byWindow: false,
             numWindowsToKeep: 2,
             ungroupSingleTab: false,
+            sortManualGroupTabs: false,
           };
 
       setStateInternal({

@@ -18,7 +18,6 @@ export interface Rule {
 export interface RulesByDomain {
   [domain: string]: Rule;
 }
-
 export interface GroupingConfig {
   byWindow: boolean;
   numWindowsToKeep?: number | null | undefined;
@@ -160,6 +159,11 @@ export function validateGroupingConfig(c: unknown): c is GroupingConfig {
   if (
     config.ungroupSingleTab != null &&
     typeof config.ungroupSingleTab !== "boolean"
+  )
+    return false;
+  if (
+    config.sortManualGroupTabs != null &&
+    typeof config.sortManualGroupTabs !== "boolean"
   )
     return false;
 

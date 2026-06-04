@@ -22,3 +22,11 @@ Follow this 3-step process for every new feature or significant code change:
 - Update `SPEC.md` and `GEMINI.md` (if applicable) to document new behaviors, invariants, or configurations.
 - Verify that the new code complies with architectural mandates.
 - Run build/linting commands to ensure structural integrity.
+
+## Feature Toggle Management
+When adding or updating configuration flags (e.g., in `GroupingConfig`):
+1.  **Types**: Update `GroupingConfig` in `src/types.ts`.
+2.  **Validation**: Update `validateGroupingConfig` in `src/types.ts` to ensure the new flag is validated.
+3.  **App State**: Initialize the new flag in `src/App.tsx` (default state, `startSyncStore` call, and validation fallback).
+4.  **Persistence**: Ensure the controller's `loadConfiguration` correctly maps the flag from the store.
+5.  **Logic**: Implement the feature in `TabGroupingController.ts` and downstream services, ensuring the flag is passed and used correctly.

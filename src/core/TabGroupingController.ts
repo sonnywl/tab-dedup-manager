@@ -85,6 +85,7 @@ export default class TabGroupingController {
         byWindow: !!grouping.byWindow,
         numWindowsToKeep: grouping.numWindowsToKeep,
         ungroupSingleTab: !!grouping.ungroupSingleTab,
+        sortManualGroupTabs: !!grouping.sortManualGroupTabs,
       },
     };
   }
@@ -209,6 +210,7 @@ export default class TabGroupingController {
   /**
    * Pure logic transformation from a known browser state to grouping logic context.
    */
+
   private buildGroupingContext(
     state: BrowserState,
     windowId: WindowId,
@@ -358,6 +360,7 @@ export default class TabGroupingController {
       ]);
       let state = initialState;
 
+      console.log(rawStore);
       const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
 
@@ -375,8 +378,9 @@ export default class TabGroupingController {
           state.allTabs,
           state.groupIdToGroup,
           rulesByDomain,
+          !!config.sortManualGroupTabs,
         );
-
+      console.log(protectedMeta, managedGroupIds, config);
       // Phase 1: Consolidation
       state = await this.runConsolidationPhase(
         state,
@@ -441,6 +445,7 @@ export default class TabGroupingController {
       state.allTabs,
       state.groupIdToGroup,
       rulesByDomain,
+      !!config.sortManualGroupTabs,
     );
     const tabCache = new Map<TabId, Tab>(
       state.allTabs.map((t) => [asTabId(t.id)!, t]),
