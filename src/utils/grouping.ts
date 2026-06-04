@@ -27,6 +27,13 @@ import {
 // CORE LOGIC (Domain Layer)
 // ============================================================================
 
+export enum Category {
+  INTERNAL = 0,
+  MANAGED = 1,
+  MANUAL = 2,
+  SOLO = 3,
+}
+
 export function isInternalTab(tab: Tab): boolean {
   if (!tab.url) return false;
   const internalProtocols = [
@@ -42,6 +49,68 @@ export function isInternalTab(tab: Tab): boolean {
 }
 
 export class TabGroupingService {
+  private getCategory(
+    unit: OrderUnit,
+    tabCache: ReadonlyMap<TabId, Tab>,
+    managedGroupIds: Map<number, string>,
+  ): Category {
+    const tab = tabCache.get(
+      unit.kind === "group" ? unit.tabIds[0] : unit.tabId,
+    )!;
+    if (isInternalTab(tab)) return Category.INTERNAL;
+    if (unit.kind === "group") {
+      return managedGroupIds.has(unit.groupId)
+        ? Category.MANAGED
+        : Category.MANUAL;
+    }
+    return Category.SOLO;
+  }
+
+  public verifyState(
+    tabs: Tab[],
+    groupIdToGroup: Map<number, chrome.tabGroups.TabGroup>,
+    rulesByDomain: RulesByDomain,
+    config: GroupingConfig,
+    activeWindowId: WindowId,
+    windowService: WindowManagementService,
+  ): boolean {
+    const { managedGroupIds } = this.identifyProtectedTabs(
+      tabs,
+      groupIdToGroup,
+      rulesByDomain,
+    );
+    const tabCache = new Map<TabId, Tab>(tabs.map((t) => [asTabId(t.id)!, t]));
+
+    const windowMap = config.byWindow
+      ? windowService.groupByWindow(tabs)
+      : new Map([[activeWindowId, tabs]]);
+
+    for (const windowTabs of windowMap.values()) {
+      const units = this.getLiveUnits(windowTabs);
+
+      let lastCategory = -1;
+      const seenGroups = new Set<number>();
+      let lastGroupId = -1;
+
+      for (const unit of units) {
+        // 1. Cohesion Check (No group interleaving)
+        if (unit.kind === "group") {
+          if (unit.groupId !== lastGroupId && seenGroups.has(unit.groupId)) {
+            return false;
+          }
+          seenGroups.add(unit.groupId);
+        }
+        lastGroupId = unit.kind === "group" ? unit.groupId : -1;
+
+        // 2. Category Order Check (Internal -> Managed -> Manual -> Solo)
+        const category = this.getCategory(unit, tabCache, managedGroupIds);
+        if (category < lastCategory) return false;
+        lastCategory = category;
+      }
+    }
+    return true;
+  }
+
   normalizeDomain(domain: string): Domain {
     const d = domain.toLowerCase();
     return asDomain(d.startsWith("www.") ? d.slice(4) : d);

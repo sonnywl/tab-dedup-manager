@@ -400,14 +400,16 @@ export default class TabGroupingController {
       );
 
       // Phase 3: Verification
-      const verification = await this.verifyGrouping(
-        config,
+      const isVerified = this.service.verifyState(
+        state.allTabs,
+        state.groupIdToGroup,
         rulesByDomain,
-        activeWindowId,
+        config,
+        asWindowId(activeWindowId),
+        this.windowService,
       );
 
-      state = verification.state;
-      if (!verification.isVerified) {
+      if (!isVerified) {
         console.warn("Verification failed, skipping retry for idempotency.");
       }
 
@@ -418,65 +420,5 @@ export default class TabGroupingController {
     } finally {
       this.isProcessing = false;
     }
-  }
-
-  private getCategory(
-    unit: OrderUnit,
-    tabCache: ReadonlyMap<TabId, Tab>,
-    managedGroupIds: Map<number, string>,
-  ): number {
-    const tab = tabCache.get(
-      unit.kind === "group" ? unit.tabIds[0] : unit.tabId,
-    )!;
-    if (isInternalTab(tab)) return 0;
-    if (unit.kind === "group") {
-      return managedGroupIds.has(unit.groupId) ? 1 : 2;
-    }
-    return 3; // SOLO
-  }
-
-  private async verifyGrouping(
-    config: GroupingConfig,
-    rulesByDomain: RulesByDomain,
-    activeWindowId: number,
-  ): Promise<{ isVerified: boolean; state: BrowserState }> {
-    const state = await this.refreshState(true);
-    const { managedGroupIds } = this.service.identifyProtectedTabs(
-      state.allTabs,
-      state.groupIdToGroup,
-      rulesByDomain,
-    );
-    const tabCache = new Map<TabId, Tab>(
-      state.allTabs.map((t) => [asTabId(t.id)!, t]),
-    );
-
-    const windowMap = config.byWindow
-      ? this.windowService.groupByWindow(state.allTabs)
-      : new Map([[asWindowId(activeWindowId), state.allTabs]]);
-
-    for (const tabs of windowMap.values()) {
-      const units = this.service.getLiveUnits(tabs);
-
-      let lastCategory = -1;
-      const seenGroups = new Set<number>();
-      let lastGroupId = -1;
-
-      for (const unit of units) {
-        // 1. Cohesion Check (No group interleaving)
-        if (unit.kind === "group") {
-          if (unit.groupId !== lastGroupId && seenGroups.has(unit.groupId)) {
-            return { isVerified: false, state };
-          }
-          seenGroups.add(unit.groupId);
-        }
-        lastGroupId = unit.kind === "group" ? unit.groupId : -1;
-
-        // 2. Category Order Check (Internal -> Managed -> Manual -> Solo)
-        const category = this.getCategory(unit, tabCache, managedGroupIds);
-        if (category < lastCategory) return { isVerified: false, state };
-        lastCategory = category;
-      }
-    }
-    return { isVerified: true, state };
   }
 }
