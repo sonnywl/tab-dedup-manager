@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { Tab, asTabId } from "@/types";
+
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
 // Mocking chrome API globally

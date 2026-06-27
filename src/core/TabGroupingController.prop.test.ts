@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 
-import { SyncStore, SyncStoreState } from "@/types";
+import { SyncStore } from "@/types";
 import {
   TabGroupingService,
   WindowManagementService,

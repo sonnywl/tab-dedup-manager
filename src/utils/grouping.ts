@@ -2,6 +2,7 @@ import {
   ConsolidationPlan,
   Domain,
   GroupId,
+  GroupingConfig,
   GroupMap,
   GroupMapEntry,
   GroupState,

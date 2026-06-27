@@ -1,7 +1,6 @@
 import {
   BrowserState,
   GroupingConfig,
-  OrderUnit,
   ProtectedTabMetaMap,
   Result,
   RulesByDomain,
@@ -18,7 +17,6 @@ import {
 import {
   TabGroupingService,
   WindowManagementService,
-  isInternalTab,
 } from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";

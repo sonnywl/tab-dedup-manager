@@ -58,6 +58,27 @@ export const mkTab = (
 };
 
 /**
+ * Creates a mock Chrome TabGroup object for testing.
+ */
+export const mkGroup = (
+  id: number,
+  title: string,
+  options: {
+    windowId?: number;
+    collapsed?: boolean;
+    color?: chrome.tabGroups.Color;
+    shared?: boolean;
+  } = {},
+): chrome.tabGroups.TabGroup => ({
+  id,
+  title,
+  windowId: options.windowId ?? 1,
+  collapsed: options.collapsed ?? false,
+  color: options.color ?? "blue",
+  shared: options.shared ?? false,
+});
+
+/**
  * Helper to extract tab IDs from an array of tabs and cast them to TabId.
  */
 export const getTabIds = (tabs: Tab[]) => tabs.map((t) => asTabId(t.id)!);

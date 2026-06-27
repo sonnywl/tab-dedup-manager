@@ -3,15 +3,12 @@ import {
   MembershipPlan,
   OrderPlan,
   Result,
-  RulesByDomain,
   Tab,
   TabId,
   WindowId,
   asTabId,
   isDefined,
 } from "@/types";
-
-import { TabGroupingService } from "utils/grouping";
 
 // ============================================================================
 // UTILITIES

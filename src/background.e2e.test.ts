@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChromeTabAdapter from "./core/ChromeTabAdapter";
 import TabGroupingController from "./core/TabGroupingController";
 import fc from "fast-check";
-import { mkTab, mockState, mockChrome } from "./core/test-utils";
+import { mkTab, mkGroup, mockState, mockChrome } from "./core/test-utils";
 
 // ============================================================================
 // MOCKS & SETUP - MUST BE AT TOP
@@ -295,7 +295,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         async (rawTabs) => {
           const rulesByDomain: RulesByDomain = {};
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, -1, i, rt.windowId),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, { groupId: -1, index: i, windowId: rt.windowId }),
           );
 
           const windows = [...new Set(tabs.map((t) => t.windowId))];
@@ -334,7 +334,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         async (rawTabs, activeWindowId) => {
           const rulesByDomain: RulesByDomain = {};
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, -1, i, rt.windowId),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, { groupId: -1, index: i, windowId: rt.windowId }),
           );
 
           const groupMap = service.buildGroupMap(tabs, rulesByDomain);
@@ -764,7 +764,7 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
 
     mockState.currentTabs = tabs;
     mockState.currentGroups = new Map([
-      [101, { id: 101, title: "My Manual Group", windowId: 1 }],
+      [101, mkGroup(101, "My Manual Group", { windowId: 1 })],
     ]);
 
     await controller.execute();
@@ -853,7 +853,7 @@ describe("TabGrouping E2E Deduplication Integration Tests", () => {
 
     mockState.currentTabs = tabs;
     mockState.currentGroups = new Map([
-      [101, { id: 101, title: "My Manual Group", windowId: 1 }],
+      [101, mkGroup(101, "My Manual Group", { windowId: 1 })],
     ]);
 
     await controller.execute();
@@ -923,8 +923,8 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     mockState.currentTabs = tabs;
     mockState.currentGroups = new Map();
-    mockState.currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
-    mockState.currentGroups.set(200, { id: 200, title: "bing.com", windowId: 1 });
+    mockState.currentGroups.set(100, mkGroup(100, "google.com", { windowId: 1 }));
+    mockState.currentGroups.set(200, mkGroup(200, "bing.com", { windowId: 1 }));
 
     // Trigger 1: Execute
     await controller.execute();
@@ -945,7 +945,7 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     // Tab 5 stays unsorted (-1)
     const t5 = mockState.currentTabs.find((t) => t.id === 5);
-    expect(t5.groupId).toBe(-1);
+    expect(t5!.groupId).toBe(-1);
   });
 
   it("E2E: single managed group tab is ungrouped immediately", async () => {

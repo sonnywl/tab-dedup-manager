@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
-import { mkTab } from "./test-utils";
+
 
 const mockChrome = {
   tabs: {
