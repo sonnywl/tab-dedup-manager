@@ -1,18 +1,10 @@
 {
   "addons": {
-    "webex_search_viewer@time_current.com": {
-      "updates": [
-        {
-          "version": "2.22.70",
-          "update_link": "https://sea-lion-app-i977g.ondigitalocean.app/web-ext-artifacts/fb64573b4a24464eb356-2.22.70.xpi"
-        }
-      ]
-    },
     "tab_dedup_manager@time_current.com": {
       "updates": [
         {
-          "version": "0.8.2",
-          "update_link": "https://sea-lion-app-i977g.ondigitalocean.app/web-ext-artifacts/be9d5ca55c914dcabde9-0.8.2.xpi"
+          "version": "0.8.3",
+          "update_link": "https://cdn-files.jagdgeschwader262000.workers.dev/web-ext-artifacts/be9d5ca55c914dcabde9-0.8.3.xpi"
         }
       ]
     }
