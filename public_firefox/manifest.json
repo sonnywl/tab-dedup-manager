@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_appName__",
   "default_locale": "en",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "",
   "options_ui": {
     "page": "index.html",
@@ -15,7 +15,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "tab_dedup_manager@time_current.com",
-      "update_url": "https://sea-lion-app-i977g.ondigitalocean.app/updates.json",
+      "update_url": "https://cdn-files.jagdgeschwader262000.workers.dev/updates.json",
       "data_collection_permissions": {
         "required": [
           "none"
