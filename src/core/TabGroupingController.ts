@@ -14,10 +14,7 @@ import {
   isDefined,
   validateRule,
 } from "@/types";
-import {
-  TabGroupingService,
-  WindowManagementService,
-} from "utils/grouping";
+import { TabGroupingService, WindowManagementService } from "utils/grouping";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
@@ -89,26 +86,14 @@ export default class TabGroupingController {
   }
 
   /**
-   * Phase 0: Cleanup (Duplicates, Auto-Delete, Internal Pre-sort).
+   * Phase 0: Cleanup (Deduplication, Auto-Delete, Internal Pre-sort).
    */
   private async runCleanupPhase(
     state: BrowserState,
     config: GroupingConfig,
     rulesByDomain: RulesByDomain,
-    skipDestructive?: boolean,
   ): Promise<BrowserState> {
     let modified = false;
-
-    if (!skipDestructive) {
-      const toRemove = Array.from(
-        this.service.getCleanupTabIds(state.allTabs, rulesByDomain),
-      );
-
-      if (toRemove.length > 0) {
-        await this.adapter.removeTabs(toRemove);
-        modified = true;
-      }
-    }
 
     const internalMoves = this.service.calculateInternalPageMoves(
       state.allTabs,
@@ -120,6 +105,16 @@ export default class TabGroupingController {
 
     if (config.ungroupSingleTab) {
       await this.adapter.ungroupSingleTabGroups(state.allTabs);
+      modified = true;
+    }
+
+    // Deduplication & Auto-Delete
+    const toRemove = this.service.getCleanupTabIds(
+      state.allTabs,
+      rulesByDomain,
+    );
+    if (toRemove.size > 0) {
+      await this.adapter.removeTabs([...toRemove]);
       modified = true;
     }
 
@@ -361,13 +356,10 @@ export default class TabGroupingController {
       const configResult = await this.loadConfiguration(rawStore);
       const { rulesByDomain, config } = configResult;
 
-      // Phase 0: Cleanup
-      state = await this.runCleanupPhase(
-        state,
-        config,
-        rulesByDomain,
-        options?.skipCleanup,
-      );
+      // Phase 0: Cleanup (skip if explicitly requested)
+      if (!options?.skipCleanup) {
+        state = await this.runCleanupPhase(state, config, rulesByDomain);
+      }
 
       // This ensures that manual groups moving across windows are remembered and re-bundled.
       const { protectedMeta, managedGroupIds } =
