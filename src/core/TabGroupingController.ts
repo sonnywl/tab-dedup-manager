@@ -340,7 +340,7 @@ export default class TabGroupingController {
     }
   }
 
-  async execute(options?: { skipCleanup?: boolean }): Promise<void> {
+  async execute(): Promise<void> {
     if (this.isProcessing) return;
     this.isProcessing = true;
 
@@ -357,9 +357,7 @@ export default class TabGroupingController {
       const { rulesByDomain, config } = configResult;
 
       // Phase 0: Cleanup (skip if explicitly requested)
-      if (!options?.skipCleanup) {
-        state = await this.runCleanupPhase(state, config, rulesByDomain);
-      }
+      state = await this.runCleanupPhase(state, config, rulesByDomain);
 
       // This ensures that manual groups moving across windows are remembered and re-bundled.
       const { protectedMeta, managedGroupIds } =

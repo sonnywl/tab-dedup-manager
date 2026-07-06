@@ -152,8 +152,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
     );
   });
 
-
-
   it("Invariant: Managed group titles follow rules or domain defaults", async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -295,7 +293,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         async (rawTabs) => {
           const rulesByDomain: RulesByDomain = {};
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, { groupId: -1, index: i, windowId: rt.windowId }),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, {
+              groupId: -1,
+              index: i,
+              windowId: rt.windowId,
+            }),
           );
 
           const windows = [...new Set(tabs.map((t) => t.windowId))];
@@ -334,7 +336,11 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         async (rawTabs, activeWindowId) => {
           const rulesByDomain: RulesByDomain = {};
           const tabs = rawTabs.map((rt, i) =>
-            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, { groupId: -1, index: i, windowId: rt.windowId }),
+            mkTab(i + 1, `https://${rt.domain}/${rt.path}`, {
+              groupId: -1,
+              index: i,
+              windowId: rt.windowId,
+            }),
           );
 
           const groupMap = service.buildGroupMap(tabs, rulesByDomain);
@@ -549,8 +555,6 @@ describe("TabGrouping E2E SplitPath Comprehensive Integration Tests", () => {
       expect.objectContaining({ title: "images - bing.com" }),
     ]);
   });
-
-
 });
 
 describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
@@ -630,8 +634,6 @@ describe("TabGrouping E2E Window Consolidation Integration Tests", () => {
     expect([1, 2]).toContain(movedTab5![1].windowId);
     expect([1, 2]).toContain(movedTab6![1].windowId);
   });
-
-
 });
 
 describe("TabGrouping E2E Auto-Delete Integration Tests", () => {
@@ -923,7 +925,10 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     mockState.currentTabs = tabs;
     mockState.currentGroups = new Map();
-    mockState.currentGroups.set(100, mkGroup(100, "google.com", { windowId: 1 }));
+    mockState.currentGroups.set(
+      100,
+      mkGroup(100, "google.com", { windowId: 1 }),
+    );
     mockState.currentGroups.set(200, mkGroup(200, "bing.com", { windowId: 1 }));
 
     // Trigger 1: Execute
@@ -962,7 +967,11 @@ describe("TabGrouping E2E Mixed Grouping & Scavenging Integration Tests", () => 
 
     mockState.currentTabs = tabs;
     mockState.currentGroups = new Map();
-    mockState.currentGroups.set(100, { id: 100, title: "google.com", windowId: 1 });
+    mockState.currentGroups.set(100, {
+      id: 100,
+      title: "google.com",
+      windowId: 1,
+    });
 
     await controller.execute();
 
@@ -1115,106 +1124,6 @@ describe("TabGrouping E2E Title Management Tests", () => {
       expect.any(Number),
       expect.objectContaining({ title: "google.com" }),
     );
-  });
-});
-
-describe("TabGrouping E2E skipCleanup Flag Tests", () => {
-  let controller: TabGroupingController;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const service = new TabGroupingService();
-    const windowService = new WindowManagementService();
-    const adapter = new ChromeTabAdapter();
-    const store = {
-      getState: vi.fn().mockImplementation(async () => {
-        const rules = await mockChrome.storage.local.get("rules");
-        const grouping = await mockChrome.storage.local.get("grouping");
-        return {
-          rules: rules.rules || [],
-          grouping: grouping.grouping || {
-            byWindow: false,
-            numWindowsToKeep: 2,
-            ungroupSingleTab: false,
-            processGroupOnChange: false,
-          },
-        };
-      }),
-    };
-    controller = new TabGroupingController(
-      service,
-      windowService,
-      adapter,
-      store as any,
-    );
-    (controller as any).isProcessing = false;
-
-    mockState.currentTabs = [];
-    mockState.currentGroups = new Map();
-    mockChrome.windows.getCurrent.mockResolvedValue({ id: 1, type: "normal" });
-    mockChrome.windows.getAll.mockResolvedValue([{ id: 1, type: "normal" }]);
-  });
-
-  it("E2E: skipCleanup: true prevents deduplication", async () => {
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: [],
-      grouping: { byWindow: false },
-    });
-
-    const tabs = [
-      mkTab(1, "https://dup.com/page", { groupId: -1, index: 0, windowId: 1 }),
-      mkTab(2, "https://dup.com/page", { groupId: -1, index: 1, windowId: 1 }),
-    ];
-    mockState.currentTabs = tabs;
-
-    await controller.execute({ skipCleanup: true });
-
-    // Deduplication would have called remove(2). Verify it was NOT called.
-    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
-
-    // But it SHOULD still group them
-    expect(mockChrome.tabs.group).toHaveBeenCalled();
-    const t1 = mockState.currentTabs.find((t) => t.id === 1)!;
-    const t2 = mockState.currentTabs.find((t) => t.id === 2)!;
-    expect(t1.groupId).toBe(t2.groupId);
-    expect(t1.groupId).not.toBe(-1);
-  });
-
-  it("E2E: skipCleanup: true prevents auto-delete", async () => {
-    const rules = [{ domain: "trash.com", autoDelete: true }];
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: rules,
-      grouping: { byWindow: false },
-    });
-
-    const tabs = [mkTab(1, "https://trash.com/ads", {})];
-    mockState.currentTabs = tabs;
-
-    await controller.execute({ skipCleanup: true });
-
-    // Auto-delete would have called remove(1). Verify it was NOT called.
-    expect(mockChrome.tabs.remove).not.toHaveBeenCalled();
-  });
-
-  it("E2E: skipCleanup: false (default) performs deduplication and auto-delete", async () => {
-    const rules = [{ domain: "trash.com", autoDelete: true }];
-    mockChrome.storage.local.get.mockResolvedValue({
-      rules: rules,
-      grouping: { byWindow: false },
-    });
-
-    const tabs = [
-      mkTab(1, "https://trash.com/ads", {}),
-      mkTab(2, "https://dup.com/page", {}),
-      mkTab(3, "https://dup.com/page", {}),
-    ];
-    mockState.currentTabs = tabs;
-
-    await controller.execute(); // default skipCleanup: false
-
-    const removedIds = mockChrome.tabs.remove.mock.calls.flatMap((c) => c[0]);
-    expect(removedIds).toContain(1); // Auto-delete
-    expect(removedIds).toContain(3); // Deduplication
   });
 });
 

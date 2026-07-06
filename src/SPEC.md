@@ -33,7 +33,6 @@ The code follows a strict layered architecture to ensure testability, maintainab
 
 - **Responsibility**: Orchestration, workflow management, and state fingerprinting.
 - **Unified Flow**: Treats both "Global" and "Per-Window" grouping as a single mapping operation. Global mode is simply a window map with one entry (the active window).
-- **Execution**: The `execute` method accepts an optional `skipCleanup` flag to bypass destructive global operations (deduplication, auto-delete) during automatic triggers.
 - **Dependency Injection**: Services and adapters are injected via the constructor, allowing for easy mocking in tests.
 - **Thinking -> Doing separation**: The logic is split into a pure pipeline (Thinking) and a surgical execution (Doing).
 - **Logical Efficiency**: Ensures exactly **two** full browser state captures per run (one for the fingerprint, one for the execution pass).
