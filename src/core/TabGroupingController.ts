@@ -333,8 +333,6 @@ export default class TabGroupingController {
         await this.adapter.updateBadge(toRemove.size.toString());
         return;
       }
-
-      await this.adapter.updateBadge("!");
     } catch (err) {
       console.warn("Failed to update badge:", err);
     }
@@ -397,6 +395,7 @@ export default class TabGroupingController {
       this.adapter.updateBadge("");
     } catch (err) {
       console.warn("Execute error:", err);
+      console.trace();
       this.adapter.updateBadge("!", "#FFA500");
     } finally {
       this.isProcessing = false;

@@ -928,7 +928,6 @@ export class TabGroupingService {
       // Need to move if not in LIS OR if targetIndex is different
       return !isInOrder || (liveUnit && liveUnit.targetIndex !== u.targetIndex);
     });
-    console.log(toMove);
     return {
       desired,
       toMove,
