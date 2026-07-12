@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ChromeTabAdapter from "./ChromeTabAdapter";
 
-
 const mockChrome = {
   tabs: {
     query: vi.fn(),

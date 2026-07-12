@@ -25,10 +25,20 @@ describe("ChromeTabAdapter - executeOrderPlan", () => {
   it("should move a group of tabs using tabGroups.move", async () => {
     const plan = {
       desired: [
-        { kind: "group", groupId: 101 as any, tabIds: [1, 2] as any, targetIndex: 0 },
+        {
+          kind: "group",
+          groupId: 101 as any,
+          tabIds: [1, 2] as any,
+          targetIndex: 0,
+        },
       ],
       toMove: [
-        { kind: "group", groupId: 101 as any, tabIds: [1, 2] as any, targetIndex: 0 },
+        {
+          kind: "group",
+          groupId: 101 as any,
+          tabIds: [1, 2] as any,
+          targetIndex: 0,
+        },
       ],
     };
 

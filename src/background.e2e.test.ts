@@ -138,7 +138,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const states = service.buildGroupStates(
             groupMap,
             cache,
-            undefined,
             managedGroupIds,
           );
 
@@ -172,12 +171,7 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const cache = new Map<TabId, Tab>(
             tabs.map((t) => [asTabId(t.id)!, t]),
           );
-          const states = service.buildGroupStates(
-            groupMap,
-            cache,
-            undefined,
-            new Map(),
-          );
+          const states = service.buildGroupStates(groupMap, cache, new Map());
 
           states.forEach((s) => {
             if (s.tabIds.length < 2) return;
@@ -259,7 +253,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
         const states = service.buildGroupStates(
           groupMap,
           cache,
-          undefined,
           managedGroupIds,
         );
 
@@ -311,7 +304,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
             const states = service.buildGroupStates(
               groupMap,
               cache,
-              undefined,
               new Map<number, string>(),
             );
 
@@ -352,7 +344,6 @@ describe("TabGrouping E2E Property-Based Tests (fast-check)", () => {
           const states = service.buildGroupStates(
             groupMap,
             cache,
-            undefined,
             managedGroupIds,
           );
 

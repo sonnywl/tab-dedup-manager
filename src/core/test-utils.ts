@@ -8,7 +8,7 @@ export const mockState = {
   reset: () => {
     mockState.currentTabs.length = 0;
     mockState.currentGroups.clear();
-  }
+  },
 };
 
 /**
@@ -94,7 +94,9 @@ export const moveTabsInMock = (
   const ids = Array.isArray(tabIds) ? tabIds : [tabIds];
 
   // 1. Separate tabs being moved and those staying
-  const tabsToMove = ids.map((id) => mockState.currentTabs.find((t) => t.id === id)!);
+  const tabsToMove = ids.map(
+    (id) => mockState.currentTabs.find((t) => t.id === id)!,
+  );
   const otherTabs = mockState.currentTabs.filter(
     (t) => t.id != null && !ids.includes(t.id),
   );
@@ -173,7 +175,8 @@ export const mockChrome = {
           id: gid,
           title: "",
           windowId:
-            mockState.currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
+            mockState.currentTabs.find((t) => tabIds.includes(t.id))
+              ?.windowId || 1,
           collapsed: false,
           color: "blue",
           shared: false,
@@ -200,10 +203,14 @@ export const mockChrome = {
 
       return Promise.resolve([]);
     }),
-    query: vi.fn().mockImplementation(() => Promise.resolve([...mockState.currentTabs])),
+    query: vi
+      .fn()
+      .mockImplementation(() => Promise.resolve([...mockState.currentTabs])),
     remove: vi.fn().mockImplementation((ids) => {
       const toRemove = Array.isArray(ids) ? ids : [ids];
-      mockState.currentTabs = mockState.currentTabs.filter((t) => !toRemove.includes(t.id));
+      mockState.currentTabs = mockState.currentTabs.filter(
+        (t) => !toRemove.includes(t.id),
+      );
       return Promise.resolve();
     }),
     onCreated: { addListener: vi.fn() },

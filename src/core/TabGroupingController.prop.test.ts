@@ -56,7 +56,8 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
               id: gid,
               title: options.title || "",
               windowId:
-                mockState.currentTabs.find((t) => tabIds.includes(t.id))?.windowId || 1,
+                mockState.currentTabs.find((t) => tabIds.includes(t.id))
+                  ?.windowId || 1,
             } as chrome.tabGroups.TabGroup);
           }
           return Promise.resolve(gid);
@@ -76,7 +77,6 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
     mockState.reset();
   });
 
-
   it("Invariant: Pinned tabs and internal pages always come first", async () => {
     await fc.assert(
       fc.asyncProperty(
@@ -85,11 +85,11 @@ describe("TabGroupingController Stability & Invariants (Snapshot-Based)", () => 
           // Setup tabs in the mock simulation
           mockState.currentTabs.push(
             ...rawTabs.map((t, i) =>
-              mkTab(
-                i + 1,
-                `https://${t.domain}${t.path}`,
-                { index: i, windowId: t.windowId, pinned: t.pinned },
-              ),
+              mkTab(i + 1, `https://${t.domain}${t.path}`, {
+                index: i,
+                windowId: t.windowId,
+                pinned: t.pinned,
+              }),
             ),
           );
 

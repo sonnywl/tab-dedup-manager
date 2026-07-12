@@ -121,12 +121,7 @@ describe("TabGroupingService", () => {
       ]);
 
       const groupMap = service.buildGroupMap(tabs, rulesByDomain);
-      const states = service.buildGroupStates(
-        groupMap,
-        cache,
-        new Map(),
-        managedGroupIds,
-      );
+      const states = service.buildGroupStates(groupMap, cache, managedGroupIds);
 
       const projectA = states.find(
         (s) => s.displayName === "project-a - github.com",
@@ -542,12 +537,7 @@ describe("TabGroupingService", () => {
       const managedGroupIds = new Map([[101, "google.com"]]);
 
       const groupMap = service.buildGroupMap(tabs, rulesByDomain);
-      const states = service.buildGroupStates(
-        groupMap,
-        cache,
-        new Map(),
-        managedGroupIds,
-      );
+      const states = service.buildGroupStates(groupMap, cache, managedGroupIds);
 
       const repositioned = service.calculateRepositionNeeds(states, cache);
 

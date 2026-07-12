@@ -26,9 +26,8 @@ if (!("browser" in self)) self.browser = self.chrome;
 const localStorage = browser.storage.local;
 
 const get = async (key) => {
-  const state = (!key || !key.length)
-    ? localStorage.get(null)
-    : localStorage.get(key);
+  const state =
+    !key || !key.length ? localStorage.get(null) : localStorage.get(key);
   return state || {};
 };
 
@@ -47,6 +46,7 @@ export default async function startSyncStore(defaultState = {}) {
       if (prevHandler) browser.storage.onChanged.removeListener(prevHandler);
 
       const handler = async (changes, area) => {
+        if (area !== "local") return;
         const state = await get();
         const prevState = {};
 

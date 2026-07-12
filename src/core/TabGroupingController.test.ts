@@ -170,6 +170,8 @@ describe("TabGroupingController", () => {
 
   describe("Core Logic Unit Tests", () => {
     it("blocks concurrent processing via instance flag", async () => {
+      await new Promise((r) => setTimeout(r, 300));
+      mockChrome.tabs.query.mockClear();
       (controller as any).isProcessing = true;
       await controller.execute();
       expect(mockChrome.tabs.query).not.toHaveBeenCalled();
@@ -396,7 +398,6 @@ describe("TabGroupingController", () => {
       const groupStates = service.buildGroupStates(
         groupMap,
         tabCache,
-        new Map(),
         managedGroupIds,
       );
 

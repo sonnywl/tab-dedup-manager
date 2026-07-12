@@ -10,7 +10,7 @@
 - **Thinking Time**: Do not process long-running assumptions on tests to verify instead of thinking (< 1min is ideal). If too long return the current context and pass to a new agent.
 - **Clean Code Mandate**: Adhere strictly to the **Single Responsibility Principle (SRP)**. Maintain architectural "lean-ness" by ensuring data flow is single-source-of-truth and dependencies are injected. Remove dead code and redundant parameters immediately.
 - **Styling**: **Use Tailwind CSS** for all UI components. This project is built with Tailwind CSS; do not use Vanilla CSS or other frameworks.
-- **Format**: Always prettier format the code after changes.
+- **Format**: Always prettier format the code `npx prettier --write "src/**/*.{ts,tsx,js,jsx,css}"`.
 
 ## Architecture
 
@@ -34,7 +34,7 @@ The application is structured into three distinct layers with all shared data st
 
 ## Cleanup Logic (Global Priority)
 
-Destructive operations are applied **globally** to the entire session before phase 1. 
+Destructive operations are applied **globally** to the entire session before phase 1.
 
 - **Global Deduplication**: Closes duplicate URLs session-wide, keeping the earliest occurrence in the current tab list (Win 1 > Win 2 ...).
 - **Global Auto-Delete**: Immediately closes tabs matching domain rules with `autoDelete: true`.
@@ -44,7 +44,7 @@ Destructive operations are applied **globally** to the entire session before pha
 ## Execution Flow (Unified Orchestration)
 
 1.  **Config**: Load current rules and grouping settings.
-2.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping 
+2.  **Cleaning**: Session-wide deduplication, auto-deletion, and optional single-tab ungrouping
 3.  **Phase 1: Consolidation**: If configured, consolidate windows exceeding `numWindowsToKeep` into high-affinity targets.
 4.  **Phase 2: Grouping Pass**:
     - **Phase 2a: Membership**: Identify `protectedTabIds`, build `GroupMap`, and execute `MembershipPlan` (ungroup/group/title) on the current state.

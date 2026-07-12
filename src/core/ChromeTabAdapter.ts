@@ -25,7 +25,7 @@ export function debounce<T extends (...args: any[]) => any>(
   };
 }
 
-export async function retry<T>(
+async function retry<T>(
   fn: () => Promise<T>,
   maxAttempts = 3,
   delayMs = 100,
@@ -62,6 +62,7 @@ export async function retry<T>(
 }
 
 async function bestEffortRollback(snapshotTabs: Tab[]): Promise<void> {
+  if (typeof chrome.tabs.ungroup === "undefined") return;
   console.warn("Rolling back (best-effort ungroup only)...");
   try {
     const current = new Map(
@@ -70,7 +71,7 @@ async function bestEffortRollback(snapshotTabs: Tab[]): Promise<void> {
     for (const snap of snapshotTabs) {
       if (!snap.id) continue;
       const cur = current.get(snap.id);
-      if (cur && snap.groupId !== cur.groupId && snap.groupId === -1)
+      if (cur && snap.groupId !== cur.groupId && (snap.groupId ?? -1) === -1)
         await chrome.tabs.ungroup([snap.id]).catch(() => {});
     }
   } catch (err) {
@@ -82,7 +83,7 @@ async function bestEffortRollback(snapshotTabs: Tab[]): Promise<void> {
  * Higher-order utility to run an async operation with retry,
  * automatic rollback on failure, and success delay.
  */
-export async function runAtomicOperation<T>(
+async function runAtomicOperation<T>(
   operation: () => Promise<T>,
   snapshotTabs: Tab[],
 ): Promise<T> {
@@ -137,6 +138,9 @@ export default class ChromeTabAdapter {
   }
 
   async getGroups(): Promise<chrome.tabGroups.TabGroup[]> {
+    if (typeof chrome.tabGroups === "undefined") {
+      return [];
+    }
     const result = await retry(async () => {
       return chrome.tabGroups.query({});
     });
@@ -183,10 +187,11 @@ export default class ChromeTabAdapter {
   }
 
   async ungroupSingleTabGroups(tabs: Tab[]): Promise<void> {
+    if (typeof chrome.tabs.ungroup === "undefined") return;
     const groupCounts = new Map<number, number>();
     const groupIds = new Set<number>();
     for (const tab of tabs) {
-      if (tab.groupId !== -1 && tab.groupId !== undefined) {
+      if ((tab.groupId ?? -1) !== -1 && tab.groupId !== undefined) {
         groupCounts.set(tab.groupId, (groupCounts.get(tab.groupId) || 0) + 1);
         groupIds.add(tab.groupId);
       }
@@ -194,7 +199,7 @@ export default class ChromeTabAdapter {
 
     const toUngroup: number[] = [];
     for (const tab of tabs) {
-      if (tab.id && tab.groupId !== -1 && tab.groupId !== undefined) {
+      if (tab.id && (tab.groupId ?? -1) !== -1 && tab.groupId !== undefined) {
         if (groupCounts.get(tab.groupId) === 1) {
           toUngroup.push(tab.id);
         }
@@ -230,19 +235,21 @@ export default class ChromeTabAdapter {
   ): Promise<Result<void, Error>> {
     return this.toResult(async () => {
       // 1. Move Groups
-      for (const gm of plan.groupMoves) {
-        if (!isFinite(gm.groupId) || !isFinite(gm.windowId)) {
-          console.warn("[Consolidation] Skipping invalid group move:", gm);
-          continue;
+      if (typeof chrome.tabGroups !== "undefined") {
+        for (const gm of plan.groupMoves) {
+          if (!isFinite(gm.groupId) || !isFinite(gm.windowId)) {
+            console.warn("[Consolidation] Skipping invalid group move:", gm);
+            continue;
+          }
+          await runAtomicOperation(
+            () =>
+              chrome.tabGroups.move(gm.groupId, {
+                windowId: gm.windowId,
+                index: -1,
+              }),
+            snapshotTabs,
+          );
         }
-        await runAtomicOperation(
-          () =>
-            chrome.tabGroups.move(gm.groupId, {
-              windowId: gm.windowId,
-              index: -1,
-            }),
-          snapshotTabs,
-        );
       }
 
       // 2. Move Individual Tabs
@@ -262,7 +269,10 @@ export default class ChromeTabAdapter {
   ): Promise<Result<void, Error>> {
     return this.toResult(async () => {
       // 1. Ungroup first
-      if (plan.toUngroup.length > 0) {
+      if (
+        typeof chrome.tabs.ungroup !== "undefined" &&
+        plan.toUngroup.length > 0
+      ) {
         for (const batch of this.batch(plan.toUngroup)) {
           await runAtomicOperation(async () => {
             await chrome.tabs.ungroup(
@@ -275,43 +285,47 @@ export default class ChromeTabAdapter {
       }
 
       // 2. Group & Title
-      for (const entry of plan.toGroup) {
-        // Ensure all tabs are in the target window BEFORE grouping
-        const needsMove = entry.tabIds
-          .map((id) => snapshotTabs.find((t) => asTabId(t.id) === id))
-          .filter(isDefined)
-          .filter((t) => t.windowId !== plan.targetWindowId);
+      if (typeof chrome.tabs.group !== "undefined") {
+        for (const entry of plan.toGroup) {
+          // Ensure all tabs are in the target window BEFORE grouping
+          const needsMove = entry.tabIds
+            .map((id) => snapshotTabs.find((t) => asTabId(t.id) === id))
+            .filter(isDefined)
+            .filter((t) => t.windowId !== plan.targetWindowId);
 
-        if (needsMove.length > 0) {
-          await runAtomicOperation(
-            () =>
-              chrome.tabs.move(
-                needsMove.map((t) => t.id!),
-                { windowId: plan.targetWindowId, index: -1 },
-              ),
-            snapshotTabs,
-          );
-        }
-
-        await runAtomicOperation(async () => {
-          const options: chrome.tabs.GroupOptions = {
-            tabIds:
-              entry.tabIds.length === 1
-                ? (entry.tabIds[0] as number)
-                : (entry.tabIds as unknown as [number, ...number[]]),
-          };
-          if (entry.groupId !== null) {
-            options.groupId = entry.groupId as number;
+          if (needsMove.length > 0) {
+            await runAtomicOperation(
+              () =>
+                chrome.tabs.move(
+                  needsMove.map((t) => t.id!),
+                  { windowId: plan.targetWindowId, index: -1 },
+                ),
+              snapshotTabs,
+            );
           }
-          const gid = await chrome.tabs.group(options);
 
-          const updateData: chrome.tabGroups.UpdateProperties = {
-            collapsed: entry.collapsed,
-          };
-          if (entry.title) updateData.title = entry.title;
+          await runAtomicOperation(async () => {
+            const options: chrome.tabs.GroupOptions = {
+              tabIds:
+                entry.tabIds.length === 1
+                  ? (entry.tabIds[0] as number)
+                  : (entry.tabIds as unknown as [number, ...number[]]),
+            };
+            if (entry.groupId !== null) {
+              options.groupId = entry.groupId as number;
+            }
+            const gid = await chrome.tabs.group(options);
 
-          await chrome.tabGroups.update(gid, updateData);
-        }, snapshotTabs);
+            if (typeof chrome.tabGroups !== "undefined") {
+              const updateData: chrome.tabGroups.UpdateProperties = {
+                collapsed: entry.collapsed,
+              };
+              if (entry.title) updateData.title = entry.title;
+
+              await chrome.tabGroups.update(gid, updateData);
+            }
+          }, snapshotTabs);
+        }
       }
     });
   }
@@ -339,7 +353,10 @@ export default class ChromeTabAdapter {
 
           await runAtomicOperation(async () => {
             const targetIndex = unit.targetIndex;
-            if (unit.kind === "group") {
+            if (
+              unit.kind === "group" &&
+              typeof chrome.tabGroups !== "undefined"
+            ) {
               if (unit.groupId === null || !isFinite(unit.groupId)) {
                 console.warn("[Order] Skipping invalid group move:", unit);
                 return;
@@ -390,9 +407,17 @@ export default class ChromeTabAdapter {
     color: string | undefined = "#9688F1",
   ): Promise<void> {
     try {
-      chrome.action.setBadgeText({ text });
-      if (text !== "") {
-        chrome.action.setBadgeBackgroundColor({ color });
+      if (
+        typeof chrome.action !== "undefined" &&
+        typeof chrome.action.setBadgeText !== "undefined"
+      ) {
+        chrome.action.setBadgeText({ text });
+        if (
+          text !== "" &&
+          typeof chrome.action.setBadgeBackgroundColor !== "undefined"
+        ) {
+          chrome.action.setBadgeBackgroundColor({ color });
+        }
       }
     } catch (err) {
       console.warn("Failed to update badge:", err);

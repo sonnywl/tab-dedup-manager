@@ -50,7 +50,6 @@ export interface GroupState {
   readonly groupId: GroupId | null;
   readonly collapsed: boolean;
   readonly needsReposition: boolean;
-  readonly needsTitleUpdate?: boolean;
   readonly isExternal?: boolean;
   readonly targetIndex?: number;
 }

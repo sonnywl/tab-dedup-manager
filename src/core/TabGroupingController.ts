@@ -23,8 +23,6 @@ const STABILITY_DELAY =
   typeof process !== "undefined" && process.env.NODE_ENV === "test" ? 1 : 250;
 
 export default class TabGroupingController {
-  private isProcessing = false;
-
   constructor(
     private readonly service: TabGroupingService,
     private readonly windowService: WindowManagementService,
@@ -229,7 +227,6 @@ export default class TabGroupingController {
     const groupStates = this.service.buildGroupStates(
       groupMap,
       tabCache,
-      undefined,
       managedGroupIds,
     );
 
@@ -241,7 +238,7 @@ export default class TabGroupingController {
     };
   }
 
-  async processGrouping(
+  private async processGrouping(
     windowId: WindowId,
     rulesByDomain: RulesByDomain,
     isGlobal: boolean,
@@ -313,8 +310,6 @@ export default class TabGroupingController {
   }
 
   async updateBadge(): Promise<void> {
-    if (this.isProcessing) return;
-
     try {
       const [state, rawStore, _] = await Promise.all([
         this.refreshState(),
@@ -333,15 +328,81 @@ export default class TabGroupingController {
         await this.adapter.updateBadge(toRemove.size.toString());
         return;
       }
+
+      const activeWindowId = await this.ensureActiveWindowId();
+      const { protectedMeta, managedGroupIds } =
+        this.service.identifyProtectedTabs(
+          state.allTabs,
+          state.groupIdToGroup,
+          rulesByDomain,
+        );
+
+      const isGlobal = !configResult.config.byWindow;
+      const windowMap = configResult.config.byWindow
+        ? this.windowService.groupByWindow(state.allTabs)
+        : new Map([[asWindowId(activeWindowId), state.allTabs]]);
+
+      let needsAttention = false;
+
+      for (const [wid, windowTabs] of windowMap) {
+        const pre = this.buildGroupingContext(
+          state,
+          wid,
+          rulesByDomain,
+          isGlobal,
+          protectedMeta,
+          managedGroupIds,
+        );
+
+        const membershipPlan = this.service.buildMembershipPlan(
+          pre.groupStates,
+          pre.tabCache,
+          pre.managedGroupIds,
+          wid,
+        );
+
+        const hasMembershipChanges =
+          membershipPlan.toUngroup.length > 0 ||
+          membershipPlan.toGroup.some((g) => {
+            return g.tabIds.some((tid) => {
+              const tab = pre.tabCache.get(tid);
+              return !tab || tab.groupId !== g.groupId;
+            });
+          });
+
+        if (hasMembershipChanges) {
+          needsAttention = true;
+          break;
+        }
+
+        const repositionStates = this.service.calculateRepositionNeeds(
+          pre.groupStates,
+          pre.tabCache,
+          wid,
+          pre.managedGroupIds,
+          !!configResult.config.sortManualGroupTabs,
+        );
+
+        const hasRepositionChanges = repositionStates.some(
+          (s) => s.needsReposition,
+        );
+        if (hasRepositionChanges) {
+          needsAttention = true;
+          break;
+        }
+      }
+
+      if (needsAttention) {
+        await this.adapter.updateBadge("!");
+      } else {
+        await this.adapter.updateBadge("");
+      }
     } catch (err) {
       console.warn("Failed to update badge:", err);
     }
   }
 
   async execute(): Promise<void> {
-    if (this.isProcessing) return;
-    this.isProcessing = true;
-
     try {
       this.adapter.updateBadge("O", "#FFD700");
       const [initialState, rawStore, activeWindowId] = await Promise.all([
@@ -397,8 +458,6 @@ export default class TabGroupingController {
       console.warn("Execute error:", err);
       console.trace();
       this.adapter.updateBadge("!", "#FFA500");
-    } finally {
-      this.isProcessing = false;
     }
   }
 }
