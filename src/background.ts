@@ -4,50 +4,54 @@ import { TabGroupingService, WindowManagementService } from "utils/grouping";
 import TabGroupingController from "core/TabGroupingController";
 import startSyncStore from "utils/startSyncStore";
 
-async function init() {
-  try {
-    const store = await startSyncStore({
-      rules: [],
-      grouping: {
-        byWindow: false,
-        numWindowsToKeep: 2,
-        ungroupSingleTab: false,
-      },
-    });
+let controllerPromise: Promise<TabGroupingController> | null = null;
 
-    const service = new TabGroupingService();
-    const windowService = new WindowManagementService();
-    const adapter = new ChromeTabAdapter();
-    const controller = new TabGroupingController(
-      service,
-      windowService,
-      adapter,
-      store,
-    );
-
-    const handleTabChange = debounce(async () => {
-      try {
-        await controller.updateBadge();
-      } catch (err) {
-        console.error("Error in handleTabChange:", err);
-      }
-    }, 100);
-
-    // Initial update
-    handleTabChange();
-
-    chrome.action.onClicked.addListener(() => controller.execute());
-    chrome.tabs.onCreated.addListener(handleTabChange);
-    chrome.tabs.onRemoved.addListener(handleTabChange);
-    chrome.tabs.onUpdated.addListener(handleTabChange);
-    chrome.tabs.onMoved.addListener(handleTabChange);
-    chrome.tabs.onAttached.addListener(handleTabChange);
-    chrome.tabs.onDetached.addListener(handleTabChange);
-  } catch (err) {
-    console.error("Fatal initialization error:", err);
+function getController(): Promise<TabGroupingController> {
+  if (!controllerPromise) {
+    controllerPromise = (async () => {
+      const store = await startSyncStore({
+        rules: [],
+        grouping: {
+          byWindow: false,
+          numWindowsToKeep: 2,
+          ungroupSingleTab: false,
+        },
+      });
+      return new TabGroupingController(
+        new TabGroupingService(),
+        new WindowManagementService(),
+        new ChromeTabAdapter(),
+        store,
+      );
+    })();
   }
+  return controllerPromise;
 }
 
+const handleTabChange = debounce(async () => {
+  try {
+    await (await getController()).updateBadge();
+  } catch (err) {
+    console.error("Error in handleTabChange:", err);
+  }
+}, 100);
+
+// Must run synchronously on every script (re)start — this is what lets
+// Firefox/Chrome wake a suspended background script for these events.
+chrome.action.onClicked.addListener(async () => {
+  try {
+    await (await getController()).execute();
+  } catch (err) {
+    console.error("Error in onClicked:", err);
+  }
+});
+chrome.tabs.onCreated.addListener(handleTabChange);
+chrome.tabs.onRemoved.addListener(handleTabChange);
+chrome.tabs.onUpdated.addListener(handleTabChange);
+chrome.tabs.onMoved.addListener(handleTabChange);
+chrome.tabs.onAttached.addListener(handleTabChange);
+chrome.tabs.onDetached.addListener(handleTabChange);
+
 if (typeof process === "undefined" || process.env.NODE_ENV !== "test") {
-  init();
+  handleTabChange();
 }
