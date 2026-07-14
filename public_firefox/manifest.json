@@ -35,7 +35,7 @@
     ],
     "type": "module"
   },
-  "incognito": "split",
+  "incognito": "not_allowed",
   "permissions": [
     "storage",
     "tabs",
