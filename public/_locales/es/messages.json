@@ -1,106 +1,106 @@
 {
   "appName": {
-    "message": "One-click Tab Dedup Group Manager",
+    "message": "Administrador de Pestañas y Grupos en un Clic",
     "description": "The name of the extension."
   },
   "appDescription": {
-    "message": "Multi-window tab management application, dedup/grouping/sorting in one click",
+    "message": "Aplicación de gestión de pestañas multiventana, deduplicación/agrupación/clasificación en un clic",
     "description": "Key feature of this application."
   },
   "actionTitle": {
-    "message": "One-click Tab Dedup Manager",
+    "message": "Administrador de Pestañas en un Clic",
     "description": "The title shown when hovering over the extension icon."
   },
   "optionsTitle": {
-    "message": "One-click Tab Dedup/Group Manager Options",
+    "message": "Opciones del Administrador de Pestañas y Grupos",
     "description": "Title of the options page."
   },
   "optionsDescription": {
-    "message": "Configure how your tabs are automatically organized and cleaned up.",
+    "message": "Configura cómo se organizan y limpian automáticamente tus pestañas.",
     "description": "Description of the options page."
   },
   "groupNamePlaceholder": {
-    "message": "Group name...",
+    "message": "Nombre del grupo...",
     "description": "Placeholder for group name input."
   },
   "groupNameAriaLabel": {
-    "message": "Group name",
+    "message": "Nombre del grupo",
     "description": "Aria label for group name input."
   },
   "addDomainLabel": {
-    "message": "Add Domain",
+    "message": "Añadir Dominio",
     "description": "Label for adding a new domain."
   },
   "domainPlaceholder": {
-    "message": "example.com or www.example.com",
+    "message": "example.com o www.example.com",
     "description": "Placeholder for domain input."
   },
   "domainAriaLabel": {
-    "message": "New domain URL",
+    "message": "URL del nuevo dominio",
     "description": "Aria label for domain input."
   },
   "addButton": {
-    "message": "Add",
+    "message": "Añadir",
     "description": "Text for the Add button."
   },
   "groupingBehaviorLabel": {
-    "message": "Grouping Behavior",
+    "message": "Comportamiento de Agrupación",
     "description": "Label for the grouping behavior section."
   },
   "ungroupSingleTabLabel": {
-    "message": "Ungroup groups that only contain one tab",
+    "message": "Desagrupar grupos que solo contienen una pestaña",
     "description": "Checkbox label for ungrouping single tab groups."
   },
   "sortManualGroupTabsLabel": {
-    "message": "Enable sorting for tabs in manual groups",
+    "message": "Habilitar clasificación para pestañas en grupos manuales",
     "description": "Checkbox label for enabling sorting of manual groups."
   },
   "keepTabsPerWindowLabel": {
-    "message": "Keep tabs grouped per window (or limit number of windows)",
+    "message": "Mantener pestañas agrupadas por ventana (o limitar el número de ventanas)",
     "description": "Checkbox label for window-scoped grouping."
   },
   "keepTopWindowsLabel": {
-    "message": "Keep top windows by tab count:",
+    "message": "Mantener ventanas principales por recuento de pestañas:",
     "description": "Label for limiting number of windows."
   },
   "clearWindowLimitTooltip": {
-    "message": "Clear window limit",
+    "message": "Borrar límite de ventanas",
     "description": "Tooltip for clearing window limit."
   },
   "retainAllWindowsLabel": {
-    "message": "(Empty = retain all windows)",
+    "message": "(Vacío = conservar todas las ventanas)",
     "description": "Subtext explaining empty window limit."
   },
   "invalidDomainAlert": {
-    "message": "Please enter a valid domain (e.g., google.com or www.google.com)",
+    "message": "Por favor, introduce un dominio válido (ej. google.com o www.google.com)",
     "description": "Alert message for invalid domain input."
   },
   "domainColumn": {
-    "message": "Domain",
+    "message": "Dominio",
     "description": "Table header for Domain column."
   },
   "autoDeleteColumn": {
-    "message": "Auto Delete",
+    "message": "Autoborrar",
     "description": "Table header for Auto-Delete column."
   },
   "splitUrlColumn": {
-    "message": "Split URL",
+    "message": "Dividir URL",
     "description": "Table header for Split URL column."
   },
   "groupNameColumn": {
-    "message": "Group Name",
+    "message": "Nombre del Grupo",
     "description": "Table header for Group Name column."
   },
   "actionsColumn": {
-    "message": "Actions",
+    "message": "Acciones",
     "description": "Table header for Actions column."
   },
   "noRulesMessage": {
-    "message": "No domain rules configured yet.",
+    "message": "Aún no hay reglas de dominio configuradas.",
     "description": "Message shown when there are no rules."
   },
   "ruleExistsAlert": {
-    "message": "Rule for \"$DOMAIN$\" already exists.",
+    "message": "La regla para \"$DOMAIN$\" ya existe.",
     "description": "Alert message when a rule for a domain already exists.",
     "placeholders": {
       "domain": {
@@ -110,11 +110,11 @@
     }
   },
   "invalidUrlAlert": {
-    "message": "Invalid URL or domain format. Please try again.",
+    "message": "Formato de URL o dominio no válido. Por favor, inténtalo de nuevo.",
     "description": "Alert message for generic invalid URL/domain."
   },
   "autoDeleteAriaLabel": {
-    "message": "Auto-delete tabs for $DOMAIN$",
+    "message": "Autoborrar pestañas para $DOMAIN$",
     "description": "Aria label for auto-delete checkbox.",
     "placeholders": {
       "domain": {
@@ -124,15 +124,15 @@
     }
   },
   "splitByPathAriaLabel": {
-    "message": "Split by url path segment index",
+    "message": "Dividir por índice de segmento de ruta url",
     "description": "Aria label for split by path input."
   },
   "clearPathIndexTooltip": {
-    "message": "Clear url path index",
+    "message": "Borrar índice de ruta url",
     "description": "Tooltip for clearing path index."
   },
   "removeRuleAriaLabel": {
-    "message": "Remove rule for $DOMAIN$",
+    "message": "Eliminar regla para $DOMAIN$",
     "description": "Aria label for remove rule button.",
     "placeholders": {
       "domain": {
@@ -142,7 +142,7 @@
     }
   },
   "copyrightText": {
-    "message": "One-click Tab Dedup/Group Manager © $YEAR$",
+    "message": "Administrador de Pestañas y Grupos en un Clic © $YEAR$",
     "description": "Copyright text in footer.",
     "placeholders": {
       "year": {
@@ -152,11 +152,11 @@
     }
   },
   "placeholderAll": {
-    "message": "All",
+    "message": "Todo",
     "description": "Placeholder text for All windows limit"
   },
   "placeholderOff": {
-    "message": "Off",
+    "message": "Apagado",
     "description": "Placeholder text for Off state in split path index"
   }
 }

@@ -1,106 +1,106 @@
 {
   "appName": {
-    "message": "One-click Tab Dedup Group Manager",
+    "message": "ワンクリックタブ重複排除グループマネージャー",
     "description": "The name of the extension."
   },
   "appDescription": {
-    "message": "Multi-window tab management application, dedup/grouping/sorting in one click",
+    "message": "マルチウィンドウタブ管理アプリ、ワンクリックで重複排除/グループ化/並べ替え",
     "description": "Key feature of this application."
   },
   "actionTitle": {
-    "message": "One-click Tab Dedup Manager",
+    "message": "ワンクリックタブ重複排除マネージャー",
     "description": "The title shown when hovering over the extension icon."
   },
   "optionsTitle": {
-    "message": "One-click Tab Dedup/Group Manager Options",
+    "message": "ワンクリックタブ重複排除/グループマネージャーのオプション",
     "description": "Title of the options page."
   },
   "optionsDescription": {
-    "message": "Configure how your tabs are automatically organized and cleaned up.",
+    "message": "タブを自動的に整理・クリーンアップする方法を設定します。",
     "description": "Description of the options page."
   },
   "groupNamePlaceholder": {
-    "message": "Group name...",
+    "message": "グループ名...",
     "description": "Placeholder for group name input."
   },
   "groupNameAriaLabel": {
-    "message": "Group name",
+    "message": "グループ名",
     "description": "Aria label for group name input."
   },
   "addDomainLabel": {
-    "message": "Add Domain",
+    "message": "ドメインを追加",
     "description": "Label for adding a new domain."
   },
   "domainPlaceholder": {
-    "message": "example.com or www.example.com",
+    "message": "example.com または www.example.com",
     "description": "Placeholder for domain input."
   },
   "domainAriaLabel": {
-    "message": "New domain URL",
+    "message": "新しいドメインURL",
     "description": "Aria label for domain input."
   },
   "addButton": {
-    "message": "Add",
+    "message": "追加",
     "description": "Text for the Add button."
   },
   "groupingBehaviorLabel": {
-    "message": "Grouping Behavior",
+    "message": "グループ化の動作",
     "description": "Label for the grouping behavior section."
   },
   "ungroupSingleTabLabel": {
-    "message": "Ungroup groups that only contain one tab",
+    "message": "タブが1つだけのグループを解除する",
     "description": "Checkbox label for ungrouping single tab groups."
   },
   "sortManualGroupTabsLabel": {
-    "message": "Enable sorting for tabs in manual groups",
+    "message": "手動グループのタブの並べ替えを有効にする",
     "description": "Checkbox label for enabling sorting of manual groups."
   },
   "keepTabsPerWindowLabel": {
-    "message": "Keep tabs grouped per window (or limit number of windows)",
+    "message": "ウィンドウごとにタブをグループ化する（またはウィンドウ数を制限する）",
     "description": "Checkbox label for window-scoped grouping."
   },
   "keepTopWindowsLabel": {
-    "message": "Keep top windows by tab count:",
+    "message": "タブ数で上位のウィンドウを保持:",
     "description": "Label for limiting number of windows."
   },
   "clearWindowLimitTooltip": {
-    "message": "Clear window limit",
+    "message": "ウィンドウ制限をクリア",
     "description": "Tooltip for clearing window limit."
   },
   "retainAllWindowsLabel": {
-    "message": "(Empty = retain all windows)",
+    "message": "(空 = すべてのウィンドウを保持)",
     "description": "Subtext explaining empty window limit."
   },
   "invalidDomainAlert": {
-    "message": "Please enter a valid domain (e.g., google.com or www.google.com)",
+    "message": "有効なドメインを入力してください（例：google.com または www.google.com）",
     "description": "Alert message for invalid domain input."
   },
   "domainColumn": {
-    "message": "Domain",
+    "message": "ドメイン",
     "description": "Table header for Domain column."
   },
   "autoDeleteColumn": {
-    "message": "Auto Delete",
+    "message": "自動削除",
     "description": "Table header for Auto-Delete column."
   },
   "splitUrlColumn": {
-    "message": "Split URL",
+    "message": "URLを分割",
     "description": "Table header for Split URL column."
   },
   "groupNameColumn": {
-    "message": "Group Name",
+    "message": "グループ名",
     "description": "Table header for Group Name column."
   },
   "actionsColumn": {
-    "message": "Actions",
+    "message": "アクション",
     "description": "Table header for Actions column."
   },
   "noRulesMessage": {
-    "message": "No domain rules configured yet.",
+    "message": "ドメインルールが設定されていません。",
     "description": "Message shown when there are no rules."
   },
   "ruleExistsAlert": {
-    "message": "Rule for \"$DOMAIN$\" already exists.",
+    "message": "\"$DOMAIN$\" のルールは既に存在します。",
     "description": "Alert message when a rule for a domain already exists.",
     "placeholders": {
       "domain": {
@@ -110,11 +110,11 @@
     }
   },
   "invalidUrlAlert": {
-    "message": "Invalid URL or domain format. Please try again.",
+    "message": "無効なURLまたはドメイン形式です。もう一度お試しください。",
     "description": "Alert message for generic invalid URL/domain."
   },
   "autoDeleteAriaLabel": {
-    "message": "Auto-delete tabs for $DOMAIN$",
+    "message": "$DOMAIN$ のタブを自動削除する",
     "description": "Aria label for auto-delete checkbox.",
     "placeholders": {
       "domain": {
@@ -124,15 +124,15 @@
     }
   },
   "splitByPathAriaLabel": {
-    "message": "Split by url path segment index",
+    "message": "URLパスセグメントインデックスで分割",
     "description": "Aria label for split by path input."
   },
   "clearPathIndexTooltip": {
-    "message": "Clear url path index",
+    "message": "URLパスインデックスをクリア",
     "description": "Tooltip for clearing path index."
   },
   "removeRuleAriaLabel": {
-    "message": "Remove rule for $DOMAIN$",
+    "message": "$DOMAIN$ のルールを削除",
     "description": "Aria label for remove rule button.",
     "placeholders": {
       "domain": {
@@ -142,7 +142,7 @@
     }
   },
   "copyrightText": {
-    "message": "One-click Tab Dedup/Group Manager © $YEAR$",
+    "message": "ワンクリックタブ重複排除/グループマネージャー © $YEAR$",
     "description": "Copyright text in footer.",
     "placeholders": {
       "year": {
@@ -152,11 +152,11 @@
     }
   },
   "placeholderAll": {
-    "message": "All",
+    "message": "すべて",
     "description": "Placeholder text for All windows limit"
   },
   "placeholderOff": {
-    "message": "Off",
+    "message": "オフ",
     "description": "Placeholder text for Off state in split path index"
   }
 }

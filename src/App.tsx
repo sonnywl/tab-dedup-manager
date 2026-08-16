@@ -256,7 +256,7 @@ const GroupingSettings = ({
             <input
               type="number"
               min="2"
-              placeholder="All"
+              placeholder={chrome.i18n.getMessage("placeholderAll") || "All"}
               value={
                 typeof config.numWindowsToKeep === "number"
                   ? config.numWindowsToKeep
@@ -347,7 +347,7 @@ const RuleRow = React.memo(
             <input
               type="number"
               min="1"
-              placeholder="Off"
+              placeholder={chrome.i18n.getMessage("placeholderOff") || "Off"}
               value={
                 typeof rule.splitByPath === "number" ? rule.splitByPath : ""
               }

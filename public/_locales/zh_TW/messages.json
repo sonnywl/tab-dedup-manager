@@ -1,106 +1,106 @@
 {
   "appName": {
-    "message": "One-click Tab Dedup Group Manager",
+    "message": "一鍵分頁去重分組管理器",
     "description": "The name of the extension."
   },
   "appDescription": {
-    "message": "Multi-window tab management application, dedup/grouping/sorting in one click",
+    "message": "多視窗分頁管理應用，一鍵去重/分組/排序",
     "description": "Key feature of this application."
   },
   "actionTitle": {
-    "message": "One-click Tab Dedup Manager",
+    "message": "一鍵分頁去重管理器",
     "description": "The title shown when hovering over the extension icon."
   },
   "optionsTitle": {
-    "message": "One-click Tab Dedup/Group Manager Options",
+    "message": "一鍵分頁去重/分組管理器選項",
     "description": "Title of the options page."
   },
   "optionsDescription": {
-    "message": "Configure how your tabs are automatically organized and cleaned up.",
+    "message": "設定如何自動組織和清理您的分頁。",
     "description": "Description of the options page."
   },
   "groupNamePlaceholder": {
-    "message": "Group name...",
+    "message": "分組名稱...",
     "description": "Placeholder for group name input."
   },
   "groupNameAriaLabel": {
-    "message": "Group name",
+    "message": "分組名稱",
     "description": "Aria label for group name input."
   },
   "addDomainLabel": {
-    "message": "Add Domain",
+    "message": "新增網域",
     "description": "Label for adding a new domain."
   },
   "domainPlaceholder": {
-    "message": "example.com or www.example.com",
+    "message": "example.com 或 www.example.com",
     "description": "Placeholder for domain input."
   },
   "domainAriaLabel": {
-    "message": "New domain URL",
+    "message": "新網域URL",
     "description": "Aria label for domain input."
   },
   "addButton": {
-    "message": "Add",
+    "message": "新增",
     "description": "Text for the Add button."
   },
   "groupingBehaviorLabel": {
-    "message": "Grouping Behavior",
+    "message": "分組行為",
     "description": "Label for the grouping behavior section."
   },
   "ungroupSingleTabLabel": {
-    "message": "Ungroup groups that only contain one tab",
+    "message": "解散只有一個分頁的分組",
     "description": "Checkbox label for ungrouping single tab groups."
   },
   "sortManualGroupTabsLabel": {
-    "message": "Enable sorting for tabs in manual groups",
+    "message": "為手動分組的分頁啟用排序",
     "description": "Checkbox label for enabling sorting of manual groups."
   },
   "keepTabsPerWindowLabel": {
-    "message": "Keep tabs grouped per window (or limit number of windows)",
+    "message": "按視窗保持分頁分組（或限制視窗數量）",
     "description": "Checkbox label for window-scoped grouping."
   },
   "keepTopWindowsLabel": {
-    "message": "Keep top windows by tab count:",
+    "message": "按分頁數量保留前幾個視窗：",
     "description": "Label for limiting number of windows."
   },
   "clearWindowLimitTooltip": {
-    "message": "Clear window limit",
+    "message": "清除視窗限制",
     "description": "Tooltip for clearing window limit."
   },
   "retainAllWindowsLabel": {
-    "message": "(Empty = retain all windows)",
+    "message": "(留空 = 保留所有視窗)",
     "description": "Subtext explaining empty window limit."
   },
   "invalidDomainAlert": {
-    "message": "Please enter a valid domain (e.g., google.com or www.google.com)",
+    "message": "請輸入有效的網域（例如 google.com 或 www.google.com）",
     "description": "Alert message for invalid domain input."
   },
   "domainColumn": {
-    "message": "Domain",
+    "message": "網域",
     "description": "Table header for Domain column."
   },
   "autoDeleteColumn": {
-    "message": "Auto Delete",
+    "message": "自動刪除",
     "description": "Table header for Auto-Delete column."
   },
   "splitUrlColumn": {
-    "message": "Split URL",
+    "message": "拆分 URL",
     "description": "Table header for Split URL column."
   },
   "groupNameColumn": {
-    "message": "Group Name",
+    "message": "分組名稱",
     "description": "Table header for Group Name column."
   },
   "actionsColumn": {
-    "message": "Actions",
+    "message": "操作",
     "description": "Table header for Actions column."
   },
   "noRulesMessage": {
-    "message": "No domain rules configured yet.",
+    "message": "尚未設定網域規則。",
     "description": "Message shown when there are no rules."
   },
   "ruleExistsAlert": {
-    "message": "Rule for \"$DOMAIN$\" already exists.",
+    "message": "\"$DOMAIN$\" 的規則已存在。",
     "description": "Alert message when a rule for a domain already exists.",
     "placeholders": {
       "domain": {
@@ -110,11 +110,11 @@
     }
   },
   "invalidUrlAlert": {
-    "message": "Invalid URL or domain format. Please try again.",
+    "message": "無效的 URL 或網域格式。請重試。",
     "description": "Alert message for generic invalid URL/domain."
   },
   "autoDeleteAriaLabel": {
-    "message": "Auto-delete tabs for $DOMAIN$",
+    "message": "自動刪除 $DOMAIN$ 的分頁",
     "description": "Aria label for auto-delete checkbox.",
     "placeholders": {
       "domain": {
@@ -124,15 +124,15 @@
     }
   },
   "splitByPathAriaLabel": {
-    "message": "Split by url path segment index",
+    "message": "透過 url 路徑段索引拆分",
     "description": "Aria label for split by path input."
   },
   "clearPathIndexTooltip": {
-    "message": "Clear url path index",
+    "message": "清除 url 路徑索引",
     "description": "Tooltip for clearing path index."
   },
   "removeRuleAriaLabel": {
-    "message": "Remove rule for $DOMAIN$",
+    "message": "移除 $DOMAIN$ 的規則",
     "description": "Aria label for remove rule button.",
     "placeholders": {
       "domain": {
@@ -142,7 +142,7 @@
     }
   },
   "copyrightText": {
-    "message": "One-click Tab Dedup/Group Manager © $YEAR$",
+    "message": "一鍵分頁去重/分組管理器 © $YEAR$",
     "description": "Copyright text in footer.",
     "placeholders": {
       "year": {
@@ -152,11 +152,11 @@
     }
   },
   "placeholderAll": {
-    "message": "All",
+    "message": "全部",
     "description": "Placeholder text for All windows limit"
   },
   "placeholderOff": {
-    "message": "Off",
+    "message": "關閉",
     "description": "Placeholder text for Off state in split path index"
   }
 }
